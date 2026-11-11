@@ -23,6 +23,8 @@ def sample_elevations(
     DEM 을 재투영하지 않는다. 재투영하면 고도가 한 번 더 보간된다.
     DEM 파일이 없으면 모두 None 이다. 그러면 경사 점수가 0 이 되어 완만한 길을
     따로 고르지 않는다.
+    cm 정수 DEM(pipeline/compress_dem.py)은 밴드 배율·오프셋을 적용해 m 로 바꾼다.
+    실수 DEM 은 배율 1, 오프셋 0 이다.
     """
     if not positions:
         return []
@@ -32,8 +34,12 @@ def sample_elevations(
     lngs = [lng for lng, _ in positions]
     lats = [lat for _, lat in positions]
     with rasterio.open(dem_path) as dem:
+        scale, offset = dem.scales[0], dem.offsets[0]
         xs, ys = transform(WGS84, dem.crs, lngs, lats)
         values = [
             value[0] for value in dem.sample(zip(xs, ys, strict=True), masked=True)
         ]
-    return [None if np.ma.is_masked(value) else float(value) for value in values]
+    return [
+        None if np.ma.is_masked(value) else float(value) * scale + offset
+        for value in values
+    ]

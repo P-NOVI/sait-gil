@@ -9,3 +9,9 @@
 | 인구·날씨 학습 데이터 | `data/processed/` 아래 | `ml/` 혼잡 예측 |
 
 - DEM은 배리어프리 `pipeline/steps/00_build_dem.py`(1:5000 등고선·표고점 → GeoTIFF) 방식을 가져온다.
+- 만든 실수 DEM은 `compress_dem.py`로 cm 정수 GeoTIFF로 바꿔 둔다(46.0MB → 18.2MB, 고도 차이 약 0.005m). 백엔드는 실수·cm 정수 DEM을 모두 읽는다.
+
+  ```bash
+  cd backend
+  uv run python ../pipeline/compress_dem.py <실수 DEM> ../data/processed/seoul_dem_5m.tif
+  ```
