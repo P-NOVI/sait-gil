@@ -1,0 +1,28 @@
+# 환경변수·비밀
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+
+# 데이터·모델
+data/
+*.db
+*.pt
+*.onnx
+*.tflite
+*.tif
+
+# OS·에디터
+.DS_Store
+Thumbs.db
+.idea/

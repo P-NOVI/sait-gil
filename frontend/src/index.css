@@ -1,0 +1,936 @@
+/*
+ * 화면 틀은 배리어프리와 같다: 지도 위에 검색창, 아래에 떠 있는 메뉴와 시트.
+ * 글자 크기는 접근성 설정의 --font-scale 을 곱해 rem 으로 따라간다.
+ */
+:root {
+    --color-primary: #ea7c13;
+    --color-primary-soft: #fdebd8;
+    /* 글자·버튼 바탕에 쓰는 진한 주황. 흰 글자와 대비 5:1 */
+    --color-primary-strong: #b35400;
+    --color-on-primary: #ffffff;
+    --color-text: #1f2937;
+    --color-muted: #5b6472;
+    --color-bg: #fffbf7;
+    --color-surface: #ffffff;
+    --color-soft: #f6efe8;
+    --color-border: #e6dccf;
+    --color-focus: #1f2937;
+    --color-error-bg: #fdecea;
+    --color-error-text: #8a1c12;
+    --color-stop: #8a1c12;
+    --color-my-location: #1a73e8;
+    /* 인파 4단계. 색만으로 구분하지 않게 칸마다 글자를 함께 쓴다. */
+    --level-clear: #1b7f3b;
+    --level-caution: #8a6100;
+    --level-crowded: #b35400;
+    --level-danger: #b3261e;
+    --panel-shadow:
+        0 1px 2px rgba(31, 41, 55, 0.08), 0 4px 14px rgba(31, 41, 55, 0.1);
+    --sheet-shadow: 0 -2px 18px rgba(31, 41, 55, 0.12);
+    --font-size-base: 18px;
+    --font-scale: 1;
+    --touch-min: 48px;
+
+    font-family:
+        'Pretendard Variable', Pretendard, 'Noto Sans KR', system-ui, sans-serif;
+    font-size: calc(var(--font-size-base) * var(--font-scale));
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+    /* 한국어는 낱말 중간에서 줄을 바꾸지 않는다. */
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+/* 고대비: 검은 바탕, 흰 글자, 노란 강조. 그림자 대신 테두리로 구분한다. */
+:root[data-contrast='high'] {
+    --color-primary: #ffd400;
+    --color-primary-soft: #000000;
+    --color-primary-strong: #ffd400;
+    --color-on-primary: #000000;
+    --color-text: #ffffff;
+    --color-muted: #e6e6e6;
+    --color-bg: #000000;
+    --color-surface: #000000;
+    --color-soft: #1a1a1a;
+    --color-border: #ffffff;
+    --color-focus: #ffd400;
+    --color-error-bg: #000000;
+    --color-error-text: #ff8a80;
+    --color-stop: #ff8a80;
+    --panel-shadow: 0 0 0 2px #ffffff;
+    --sheet-shadow: 0 0 0 2px #ffffff;
+}
+
+html,
+body,
+#root,
+.app {
+    height: 100%;
+    margin: 0;
+}
+
+button,
+input {
+    font: inherit;
+    color: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: default;
+}
+
+:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+input::placeholder {
+    color: var(--color-muted);
+    opacity: 1;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ---------- 앱 틀 ---------- */
+
+.app {
+    /* 화면 아래에 띄운 메뉴 막대 높이와 둘레 여백 */
+    --nav-bar: 3.6rem;
+    --nav-gap: 10px;
+    --nav-height: calc(
+        var(--nav-bar) + var(--nav-gap) * 2 + env(safe-area-inset-bottom)
+    );
+    /* 접힌 시트에 보이는 손잡이·제목 높이 */
+    --sheet-peek: 3.4rem;
+    /* 편 시트가 덮는 높이 */
+    --sheet-height: 60%;
+    --safe-top: calc(env(safe-area-inset-top) + 12px);
+    --map-bottom: var(--nav-height);
+
+    position: relative;
+    overflow: hidden;
+}
+
+.app[data-sheet='collapsed'] {
+    --map-bottom: calc(var(--nav-height) + var(--sheet-peek));
+}
+
+.app[data-sheet='open'] {
+    --map-bottom: var(--sheet-height);
+}
+
+/* 안내 중: 위는 지도, 아래는 안내 패널. 지도는 패널 위에서 끝나 내 위치가 가리지 않는다. */
+.app[data-navigating] {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+}
+
+/* ---------- 지도 ---------- */
+
+.map-view {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: var(--map-bottom);
+    left: 0;
+    background: var(--color-soft);
+}
+
+.app[data-navigating] .map-view {
+    position: relative;
+    inset: auto;
+}
+
+.map-view__canvas {
+    width: 100%;
+    height: 100%;
+}
+
+.map-view--empty {
+    display: grid;
+    place-items: center;
+    background:
+        repeating-linear-gradient(
+            0deg,
+            transparent 0 47px,
+            var(--color-border) 47px 48px
+        ),
+        repeating-linear-gradient(
+            90deg,
+            transparent 0 47px,
+            var(--color-border) 47px 48px
+        ),
+        var(--color-soft);
+}
+
+.map-view--empty p {
+    margin: 0 24px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    color: var(--color-muted);
+    background: var(--color-surface);
+}
+
+.map-view__error {
+    position: absolute;
+    top: calc(var(--safe-top) + 4.4rem);
+    left: 12px;
+    right: 68px;
+    z-index: 10;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: var(--color-error-text);
+    background: var(--color-error-bg);
+}
+
+/* 도착 핀: 아래 끝이 도착점을 가리킨다(MapView 의 GOAL_PIN). */
+.map-pin {
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+.map-pin path {
+    fill: var(--color-primary-strong);
+    stroke: #ffffff;
+    stroke-width: 2.5;
+}
+
+.map-pin circle {
+    fill: #ffffff;
+}
+
+.my-location-dot {
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #ffffff;
+    border-radius: 50%;
+    background: var(--color-my-location);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- 검색창 ---------- */
+
+.top-search {
+    position: absolute;
+    top: var(--safe-top);
+    left: 12px;
+    right: 12px;
+    z-index: 30;
+    border-radius: 18px;
+    background: var(--color-surface);
+    box-shadow: var(--panel-shadow);
+}
+
+.top-search:focus-within {
+    box-shadow:
+        var(--panel-shadow),
+        0 0 0 3px var(--color-primary);
+}
+
+.top-search__field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 3.4rem;
+    padding: 0 6px 0 16px;
+}
+
+.top-search__icon {
+    flex: none;
+    width: 1.2rem;
+    height: 1.2rem;
+    fill: none;
+    stroke: var(--color-muted);
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.top-search__field input {
+    flex: 1;
+    min-width: 0;
+    min-height: var(--touch-min);
+    border: 0;
+    outline: none;
+    background: transparent;
+}
+
+.top-search__voice {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: var(--touch-min);
+    height: var(--touch-min);
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    color: var(--color-on-primary);
+    background: var(--color-primary-strong);
+}
+
+.top-search__voice:disabled {
+    animation: listening 1.2s ease-in-out infinite;
+}
+
+@keyframes listening {
+    50% {
+        box-shadow: 0 0 0 8px var(--color-primary-soft);
+    }
+}
+
+.top-search__voice svg {
+    width: 1.4rem;
+    height: 1.4rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.top-search__message {
+    margin: 0;
+    padding: 10px 16px 14px;
+    font-size: 0.9rem;
+    color: var(--color-muted);
+    border-top: 1px solid var(--color-border);
+}
+
+.top-search__message[role='alert'] {
+    color: var(--color-error-text);
+}
+
+.top-search__list {
+    max-height: 60vh;
+    margin: 0;
+    padding: 4px 8px 8px;
+    overflow-y: auto;
+    list-style: none;
+    border-top: 1px solid var(--color-border);
+}
+
+.top-search__result {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 3.4rem;
+    padding: 10px 10px;
+    border: 0;
+    border-radius: 12px;
+    text-align: left;
+    background: none;
+}
+
+.top-search__result:hover {
+    background: var(--color-soft);
+}
+
+.top-search__name {
+    font-weight: 700;
+}
+
+.top-search__detail {
+    font-size: 0.85rem;
+    color: var(--color-muted);
+}
+
+/* ---------- 내 위치 버튼 ---------- */
+
+.my-location-control {
+    position: absolute;
+    top: var(--safe-top);
+    right: 12px;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.app[data-tab='search'] .my-location-control {
+    top: calc(var(--safe-top) + 4.2rem);
+}
+
+.my-location-control__button {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    color: var(--color-text);
+    background: var(--color-surface);
+    box-shadow: var(--panel-shadow);
+}
+
+.my-location-control__button svg {
+    width: 1.4rem;
+    height: 1.4rem;
+}
+
+.my-location-control__button:disabled {
+    color: var(--color-muted);
+}
+
+.my-location-control__error {
+    max-width: 14rem;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    color: var(--color-error-text);
+    background: var(--color-error-bg);
+    box-shadow: var(--panel-shadow);
+}
+
+/* ---------- 아래 메뉴 ---------- */
+
+.menu-bar {
+    --menu-pad: 6px;
+
+    position: absolute;
+    right: var(--nav-gap);
+    bottom: calc(var(--nav-gap) + env(safe-area-inset-bottom));
+    left: var(--nav-gap);
+    z-index: 35;
+    display: grid;
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
+    box-sizing: border-box;
+    height: var(--nav-bar);
+    padding: var(--menu-pad);
+    border-radius: 26px;
+    background: var(--color-surface);
+    box-shadow:
+        0 1px 3px rgba(31, 41, 55, 0.1),
+        0 6px 20px rgba(31, 41, 55, 0.14);
+}
+
+:root[data-contrast='high'] .menu-bar {
+    box-shadow: 0 0 0 2px #ffffff;
+}
+
+/* 고른 메뉴 뒤 알약은 고른 자리로 미끄러진다(--menu-index 는 MenuBar 가 정함). */
+.menu-bar::before {
+    content: '';
+    position: absolute;
+    top: var(--menu-pad);
+    bottom: var(--menu-pad);
+    left: var(--menu-pad);
+    width: calc((100% - var(--menu-pad) * 2) / var(--menu-count));
+    border-radius: 20px;
+    background: var(--color-primary-soft);
+    transform: translateX(calc(var(--menu-index) * 100%));
+    transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+:root[data-contrast='high'] .menu-bar::before {
+    box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+
+.menu-bar__item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 0;
+    border: 0;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--color-muted);
+    background: none;
+}
+
+.menu-bar__item svg {
+    width: 1.4rem;
+    height: 1.4rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.menu-bar__item[aria-current='page'] {
+    font-weight: 700;
+    color: var(--color-primary-strong);
+}
+
+.menu-bar__item[aria-current='page'] svg {
+    stroke-width: 2.2;
+}
+
+/* ---------- 아래 시트 ---------- */
+
+.bottom-sheet {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    height: calc(var(--sheet-peek) + var(--nav-height));
+    padding-bottom: var(--nav-height);
+    border-radius: 24px 24px 0 0;
+    background: var(--color-surface);
+    box-shadow: var(--sheet-shadow);
+    transition: height 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bottom-sheet[data-open] {
+    height: var(--sheet-height);
+}
+
+.bottom-sheet__header {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    box-sizing: border-box;
+    height: var(--sheet-peek);
+    padding: 0 16px;
+    border: 0;
+    background: none;
+}
+
+.bottom-sheet__handle {
+    width: 40px;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--color-border);
+}
+
+.bottom-sheet__title {
+    font-weight: 700;
+}
+
+.bottom-sheet__body {
+    flex: 1;
+    min-height: 0;
+    padding: 0 16px 16px;
+    overflow-y: auto;
+}
+
+/* ---------- 길찾기 ---------- */
+
+.route-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.route-panel__endpoints {
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+}
+
+.route-panel__endpoint {
+    display: grid;
+    grid-template-columns: 2.6rem 1fr auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 3.4rem;
+    padding: 4px 8px 4px 14px;
+}
+
+.route-panel__endpoint + .route-panel__endpoint {
+    border-top: 1px solid var(--color-border);
+}
+
+.route-panel__endpoint dt {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--color-muted);
+}
+
+.route-panel__endpoint dd {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    margin: 0;
+    font-weight: 600;
+}
+
+.route-panel__address {
+    overflow: hidden;
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--color-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.route-panel__small {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding: 0 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: var(--color-surface);
+}
+
+.route-panel__primary {
+    min-height: 3.4rem;
+    border: 0;
+    border-radius: 16px;
+    font-weight: 700;
+    color: var(--color-on-primary);
+    background: var(--color-primary-strong);
+}
+
+.route-panel__primary:disabled {
+    color: var(--color-muted);
+    background: var(--color-soft);
+}
+
+.route-panel__error {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    color: var(--color-error-text);
+    background: var(--color-error-bg);
+}
+
+.route-panel__heading {
+    margin: 4px 0 0;
+    font-size: 0.9rem;
+    color: var(--color-muted);
+}
+
+.route-panel__options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* 고른 경로는 지도 위 굵은 선과 같은 주황 테두리. 고르지 않은 경로는 지도처럼 회색 */
+.route-panel__option {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    padding: 12px 14px 12px 18px;
+    border: 2px solid var(--color-border);
+    border-radius: 16px;
+    text-align: left;
+    background: var(--color-surface);
+}
+
+.route-panel__option[aria-pressed='true'] {
+    border-color: var(--color-primary-strong);
+    background: var(--color-primary-soft);
+    box-shadow: inset 6px 0 0 var(--color-primary-strong);
+}
+
+.route-panel__option-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.route-panel__option-detail {
+    font-size: 0.88rem;
+}
+
+.route-panel__option-note {
+    font-size: 0.8rem;
+    color: var(--color-muted);
+}
+
+/* ---------- 길안내 ---------- */
+
+.navigation-panel {
+    position: relative;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 62vh;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    border-radius: 24px 24px 0 0;
+    background: var(--color-surface);
+    box-shadow: var(--sheet-shadow);
+}
+
+.navigation-panel__route {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-muted);
+}
+
+.navigation-panel__now {
+    margin: 0;
+    font-size: 1.55rem;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+}
+
+.navigation-panel__last,
+.navigation-panel__address {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--color-muted);
+}
+
+.navigation-panel__error {
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    color: var(--color-error-text);
+    background: var(--color-error-bg);
+}
+
+.navigation-panel__actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.navigation-panel__actions button {
+    min-height: 3.4rem;
+    padding: 4px 6px;
+    border: 2px solid var(--color-border);
+    border-radius: 14px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    background: var(--color-surface);
+}
+
+.navigation-panel__actions .navigation-panel__stop {
+    border-color: var(--color-stop);
+    color: var(--color-stop);
+}
+
+/* ---------- 인파 인식 자리 ---------- */
+
+.vision-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 2px dashed var(--color-border);
+    border-radius: 16px;
+}
+
+.vision-panel[data-level] {
+    border-style: solid;
+}
+
+.vision-panel__title {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.vision-panel__meter {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.vision-panel__meter li {
+    padding: 4px 0;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: center;
+    color: var(--color-muted);
+    background: var(--color-soft);
+}
+
+.vision-panel[data-level='clear'] {
+    --level: var(--level-clear);
+}
+
+.vision-panel[data-level='caution'] {
+    --level: var(--level-caution);
+}
+
+.vision-panel[data-level='crowded'] {
+    --level: var(--level-crowded);
+}
+
+.vision-panel[data-level='danger'] {
+    --level: var(--level-danger);
+}
+
+.vision-panel__meter li[data-on] {
+    color: #ffffff;
+    background: var(--level);
+}
+
+.vision-panel__status {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+/* ---------- 접근성 설정 ---------- */
+
+.settings-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.settings-panel__group {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.settings-panel__group legend {
+    margin-bottom: 8px;
+    padding: 0;
+    font-weight: 700;
+}
+
+.settings-panel__choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.settings-panel__choice {
+    position: relative;
+}
+
+.settings-panel__choice input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.settings-panel__choice span {
+    display: flex;
+    align-items: center;
+    min-height: var(--touch-min);
+    padding: 0 1rem;
+    border: 2px solid var(--color-border);
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.settings-panel__choice input:checked + span {
+    border-color: var(--color-primary-strong);
+    color: var(--color-on-primary);
+    background: var(--color-primary-strong);
+}
+
+.settings-panel__choice input:focus-visible + span {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+.settings-panel__switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: var(--touch-min);
+    font-weight: 700;
+}
+
+.settings-panel__switch input {
+    position: relative;
+    flex: none;
+    width: 3.2rem;
+    height: 1.9rem;
+    margin: 0;
+    border: 2px solid var(--color-muted);
+    border-radius: 999px;
+    background: var(--color-soft);
+    appearance: none;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.settings-panel__switch input::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(1.9rem - 8px);
+    height: calc(1.9rem - 8px);
+    border-radius: 50%;
+    background: var(--color-muted);
+    transition: transform 0.2s ease;
+}
+
+.settings-panel__switch input:checked {
+    border-color: var(--color-primary-strong);
+    background: var(--color-primary-strong);
+}
+
+.settings-panel__switch input:checked::after {
+    background: var(--color-on-primary);
+    transform: translateX(1.3rem);
+}
+
+.settings-panel__try {
+    align-self: flex-start;
+    min-height: var(--touch-min);
+    padding: 0 1rem;
+    border: 2px solid var(--color-primary-strong);
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--color-primary-strong);
+    background: var(--color-surface);
+}
+
+.settings-panel__note {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--color-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}

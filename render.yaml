@@ -1,0 +1,29 @@
+# Render 블루프린트: 백엔드(FastAPI) 웹 서비스
+# Free 플랜은 디스크가 유지되지 않아, 빌드할 때마다 경로 점수 데이터(DEM·센서 위치)를
+# GitHub Release 에서 data/processed/ 로 내려받는다. 받지 못하면 빌드를 실패시킨다.
+services:
+  - type: web
+    name: sait-gil-api
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    rootDir: backend
+    buildCommand: >-
+      uv sync --frozen --no-dev &&
+      mkdir -p ../data/processed &&
+      curl -fsSL "$DEM_URL" -o ../data/processed/seoul_dem_5m.tif &&
+      curl -fsSL "$SENSORS_URL" -o ../data/processed/sdot_sensors.json
+    startCommand: uv run --no-sync fastapi run app/main.py --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # 경로 점수 데이터 (pipeline/ 결과를 Release 에 올린 주소)
+      - key: DEM_URL
+        value: https://github.com/P-NOVI/sait-gil/releases/download/data-v1/seoul_dem_5m.tif
+      - key: SENSORS_URL
+        value: https://github.com/P-NOVI/sait-gil/releases/download/data-v1/sdot_sensors.json
+      # 비밀 키는 Render 대시보드에서 입력한다
+      - key: TMAP_APP_KEY
+        sync: false
+      - key: SEOUL_API_KEY
+        sync: false
