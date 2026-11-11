@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     # 장소 검색 결과 수
     place_search_count: int = 10
     seoul_api_key: str = ""
+    # S-DoT 실시간 유동인구(서울 열린데이터광장 sDoTPeople, SEOUL_API_KEY).
+    # 이 주소는 HTTP 만 받는다. 키가 주소에 들어가므로 주소를 로그에 남기지 않는다.
+    sdot_base_url: str = "http://openapi.seoul.go.kr:8088"
+    sdot_timeout_s: float = 5.0
+    # 최신순으로 받을 행 수. 센서 백여 개가 10분마다 보내서 1,000행이 약 90분치다.
+    sdot_page_size: int = 1000
+    # 받은 센서 혼잡도를 다시 쓰는 시간(초). 실패한 빈 결과도 이 동안 쓴다.
+    sdot_cache_ttl_s: float = 60.0
+    # 이보다 오래전에 잰 값은 쓰지 않는다(분)
+    sdot_max_age_minutes: float = 60.0
     kma_api_key: str = ""
 
     database_url: str = ""
