@@ -6,6 +6,7 @@ dependencies = [
     "fastapi[standard]>=0.162.4",
     "httpx>=0.28.1",
     "pydantic-settings>=2.16.2",
+    "rasterio>=1.5.2",
 ]
 
 [tool.ruff]
