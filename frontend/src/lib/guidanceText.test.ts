@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { eventText, spokenDistance } from './guidanceText';
+import { eventText, spokenDistance, upcomingText } from './guidanceText';
 import type { RouteEvent } from './routeEvents';
 
 function event(
@@ -34,5 +34,23 @@ describe('eventText', () => {
         [event('destination'), 20, '20미터 앞에 목적지가 있습니다.'],
     ] as const)('%o, %d m', (given, remainingM, expected) => {
         expect(eventText(given, remainingM)).toBe(expected);
+    });
+});
+
+describe('upcomingText', () => {
+    const events: RouteEvent[] = [
+        { ...event('crosswalk'), distance_m: 120 },
+        { ...event('turn', 'left'), distance_m: 50 },
+    ];
+
+    it('지나지 않은 가장 가까운 이벤트를 남은 거리로 읽는다', () => {
+        expect(upcomingText(events, 20)).toBe('30미터 앞에서 왼쪽입니다.');
+        expect(upcomingText(events, 60)).toBe(
+            '60미터 앞에 횡단보도가 있습니다.',
+        );
+    });
+
+    it('남은 이벤트가 없으면 null', () => {
+        expect(upcomingText(events, 130)).toBeNull();
     });
 });

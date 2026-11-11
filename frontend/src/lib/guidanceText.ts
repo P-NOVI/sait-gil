@@ -61,3 +61,20 @@ export function eventText(
         ? `곧 ${place}입니다.`
         : `${ahead} 앞에 ${place}${particle} 있습니다.`;
 }
+
+/** 아직 지나지 않은 가장 가까운 이벤트의 안내 문장. 남은 이벤트가 없으면 null */
+export function upcomingText(
+    events: readonly RouteEvent[],
+    travelledM: number,
+): string | null {
+    const next = events
+        .filter((event) => event.distance_m >= travelledM)
+        .reduce<RouteEvent | null>(
+            (nearest, event) =>
+                !nearest || event.distance_m < nearest.distance_m
+                    ? event
+                    : nearest,
+            null,
+        );
+    return next ? eventText(next, next.distance_m - travelledM) : null;
+}
