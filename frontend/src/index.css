@@ -201,17 +201,21 @@ input::placeholder {
     background: var(--color-error-bg);
 }
 
-/* 도착 핀: 아래 끝이 도착점을 가리키는 물방울 */
-.map-pin--goal {
-    box-sizing: border-box;
-    width: 30px;
-    height: 30px;
-    margin-bottom: 6px;
-    border: 3px solid #ffffff;
-    border-radius: 50% 50% 50% 0;
-    background: var(--color-primary-strong);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-    transform: rotate(-45deg);
+/* 도착 핀: 아래 끝이 도착점을 가리킨다(MapView 의 GOAL_PIN). */
+.map-pin {
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+.map-pin path {
+    fill: var(--color-primary-strong);
+    stroke: #ffffff;
+    stroke-width: 2.5;
+}
+
+.map-pin circle {
+    fill: #ffffff;
 }
 
 .my-location-dot {

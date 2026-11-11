@@ -1,22 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { LngLat } from '../lib/geo';
-import {
-    hasMapKey,
-    loadKakaoMaps,
-    SEOUL_CITY_HALL,
-    toLatLng,
-} from '../lib/kakaoMap';
+import { hasMapKey, loadTmap, SEOUL_CITY_HALL, toLatLng } from '../lib/tmapMap';
 import type { LocationFix } from '../platform';
 
-// 카카오맵 확대 수준. 숫자가 작을수록 확대 (1~14)
-const DEFAULT_LEVEL = 4;
-// 안내 중 확대 수준. 걸으며 골목이 보이게 기본보다 한 단계 확대한다.
-const FOLLOW_LEVEL = 3;
-// 고른 경로: 흰 테두리 위에 대표색 선. 고르지 않은 경로는 아래에 회색으로 그린다.
-const CHOSEN_OUTLINE = { strokeWeight: 12, strokeColor: '#ffffff', zIndex: 3 };
-const CHOSEN_LINE = { strokeWeight: 8, strokeColor: '#b35400', zIndex: 4 };
+// Tmap 줌 레벨. 숫자가 클수록 확대 (0~19)
+const DEFAULT_ZOOM = 16;
+// 안내 중 줌 레벨. 걸으며 골목이 보이게 기본보다 한 단계 확대한다.
+const FOLLOW_ZOOM = 17;
+// 경로가 지도 가장자리·내 위치 버튼에 붙지 않게 두는 여백(px)
+const FIT_PADDING = 48;
+// 고른 경로: 흰 테두리를 두른 대표색 선. 고르지 않은 경로는 아래에 회색으로 그린다.
+const CHOSEN_LINE = {
+    strokeWeight: 8,
+    strokeColor: '#b35400',
+    outline: true,
+    outlineColor: '#ffffff',
+    zIndex: 4,
+};
 const OTHER_LINE = { strokeWeight: 6, strokeColor: '#8a929e', zIndex: 1 };
+const MY_LOCATION_COLOR = '#1a73e8';
+// 도착 핀(30×40). 아래 끝이 도착점을 가리킨다.
+const GOAL_PIN = {
+    html: '<svg class="map-pin" viewBox="0 0 30 40" width="30" height="40"><path d="M15 39C15 39 2 24.5 2 14a13 13 0 0 1 26 0c0 10.5-13 25-13 25Z"/><circle cx="15" cy="14" r="5"/></svg>',
+    width: 30,
+    height: 40,
+};
+const MY_LOCATION_DOT = {
+    html: '<div class="my-location-dot"></div>',
+    size: 20,
+};
 
 type MapViewProps = {
     /** 지도에 그릴 경로들. chosen 번째를 굵게 그린다. */
@@ -32,11 +45,11 @@ type MapViewProps = {
 
 type MapState =
     | { status: 'loading' }
-    | { status: 'ready'; map: kakao.maps.Map }
+    | { status: 'ready'; map: Tmapv2.Map }
     | { status: 'error'; message: string };
 
 /**
- * 카카오맵. 지도는 보조 화면이라 키가 없거나 불러오지 못해도 나머지 기능은 그대로 쓴다.
+ * Tmap 지도. 지도는 보조 화면이라 키가 없거나 불러오지 못해도 나머지 기능은 그대로 쓴다.
  * 화면낭독기는 지도를 건너뛰고(aria-hidden) 경로 목록·안내 문장을 읽는다.
  */
 export default function MapView(props: MapViewProps) {
@@ -47,10 +60,10 @@ export default function MapView(props: MapViewProps) {
             </div>
         );
     }
-    return <KakaoMap {...props} />;
+    return <TmapView {...props} />;
 }
 
-function KakaoMap({
+function TmapView({
     paths,
     chosen,
     goal,
@@ -65,16 +78,20 @@ function KakaoMap({
 
     useEffect(() => {
         let cancelled = false;
-        loadKakaoMaps()
-            .then((maps) => {
+        let created: Tmapv2.Map | null = null;
+        loadTmap()
+            .then((tmap) => {
                 if (cancelled || !container.current) {
                     return;
                 }
-                const map = new maps.Map(container.current, {
+                // 크기를 주지 않으면 div 크기를 쓴다. '100%' 는 div 가 아니라 창 크기로 잡힌다.
+                created = new tmap.Map(container.current, {
                     center: toLatLng(SEOUL_CITY_HALL),
-                    level: DEFAULT_LEVEL,
+                    zoom: DEFAULT_ZOOM,
+                    zoomControl: false,
+                    httpsMode: true,
                 });
-                setState({ status: 'ready', map });
+                setState({ status: 'ready', map: created });
             })
             .catch((error: unknown) => {
                 if (!cancelled) {
@@ -89,19 +106,21 @@ function KakaoMap({
             });
         return () => {
             cancelled = true;
+            created?.destroy();
         };
     }, []);
 
     const map = state.status === 'ready' ? state.map : null;
 
-    // 시트를 펴고 접어 지도 크기가 바뀌면 카카오맵을 다시 그린다.
+    // 시트를 펴고 접어 지도 크기가 바뀌면 Tmap 에 새 크기를 알려 다시 그린다.
     useEffect(() => {
         const element = container.current;
         if (!map || !element) {
             return;
         }
-        const observer = new ResizeObserver(() => {
-            map.relayout();
+        const observer = new ResizeObserver(([entry]) => {
+            const { width, height } = entry.contentRect;
+            map.resize(Math.round(width), Math.round(height));
             setResized((count) => count + 1);
         });
         observer.observe(element);
@@ -113,26 +132,17 @@ function KakaoMap({
         if (!map || paths.length === 0) {
             return;
         }
-        const lines: kakao.maps.Polyline[] = [];
-        paths.forEach((path, index) => {
-            const latLngs = path.map(toLatLng);
-            const styles =
-                index === chosen ? [CHOSEN_OUTLINE, CHOSEN_LINE] : [OTHER_LINE];
-            for (const style of styles) {
-                const line = new kakao.maps.Polyline({
-                    path: latLngs,
-                    strokeOpacity: 1,
-                    strokeStyle: 'solid',
-                    ...style,
-                });
-                line.setMap(map);
-                if (index !== chosen && onPathClick) {
-                    kakao.maps.event.addListener(line, 'click', () =>
-                        onPathClick(index),
-                    );
-                }
-                lines.push(line);
+        const lines = paths.map((path, index) => {
+            const line = new Tmapv2.Polyline({
+                path: path.map(toLatLng),
+                strokeOpacity: 1,
+                ...(index === chosen ? CHOSEN_LINE : OTHER_LINE),
+                map,
+            });
+            if (index !== chosen && onPathClick) {
+                line.addListener('click', () => onPathClick(index));
             }
+            return line;
         });
         return () => lines.forEach((line) => line.setMap(null));
     }, [map, paths, chosen, onPathClick]);
@@ -144,9 +154,10 @@ function KakaoMap({
         if (!map || paths.length === 0 || following) {
             return;
         }
-        const bounds = new kakao.maps.LatLngBounds();
+        // 빈 영역에 점을 더해 만든다. 생성자에 점 하나를 넘기면 영역이 어긋난다.
+        const bounds = new Tmapv2.LatLngBounds();
         paths.flat().forEach((point) => bounds.extend(toLatLng(point)));
-        map.setBounds(bounds);
+        map.fitBounds(bounds, FIT_PADDING);
     }, [map, paths, following, resized]);
 
     // 도착 핀
@@ -154,12 +165,13 @@ function KakaoMap({
         if (!map || !goal) {
             return;
         }
-        const marker = new kakao.maps.CustomOverlay({
+        const marker = new Tmapv2.Marker({
             position: toLatLng(goal),
-            content: '<div class="map-pin map-pin--goal"></div>',
-            yAnchor: 1,
+            iconHTML: GOAL_PIN.html,
+            iconSize: new Tmapv2.Size(GOAL_PIN.width, GOAL_PIN.height),
+            offset: new Tmapv2.Point(GOAL_PIN.width / 2, GOAL_PIN.height),
+            map,
         });
-        marker.setMap(map);
         return () => marker.setMap(null);
     }, [map, goal]);
 
@@ -169,22 +181,25 @@ function KakaoMap({
             return;
         }
         const position = toLatLng(myLocation.position);
-        const dot = new kakao.maps.CustomOverlay({
-            position,
-            content: '<div class="my-location-dot"></div>',
-            zIndex: 5,
-        });
-        const circle = new kakao.maps.Circle({
+        const circle = new Tmapv2.Circle({
             center: position,
             radius: myLocation.accuracy,
             strokeWeight: 1,
-            strokeColor: '#1a73e8',
+            strokeColor: MY_LOCATION_COLOR,
             strokeOpacity: 0.4,
-            fillColor: '#1a73e8',
+            fillColor: MY_LOCATION_COLOR,
             fillOpacity: 0.12,
+            map,
         });
-        dot.setMap(map);
-        circle.setMap(map);
+        const { html, size } = MY_LOCATION_DOT;
+        const dot = new Tmapv2.Marker({
+            position,
+            iconHTML: html,
+            iconSize: new Tmapv2.Size(size, size),
+            offset: new Tmapv2.Point(size / 2, size / 2),
+            zIndex: 5,
+            map,
+        });
         return () => {
             dot.setMap(null);
             circle.setMap(null);
@@ -204,8 +219,8 @@ function KakaoMap({
         if (!map || !follow) {
             return;
         }
-        if (map.getLevel() > FOLLOW_LEVEL) {
-            map.setLevel(FOLLOW_LEVEL);
+        if (map.getZoom() < FOLLOW_ZOOM) {
+            map.setZoom(FOLLOW_ZOOM);
         }
         map.panTo(toLatLng(follow));
     }, [map, follow, resized]);

@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
     };
     return {
         plugins: [react()],
-        // 카카오 JavaScript SDK 도메인에 등록한 포트. 이미 쓰이면 다른 포트로 넘어가지 않고 실패한다.
+        // 개발 주소를 5173 으로 고정한다(백엔드 기본 CORS 허용 주소). 이미 쓰이면 다른 포트로 넘어가지 않고 실패한다.
         server: { port: 5173, strictPort: true, proxy },
         preview: { proxy },
     };
