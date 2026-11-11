@@ -33,7 +33,8 @@ services:
   - type: web
     name: sait-gil-web
     runtime: static
-    branch: dev
+    # 백엔드와 같이 main 을 배포한다 (#19)
+    branch: main
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
