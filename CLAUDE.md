@@ -1,6 +1,40 @@
 # sait-gil
 
-프로젝트 개요·폴더 구성·명령어는 정해지면 추가한다.
+축제·역 출구처럼 인파가 몰리는 곳에서 시각장애인이 사람 사이를 안전하게 걷도록 돕는 음성 보행 안내 PWA다.
+
+## 폴더 구성
+
+| 폴더 | 내용 |
+| --- | --- |
+| `frontend/` | React 19 · Vite · TypeScript PWA (음성·길안내·카메라 인파 인식) |
+| `backend/` | FastAPI · Python 3.12 (Tmap 프록시, 혼잡도, 행사, 사용자 API) |
+| `ml/` | YOLO26n 인파 파인튜닝·ONNX 변환, 혼잡 예측 |
+| `pipeline/` | 인구 센서·학습 데이터 전처리 |
+| `.github/` | 이슈·PR 템플릿, Action, 수집·예측 배치 워크플로 |
+
+## 명령어
+
+백엔드 (`backend/`, uv 사용)
+
+```bash
+uv sync
+uv run fastapi dev app/main.py
+uv run ruff check . && uv run ruff format --check .
+uv run pytest
+```
+
+프론트엔드 (`frontend/`, npm 사용)
+
+```bash
+npm install
+npm run dev
+npm run lint && npm run format:check
+npm test
+npm run build
+```
+
+- 각 폴더의 `.env.example`을 복사해 `.env`를 만든다.
+- 테스트는 외부 API를 실제로 호출하지 않고 mock을 쓴다.
 
 ## 코드 스타일
 
