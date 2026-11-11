@@ -14,6 +14,13 @@ class Settings(BaseSettings):
 
     tmap_app_key: str = ""
     tmap_base_url: str = "https://apis.openapi.sk.com/tmap"
+    tmap_timeout_s: float = 10.0
+    # 경로 후보를 받을 보행자 경로 검색 옵션. 첫 번째로 받은 경로가 추천 경로다.
+    # 0 추천, 4 추천+대로우선, 10 최단, 30 최단거리+계단제외.
+    # 길찾기 한 번에 이 개수만큼 경로 호출(Free 하루 1,000건)을 쓴다.
+    tmap_search_options: list[int] = [0, 4, 10, 30]
+    # 장소 검색 결과 수
+    place_search_count: int = 10
     seoul_api_key: str = ""
     kma_api_key: str = ""
 
