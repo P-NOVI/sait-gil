@@ -6,13 +6,13 @@
 
 | 폴더 | 내용 |
 | --- | --- |
-| `frontend/` | React 19 · Vite · TypeScript PWA (음성·길안내·카메라 인파 인식) |
+| `frontend/` | React 19 · Vite · TypeScript PWA (화면, 음성·길안내, 알림 중재) |
 | `frontend/src/platform/` | 음성 입출력·진동·화면 유지 등 기기 기능 (웹은 Web API, 앱은 Capacitor 플러그인) |
-| `frontend/android/` | Capacitor Android 프로젝트 |
+| `frontend/android/` | Capacitor Android 프로젝트. YOLO26n 비전은 여기서 Kotlin 플러그인(CameraX · LiteRT)으로 돌린다 |
 | `backend/` | FastAPI · Python 3.12 (Tmap 프록시, 혼잡도, 행사, 사용자 API) |
 | `backend/app/services/` | Tmap·서울시·기상청 호출과 `core` 계산을 엮는 서비스 |
 | `backend/core/` | 외부 API·DB 없는 순수 계산 (경로 선 위 점 찍기, DEM 경사, S-DoT 혼잡 매칭, 후보 경로 점수) |
-| `ml/` | YOLO26n 인파 파인튜닝·ONNX 변환, 혼잡 예측 |
+| `ml/` | YOLO26n 인파 파인튜닝·LiteRT(`.tflite`) 변환, 혼잡 예측 |
 | `pipeline/` | DEM 생성, S-DoT 센서 위치, 인구·학습 데이터 전처리 |
 | `data/` | `pipeline/`이 만드는 데이터 (커밋하지 않음). 백엔드는 `data/processed/`를 읽는다 |
 | `.github/` | 이슈·PR 템플릿, Action, 수집·예측 배치 워크플로 |
@@ -62,6 +62,7 @@ npm run cap:android
 - 각 폴더의 `.env.example`을 복사해 `.env`를 만든다.
 - 기기 기능(음성 입출력, 진동, 화면 유지, 위치 등)은 화면 코드에서 Web API를 직접 부르지 않고 `src/platform/`을 통해서만 쓴다.
 - API 호출은 상대 경로 대신 `apiUrl()`을 쓴다. 앱에서는 주소가 `https://localhost`라 상대 경로가 백엔드로 가지 않는다.
+- 카메라 영상은 기기 밖으로 보내지 않는다. Kotlin 비전 플러그인은 추론 결과(사람 박스 등)만 웹 쪽으로 넘긴다.
 - 마일스톤마다 실제 Android 기기에서 앱으로 한 번씩 확인한다.
 - 테스트는 외부 API를 실제로 호출하지 않고 mock을 쓴다.
 

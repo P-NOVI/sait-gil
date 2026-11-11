@@ -19,6 +19,7 @@ data/
 *.db
 *.pt
 *.onnx
+*.tflite
 *.tif
 
 # OS·에디터
