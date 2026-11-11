@@ -1,12 +1,14 @@
 # sait-gil
 
-축제·역 출구처럼 인파가 몰리는 곳에서 시각장애인이 사람 사이를 안전하게 걷도록 돕는 음성 보행 안내 PWA다.
+축제·역 출구처럼 인파가 몰리는 곳에서 시각장애인이 사람 사이를 안전하게 걷도록 돕는 음성 보행 안내 앱이다. PWA로 개발하고 Capacitor로 묶어 Android(이후 iOS) 앱으로 배포한다.
 
 ## 폴더 구성
 
 | 폴더 | 내용 |
 | --- | --- |
 | `frontend/` | React 19 · Vite · TypeScript PWA (음성·길안내·카메라 인파 인식) |
+| `frontend/src/platform/` | 음성 입출력·진동·화면 유지 등 기기 기능 (웹은 Web API, 앱은 Capacitor 플러그인) |
+| `frontend/android/` | Capacitor Android 프로젝트 |
 | `backend/` | FastAPI · Python 3.12 (Tmap 프록시, 혼잡도, 행사, 사용자 API) |
 | `ml/` | YOLO26n 인파 파인튜닝·ONNX 변환, 혼잡 예측 |
 | `pipeline/` | 인구 센서·학습 데이터 전처리 |
@@ -33,7 +35,17 @@ npm test
 npm run build
 ```
 
+앱 (`frontend/`, Android Studio 필요)
+
+```bash
+npm run cap:sync
+npm run cap:android
+```
+
 - 각 폴더의 `.env.example`을 복사해 `.env`를 만든다.
+- 기기 기능(음성 입출력, 진동, 화면 유지, 위치 등)은 화면 코드에서 Web API를 직접 부르지 않고 `src/platform/`을 통해서만 쓴다.
+- API 호출은 상대 경로 대신 `apiUrl()`을 쓴다. 앱에서는 주소가 `https://localhost`라 상대 경로가 백엔드로 가지 않는다.
+- 마일스톤마다 실제 Android 기기에서 앱으로 한 번씩 확인한다.
 - 테스트는 외부 API를 실제로 호출하지 않고 mock을 쓴다.
 
 ## 코드 스타일
