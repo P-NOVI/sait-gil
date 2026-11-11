@@ -41,3 +41,10 @@ export const ALERT_COOLDOWN_MS: Readonly<Record<AlertLevel, number>> = {
     route: 10_000,
     crowd: 30_000,
 };
+
+// 알림 종류별 진동 패턴 [진동, 멈춤, 진동, …](ms). 접근성 설정의 진동 세기만큼 늘이고 줄인다.
+export const VIBRATION_PATTERNS: Readonly<Record<AlertLevel, number[]>> = {
+    danger: [400, 100, 400, 100, 400],
+    route: [200, 100, 200],
+    crowd: [300],
+};
