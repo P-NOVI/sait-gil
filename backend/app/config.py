@@ -27,6 +27,21 @@ class Settings(BaseSettings):
     dem_path: Path = PROCESSED_DIR / "seoul_dem_5m.tif"
     sensors_path: Path = PROCESSED_DIR / "sdot_sensors.json"
 
+    # 경로 점수 기준 (CLAUDE.md "경로 결정 방식"). 초안 값이다.
+    # 경로 선 위에 점을 찍는 간격
+    route_sample_interval_m: float = 10.0
+    # 점 주변 S-DoT 센서를 찾는 반경, 혼잡도 1 로 보는 10분 유동인구 (배리어프리와 같다)
+    congestion_radius_m: float = 50.0
+    congestion_full_count: float = 300.0
+    # 혼잡도가 이 값 이상으로 올라서는 곳을 혼잡 구간 시작으로 알린다
+    crowded_level: float = 0.5
+    # 1/50~1/12 구간, 1/12 초과 구간 길이에 곱하는 경사 점수 배율
+    slope_moderate_weight: float = 0.5
+    slope_hard_weight: float = 2.0
+    # 후보가 추천 경로보다 점수로 이만큼 넘게 낫지 않으면 따로 띄우지 않는다
+    route_congestion_margin_m: float = 10.0
+    route_slope_margin_m: float = 10.0
+
 
 @lru_cache
 def get_settings() -> Settings:
