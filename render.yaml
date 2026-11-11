@@ -1,4 +1,4 @@
-# Render 블루프린트: 백엔드(FastAPI) 웹 서비스
+# Render 블루프린트: 백엔드(FastAPI) 웹 서비스와 프론트(React) 정적 사이트
 # Free 플랜은 디스크가 유지되지 않아, 빌드할 때마다 경로 점수 데이터(DEM·센서 위치)를
 # GitHub Release 에서 data/processed/ 로 내려받는다. 받지 못하면 빌드를 실패시킨다.
 services:
@@ -26,4 +26,25 @@ services:
       - key: TMAP_APP_KEY
         sync: false
       - key: SEOUL_API_KEY
+        sync: false
+
+  # 프론트: React 빌드 결과(dist)를 정적 사이트로 올린다.
+  # /api 요청은 백엔드로 넘겨 같은 주소에서 부르므로, 웹은 VITE_API_BASE_URL 과 CORS 설정이 필요 없다.
+  - type: web
+    name: sait-gil-web
+    runtime: static
+    branch: dev
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://sait-gil-api.onrender.com/api/*
+    envVars:
+      # Vite 8 은 Node 20.19 이상이 필요하다. 로컬 개발과 같은 24 를 쓴다.
+      - key: NODE_VERSION
+        value: "24"
+      # 카카오맵 JavaScript 키(빌드 결과에 들어가 브라우저에 보이는 값). Render 대시보드에서 넣는다.
+      - key: VITE_KAKAO_MAP_APP_KEY
         sync: false
