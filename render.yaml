@@ -46,6 +46,6 @@ services:
       # Vite 8 은 Node 20.19 이상이 필요하다. 로컬 개발과 같은 24 를 쓴다.
       - key: NODE_VERSION
         value: "24"
-      # 카카오맵 JavaScript 키(빌드 결과에 들어가 브라우저에 보이는 값). Render 대시보드에서 넣는다.
-      - key: VITE_KAKAO_MAP_APP_KEY
+      # Tmap 지도 JavaScript 키(빌드 결과에 들어가 브라우저에 보이는 값). Render 대시보드에서 넣는다.
+      - key: VITE_TMAP_APP_KEY
         sync: false
