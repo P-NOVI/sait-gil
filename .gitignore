@@ -19,6 +19,7 @@ data/
 *.db
 *.pt
 *.onnx
+*.tif
 
 # OS·에디터
 .DS_Store

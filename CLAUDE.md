@@ -10,9 +10,24 @@
 | `frontend/src/platform/` | 음성 입출력·진동·화면 유지 등 기기 기능 (웹은 Web API, 앱은 Capacitor 플러그인) |
 | `frontend/android/` | Capacitor Android 프로젝트 |
 | `backend/` | FastAPI · Python 3.12 (Tmap 프록시, 혼잡도, 행사, 사용자 API) |
+| `backend/app/services/` | Tmap·서울시·기상청 호출과 `core` 계산을 엮는 서비스 |
+| `backend/core/` | 외부 API·DB 없는 순수 계산 (경로 선 위 점 찍기, DEM 경사, S-DoT 혼잡 매칭, 후보 경로 점수) |
 | `ml/` | YOLO26n 인파 파인튜닝·ONNX 변환, 혼잡 예측 |
-| `pipeline/` | 인구 센서·학습 데이터 전처리 |
+| `pipeline/` | DEM 생성, S-DoT 센서 위치, 인구·학습 데이터 전처리 |
+| `data/` | `pipeline/`이 만드는 데이터 (커밋하지 않음). 백엔드는 `data/processed/`를 읽는다 |
 | `.github/` | 이슈·PR 템플릿, Action, 수집·예측 배치 워크플로 |
+
+## 경로 결정 방식
+
+경로는 Tmap 보행자 경로를 후보로 받아 우리가 점수를 매겨 고른다. 자체 도로망 그래프로 경로를 계산하지 않는다.
+
+1. Tmap에 검색 옵션·경유지를 바꿔 후보 경로를 여러 개 요청한다.
+2. 후보마다 경로 선 위에 일정 간격으로 점을 찍는다.
+3. 각 점에서 DEM 고도를 읽어 경사를, 주변 S-DoT 센서로 혼잡도를 구한다.
+4. 거리·경사·혼잡 점수로 후보를 고르고, 회전·횡단보도 안내는 고른 경로의 Tmap 응답을 쓴다.
+
+- 점 간격, 센서 반경, 점수 가중치는 코드에 직접 쓰지 않고 설정으로 둔다.
+- Tmap 경로 호출은 Free 기준 하루 1,000건이다. 후보 수와 재탐색 간격을 정할 때 이 한도를 고려한다.
 
 ## 명령어
 
