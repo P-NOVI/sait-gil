@@ -1,0 +1,47 @@
+# YOLO26n 통합 탐지 클래스. 변환 스크립트·data.yaml·Kotlin 플러그인이 모두 이 순서를 따른다.
+# id 를 바꾸면 이미 만든 라벨과 앱 쪽 클래스 목록도 같이 바꿔야 한다.
+names:
+  0: person
+  1: bicycle
+  2: kickboard
+  3: motorcycle
+  4: car
+  5: bollard
+  6: pole
+  7: barrier
+  8: ped_signal_red
+  9: ped_signal_green
+
+# 데이터셋별 원래 클래스 이름 → 위 통일 이름. 여기 없는 클래스는 버린다.
+sources:
+  coco:
+    person: person
+    bicycle: bicycle
+    motorcycle: motorcycle
+    car: car
+    # traffic light 는 색 구분이 없어 보행 신호 클래스로 쓰지 않는다.
+  crowdhuman:
+    person: person
+  # AI Hub 인도 보행 영상: 받은 데이터의 클래스 이름을 확인하고 맞춘다.
+  aihub_sidewalk:
+    person: person
+    bicycle: bicycle
+    scooter: kickboard
+    motorcycle: motorcycle
+    car: car
+    bollard: bollard
+    pole: pole
+    barricade: barrier
+    movable_signage: barrier
+  # 직접 촬영해 Roboflow·CVAT 로 라벨링한 데이터는 통일 이름을 그대로 쓴다.
+  custom:
+    person: person
+    bicycle: bicycle
+    kickboard: kickboard
+    motorcycle: motorcycle
+    car: car
+    bollard: bollard
+    pole: pole
+    barrier: barrier
+    ped_signal_red: ped_signal_red
+    ped_signal_green: ped_signal_green
