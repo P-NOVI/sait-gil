@@ -1,21 +1,42 @@
-import { type FormEvent, type RefObject, useState } from 'react';
+import {
+    type FormEvent,
+    type RefObject,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 
 import type { RequestState } from '../hooks/useRequest';
 import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
+import {
+    cleanSpokenQuery,
+    NO_MORE_PLACES_TEXT,
+    NO_PLACES_TEXT,
+    placeQuestion,
+} from '../lib/voiceSearch';
 
 type TopSearchProps = {
     inputRef: RefObject<HTMLInputElement | null>;
     results: RequestState<Place[]>;
-    onSearch: (query: string) => void;
+    /** 검색 결과를 돌려준다. 실패하면 null */
+    onSearch: (query: string) => Promise<Place[] | null>;
     /** 말로 목적지를 넣는다. 알아들은 말을 돌려주고, 못 알아들으면 null */
     onListen: () => Promise<string | null>;
     onPick: (place: Place) => void;
+    /** 말로 찾은 결과를 음성으로 읽는다. */
+    onAnnounce: (text: string) => void;
+    /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
+    voice: boolean;
 };
+
+/** 말로 찾은 결과 중 지금 묻고 있는 것 */
+type Confirming = { places: Place[]; index: number };
 
 /**
  * 지도 위 검색창. 입력하거나 말한 목적지를 검색하고 결과에서 고른다.
  * 결과 수는 화면낭독기가 읽도록 status 로 알린다.
+ * 말로 찾으면 첫 결과부터 하나씩 읽고 이곳으로 갈지 묻는다.
  */
 export default function TopSearch({
     inputRef,
@@ -23,30 +44,69 @@ export default function TopSearch({
     onSearch,
     onListen,
     onPick,
+    onAnnounce,
+    voice,
 }: TopSearchProps) {
     const [query, setQuery] = useState('');
     const [listening, setListening] = useState(false);
     const [listenFailed, setListenFailed] = useState(false);
+    const [confirming, setConfirming] = useState<Confirming | null>(null);
+    const confirmButton = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        confirmButton.current?.focus();
+    }, [confirming]);
+
+    const ask = (places: Place[], index: number) => {
+        setConfirming({ places, index });
+        onAnnounce(placeQuestion(places[index], index, places.length));
+    };
 
     const submit = (event: FormEvent) => {
         event.preventDefault();
+        setConfirming(null);
         if (query.trim()) {
-            onSearch(query.trim());
+            void onSearch(query.trim());
         }
     };
 
     const listen = async () => {
         setListening(true);
         setListenFailed(false);
+        setConfirming(null);
         const heard = await onListen().catch(() => null);
         setListening(false);
-        if (heard) {
-            setQuery(heard);
-            onSearch(heard);
-        } else {
+        if (!heard) {
             setListenFailed(true);
+            return;
+        }
+        const spoken = cleanSpokenQuery(heard);
+        setQuery(spoken);
+        const found = await onSearch(spoken);
+        if (found === null) {
+            return;
+        }
+        if (found.length === 0) {
+            onAnnounce(NO_PLACES_TEXT);
+            return;
+        }
+        ask(found, 0);
+    };
+
+    const next = () => {
+        if (!confirming) {
+            return;
+        }
+        const index = confirming.index + 1;
+        if (index < confirming.places.length) {
+            ask(confirming.places, index);
+        } else {
+            setConfirming(null);
+            onAnnounce(NO_MORE_PLACES_TEXT);
         }
     };
+
+    const current = confirming ? confirming.places[confirming.index] : null;
 
     const places =
         results.status === 'success'
@@ -113,7 +173,46 @@ export default function TopSearch({
                     검색 결과가 없습니다. 다른 이름으로 찾아보세요.
                 </p>
             )}
-            {places.length > 0 && (
+            {confirming && current && (
+                <section
+                    className="top-search__confirm"
+                    aria-label="말로 찾은 목적지 확인"
+                >
+                    <p
+                        className="top-search__question"
+                        aria-live={voice ? 'off' : 'polite'}
+                    >
+                        {placeQuestion(
+                            current,
+                            confirming.index,
+                            confirming.places.length,
+                        )}
+                    </p>
+                    <div className="top-search__answers">
+                        <button
+                            ref={confirmButton}
+                            type="button"
+                            className="top-search__yes"
+                            onClick={() => {
+                                setConfirming(null);
+                                onPick(current);
+                            }}
+                        >
+                            여기로 갈게요
+                        </button>
+                        <button type="button" onClick={next}>
+                            다음 결과
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setConfirming(null)}
+                        >
+                            목록 보기
+                        </button>
+                    </div>
+                </section>
+            )}
+            {!confirming && places.length > 0 && (
                 <ul className="top-search__list" aria-label="검색 결과">
                     {places.map((place) => (
                         <li key={`${place.name}-${place.position.join(',')}`}>

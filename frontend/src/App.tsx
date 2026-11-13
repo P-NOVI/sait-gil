@@ -291,13 +291,12 @@ export default function App() {
                             inputRef={searchInput}
                             results={places.state}
                             onSearch={(query) =>
-                                void places.run(
-                                    query,
-                                    myLocation?.position ?? null,
-                                )
+                                places.run(query, myLocation?.position ?? null)
                             }
                             onListen={listenOnce}
                             onPick={pickPlace}
+                            onAnnounce={(text) => announce(text)}
+                            voice={settings.voice}
                         />
                     )}
                     <MyLocationControl
