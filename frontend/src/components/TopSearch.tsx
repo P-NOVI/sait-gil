@@ -2,6 +2,7 @@ import {
     type FormEvent,
     type RefObject,
     useEffect,
+    useId,
     useRef,
     useState,
 } from 'react';
@@ -10,10 +11,11 @@ import type { RequestState } from '../hooks/useRequest';
 import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
 import {
-    cleanSpokenQuery,
     NO_MORE_PLACES_TEXT,
     NO_PLACES_TEXT,
     placeQuestion,
+    searchSpoken,
+    spokenQueries,
 } from '../lib/voiceSearch';
 
 type TopSearchProps = {
@@ -51,20 +53,40 @@ export default function TopSearch({
     const [listening, setListening] = useState(false);
     const [listenFailed, setListenFailed] = useState(false);
     const [confirming, setConfirming] = useState<Confirming | null>(null);
+    // 말로 찾다가 생긴 안내. 음성을 끄고 화면낭독기로 쓰는 사람도 알 수 있게 화면에 둔다.
+    const [notice, setNotice] = useState<string | null>(null);
     const confirmButton = useRef<HTMLButtonElement>(null);
+    const resultList = useRef<HTMLUListElement>(null);
+    // 확인 화면을 닫을 때 포커스를 결과 목록(없으면 검색창)으로 옮긴다.
+    const restoreFocus = useRef(false);
+    const questionId = useId();
 
     useEffect(() => {
-        confirmButton.current?.focus();
-    }, [confirming]);
+        if (confirming) {
+            confirmButton.current?.focus();
+            return;
+        }
+        if (restoreFocus.current) {
+            restoreFocus.current = false;
+            const first = resultList.current?.querySelector('button');
+            (first ?? inputRef.current)?.focus();
+        }
+    }, [confirming, inputRef]);
 
     const ask = (places: Place[], index: number) => {
         setConfirming({ places, index });
         onAnnounce(placeQuestion(places[index], index, places.length));
     };
 
+    const closeConfirm = () => {
+        restoreFocus.current = true;
+        setConfirming(null);
+    };
+
     const submit = (event: FormEvent) => {
         event.preventDefault();
         setConfirming(null);
+        setNotice(null);
         if (query.trim()) {
             void onSearch(query.trim());
         }
@@ -74,23 +96,35 @@ export default function TopSearch({
         setListening(true);
         setListenFailed(false);
         setConfirming(null);
+        setNotice(null);
         const heard = await onListen().catch(() => null);
         setListening(false);
         if (!heard) {
             setListenFailed(true);
             return;
         }
-        const spoken = cleanSpokenQuery(heard);
-        setQuery(spoken);
-        const found = await onSearch(spoken);
-        if (found === null) {
+        const queries = spokenQueries(heard);
+        setQuery(queries[0]);
+        let searched = '';
+        const found = await searchSpoken(queries, (candidate) => {
+            searched = candidate;
+            return onSearch(candidate);
+        });
+        if (!found) {
             return;
         }
-        if (found.length === 0) {
+        // Tmap 결과로 고른 검색어로 검색창을 고친다.
+        setQuery(found.query);
+        if (found.query !== searched) {
+            // 목록에도 고른 검색어의 결과가 보이게 다시 검색한다.
+            await onSearch(found.query);
+        }
+        if (found.places.length === 0) {
+            // 화면에는 아래 "검색 결과가 없습니다" 안내가 이미 뜬다.
             onAnnounce(NO_PLACES_TEXT);
             return;
         }
-        ask(found, 0);
+        ask(found.places, 0);
     };
 
     const next = () => {
@@ -101,8 +135,9 @@ export default function TopSearch({
         if (index < confirming.places.length) {
             ask(confirming.places, index);
         } else {
-            setConfirming(null);
+            setNotice(NO_MORE_PLACES_TEXT);
             onAnnounce(NO_MORE_PLACES_TEXT);
+            closeConfirm();
         }
     };
 
@@ -173,15 +208,15 @@ export default function TopSearch({
                     검색 결과가 없습니다. 다른 이름으로 찾아보세요.
                 </p>
             )}
+            <div aria-live={voice ? 'off' : 'polite'}>
+                {notice && <p className="top-search__message">{notice}</p>}
+            </div>
             {confirming && current && (
                 <section
                     className="top-search__confirm"
                     aria-label="말로 찾은 목적지 확인"
                 >
-                    <p
-                        className="top-search__question"
-                        aria-live={voice ? 'off' : 'polite'}
-                    >
+                    <p id={questionId} className="top-search__question">
                         {placeQuestion(
                             current,
                             confirming.index,
@@ -193,6 +228,7 @@ export default function TopSearch({
                             ref={confirmButton}
                             type="button"
                             className="top-search__yes"
+                            aria-describedby={voice ? undefined : questionId}
                             onClick={() => {
                                 setConfirming(null);
                                 onPick(current);
@@ -203,17 +239,18 @@ export default function TopSearch({
                         <button type="button" onClick={next}>
                             다음 결과
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => setConfirming(null)}
-                        >
+                        <button type="button" onClick={closeConfirm}>
                             목록 보기
                         </button>
                     </div>
                 </section>
             )}
             {!confirming && places.length > 0 && (
-                <ul className="top-search__list" aria-label="검색 결과">
+                <ul
+                    ref={resultList}
+                    className="top-search__list"
+                    aria-label="검색 결과"
+                >
                     {places.map((place) => (
                         <li key={`${place.name}-${place.position.join(',')}`}>
                             <button

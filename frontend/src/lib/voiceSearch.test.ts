@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Place } from './placeApi';
-import { cleanSpokenQuery, placeQuestion } from './voiceSearch';
+import { placeQuestion, searchSpoken, spokenQueries } from './voiceSearch';
 
 const station: Place = {
     name: '서울역',
@@ -10,26 +10,93 @@ const station: Place = {
     distance_m: 320,
 };
 
-describe('cleanSpokenQuery', () => {
+const named = (name: string): Place => ({ ...station, name });
+
+describe('spokenQueries', () => {
     it.each([
-        ['서울역으로 가 줘', '서울역'],
-        ['코엑스로 가줘.', '코엑스'],
-        ['명동역까지 안내해 줘', '명동역'],
-        ['시청 가고 싶어요', '시청'],
-        ['광화문 길 찾아 줘', '광화문'],
-        ['남산타워 어디야?', '남산타워'],
-        ['을지로4가 가줘', '을지로4가'],
-    ])('"%s"는 "%s"로 검색한다', (heard, query) => {
-        expect(cleanSpokenQuery(heard)).toBe(query);
+        ['서울역으로 가 줘', ['서울역']],
+        ['명동역까지 안내해 줘', ['명동역']],
+        ['명동에 가고 싶어요', ['명동']],
+        ['시청 가고 싶어요', ['시청']],
+        ['광화문 길 찾아 줘', ['광화문']],
+        ['남산타워 어디야?', ['남산타워']],
+        ['을지로4가 가줘', ['을지로4가']],
+    ])('"%s"는 %j로 검색한다', (heard, queries) => {
+        expect(spokenQueries(heard)).toEqual(queries);
     });
 
-    it('장소 이름만 말하면 그대로 둔다', () => {
-        expect(cleanSpokenQuery(' 강남역 ')).toBe('강남역');
-        expect(cleanSpokenQuery('을지로4가')).toBe('을지로4가');
+    it.each([
+        ['종로 가 줘', ['종로']],
+        ['대학로 어디야', ['대학로']],
+        ['종로로 가 줘', ['종로']],
+    ])('받침 뒤의 "로"는 이름이라 남긴다: "%s"', (heard, queries) => {
+        expect(spokenQueries(heard)).toEqual(queries);
+    });
+
+    it.each([
+        ['을지로 가줘', ['을지로', '을지']],
+        ['강남대로 안내해 줘', ['강남대로', '강남대']],
+        ['코엑스로 가줘.', ['코엑스로', '코엑스']],
+        ['서울로 가 줘', ['서울로', '서울']],
+    ])(
+        '"로"가 조사인지 이름인지 모르면 둘 다 후보로 둔다: "%s"',
+        (heard, queries) => {
+            expect(spokenQueries(heard)).toEqual(queries);
+        },
+    );
+
+    it('부탁하는 말이 없으면 조사도 지우지 않는다', () => {
+        expect(spokenQueries(' 강남역 ')).toEqual(['강남역']);
+        expect(spokenQueries('을지로')).toEqual(['을지로']);
     });
 
     it('말끝을 지우면 남는 게 없을 때는 원래 말을 쓴다', () => {
-        expect(cleanSpokenQuery('찾아 줘')).toBe('찾아 줘');
+        expect(spokenQueries('찾아 줘')).toEqual(['찾아 줘']);
+    });
+});
+
+describe('searchSpoken', () => {
+    it('첫 결과 이름에 검색어가 들어 있는 후보를 고른다', async () => {
+        const search = vi.fn(async (query: string) =>
+            query === '을지로' ? [named('을지로입구역')] : [named('을지면')],
+        );
+
+        const found = await searchSpoken(['을지로', '을지'], search);
+
+        expect(found).toEqual({
+            query: '을지로',
+            places: [named('을지로입구역')],
+        });
+        expect(search).toHaveBeenCalledTimes(1);
+    });
+
+    it('앞 후보가 맞지 않으면 다음 후보를 검색한다', async () => {
+        const search = vi.fn(async (query: string) =>
+            query === '코엑스로' ? [named('봉은사')] : [named('코엑스')],
+        );
+
+        const found = await searchSpoken(['코엑스로', '코엑스'], search);
+
+        expect(found?.query).toBe('코엑스');
+        expect(search).toHaveBeenCalledTimes(2);
+    });
+
+    it('맞는 후보가 없으면 결과가 있는 첫 후보를 고른다', async () => {
+        const search = vi.fn(async (query: string) =>
+            query === '가' ? [named('다')] : [],
+        );
+
+        expect((await searchSpoken(['가', '나'], search))?.query).toBe('가');
+    });
+
+    it('모두 비었으면 마지막 후보를 빈 결과로 돌려준다', async () => {
+        const found = await searchSpoken(['가', '나'], async () => []);
+
+        expect(found).toEqual({ query: '나', places: [] });
+    });
+
+    it('검색이 실패하면 null', async () => {
+        expect(await searchSpoken(['가'], async () => null)).toBeNull();
     });
 });
 
