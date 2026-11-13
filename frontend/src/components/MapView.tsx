@@ -26,10 +26,26 @@ const GOAL_PIN = {
     width: 30,
     height: 40,
 };
-const MY_LOCATION_DOT = {
-    html: '<div class="my-location-dot"></div>',
-    size: 20,
+// 내 위치 점과 바라보는 방향 부채꼴(56×56). 부채꼴은 북쪽을 향해 그리고 방향만큼 돌린다.
+// 방향을 모르면 부채꼴을 숨기고 점만 보인다.
+const MY_LOCATION_MARKER = {
+    html:
+        '<div class="my-location-marker">' +
+        '<svg class="my-location-heading" viewBox="0 0 56 56" width="56" height="56" style="visibility:hidden">' +
+        `<defs><linearGradient id="my-location-heading-fade" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="${MY_LOCATION_COLOR}" stop-opacity="0.85"/><stop offset="1" stop-color="${MY_LOCATION_COLOR}" stop-opacity="0.1"/></linearGradient></defs>` +
+        '<path d="M28 28 L17 4.4 A26 26 0 0 1 39 4.4 Z" fill="url(#my-location-heading-fade)"/>' +
+        '</svg><div class="my-location-dot"></div></div>',
+    size: 56,
 };
+const HEADING_CONE = '.my-location-heading';
+
+/** 부채꼴을 방향(북쪽 0도, 시계 방향)만큼 돌린다. 방향을 모르면 숨긴다. */
+function turnCone(cone: SVGElement, heading: number | null) {
+    cone.style.visibility = heading === null ? 'hidden' : 'visible';
+    if (heading !== null) {
+        cone.style.transform = `rotate(${heading}deg)`;
+    }
+}
 
 type MapViewProps = {
     /** 지도에 그릴 경로들. chosen 번째를 굵게 그린다. */
@@ -37,6 +53,8 @@ type MapViewProps = {
     chosen: number;
     goal: LngLat | null;
     myLocation: LocationFix | null;
+    /** 내가 바라보는 방향(북쪽 0도, 시계 방향). 모르면 null */
+    heading?: number | null;
     /** 안내 중 따라갈 위치. null 이면 따라가지 않는다. */
     follow: LngLat | null;
     /** 말로 찾은 결과 중 확인하고 있는 곳. 지도를 그리로 옮긴다. */
@@ -70,11 +88,14 @@ function TmapView({
     chosen,
     goal,
     myLocation,
+    heading = null,
     follow,
     preview = null,
     onPathClick,
 }: MapViewProps) {
     const container = useRef<HTMLDivElement>(null);
+    // 마커를 새로 만들 때 바로 지금 방향으로 돌려 놓기 위해 둔다.
+    const latestHeading = useRef(heading);
     const [state, setState] = useState<MapState>({ status: 'loading' });
     // 지도 크기가 바뀐 횟수. 바뀌면 경로가 다 보이게 다시 맞춘다.
     const [resized, setResized] = useState(0);
@@ -194,7 +215,7 @@ function TmapView({
             fillOpacity: 0.12,
             map,
         });
-        const { html, size } = MY_LOCATION_DOT;
+        const { html, size } = MY_LOCATION_MARKER;
         const dot = new Tmapv2.Marker({
             position,
             iconHTML: html,
@@ -203,11 +224,24 @@ function TmapView({
             zIndex: 5,
             map,
         });
+        const cone = container.current?.querySelector<SVGElement>(HEADING_CONE);
+        if (cone) {
+            turnCone(cone, latestHeading.current);
+        }
         return () => {
             dot.setMap(null);
             circle.setMap(null);
         };
     }, [map, myLocation]);
+
+    // 방향만 바뀌면 마커를 다시 만들지 않고 부채꼴만 돌린다.
+    useEffect(() => {
+        latestHeading.current = heading;
+        const cone = container.current?.querySelector<SVGElement>(HEADING_CONE);
+        if (cone) {
+            turnCone(cone, heading);
+        }
+    }, [heading, map, myLocation]);
 
     // 내 위치를 새로 찾으면 지도를 그리로 옮긴다. 경로를 보는 중에는 옮기지 않는다.
     const hasPaths = paths.length > 0;
