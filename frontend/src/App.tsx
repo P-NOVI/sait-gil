@@ -76,6 +76,8 @@ export default function App() {
     const [locationError, setLocationError] = useState<string | null>(null);
 
     const [destination, setDestination] = useState<Place | null>(null);
+    // 말로 찾은 결과 중 확인하고 있는 곳. 지도에 핀을 꽂고 그리로 옮긴다.
+    const [preview, setPreview] = useState<Place | null>(null);
     const [chosen, setChosen] = useState(0);
     // 안내 중인 경로. 경로를 다시 찾으면 바뀐다.
     const [guided, setGuided] = useState<PlannedRoute | null>(null);
@@ -170,6 +172,7 @@ export default function App() {
     });
 
     const pickPlace = (place: Place) => {
+        setPreview(null);
         setDestination(place);
         setTab('route');
         setSheetOpen(true);
@@ -257,7 +260,8 @@ export default function App() {
             <MapView
                 paths={paths}
                 chosen={guided ? 0 : chosen}
-                goal={destination?.position ?? null}
+                goal={preview?.position ?? destination?.position ?? null}
+                preview={preview?.position ?? null}
                 myLocation={guidance.fix ?? myLocation}
                 follow={guidance.fix?.position ?? null}
                 onPathClick={guided ? undefined : setChosen}
@@ -295,6 +299,7 @@ export default function App() {
                             }
                             onListen={listenOnce}
                             onPick={pickPlace}
+                            onPreview={setPreview}
                             onAnnounce={(text) => announce(text)}
                             voice={settings.voice}
                         />
