@@ -1,9 +1,11 @@
-"""Tmap API 호출. 응답은 가공하지 않고 돌려준다.
+"""Tmap API 호출. 응답은 문자열 속 제어 문자만 공백으로 바꾸고 그대로 돌려준다.
 
 문서: https://tmapapi.tmapmobility.com/main.html#webservice/docs/tmapRoutePedestrianDoc
 앱 키는 URL 대신 appKey 헤더로 보낸다. 로그·프록시에 키가 남지 않게 한다.
 """
 
+import json
+import re
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
@@ -18,6 +20,9 @@ COORD_TYPE = "WGS84GEO"
 MAX_PASS_POINTS = 5
 # 리버스 지오코딩 주소 타입: 행정동 + 법정동 + 도로명
 REVERSE_ADDRESS_TYPE = "A10"
+# Tmap 이 문자열에 제어 문자를 이스케이프하지 않고 넣을 때가 있다.
+# 예: 안내 지점 이름 "서울역 1번출구\x00올리브영 서울역점"
+CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 class TmapError(Exception):
@@ -99,7 +104,27 @@ class TmapClient:
         # 장소 검색은 결과가 없으면 204 와 빈 본문을 준다.
         if not response.content:
             return {}
-        return response.json()
+        return _read_json(response)
+
+
+def _read_json(response: httpx.Response) -> dict[str, Any]:
+    """응답 JSON. 문자열 속 제어 문자는 공백으로 바꾼다. 읽지 못하면 TmapError."""
+    try:
+        # strict=False: 이스케이프하지 않은 제어 문자도 문자열로 받는다.
+        data = json.loads(response.text, strict=False)
+    except ValueError as error:
+        raise TmapError(502, "Tmap 응답을 읽지 못했습니다.") from error
+    return _without_control_chars(data)
+
+
+def _without_control_chars(value: Any) -> Any:
+    if isinstance(value, str):
+        return CONTROL_CHARS.sub(" ", value)
+    if isinstance(value, dict):
+        return {key: _without_control_chars(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_without_control_chars(item) for item in value]
+    return value
 
 
 def _error_message(response: httpx.Response) -> str:
