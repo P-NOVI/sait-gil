@@ -22,7 +22,14 @@ vi.mock('@capacitor-community/keep-awake', () => ({
     KeepAwake: plugins.keepAwake,
 }));
 
-import { keepScreenOn, listenOnce, speak, vibrate } from './index';
+import {
+    canListen,
+    keepScreenOn,
+    listenOnce,
+    speak,
+    stopListening,
+    vibrate,
+} from './index';
 
 beforeEach(() => {
     native.value = false;
@@ -48,19 +55,7 @@ describe('speak', () => {
     });
 
     it('웹에서는 읽던 문장을 끊고 speechSynthesis로 읽는다', async () => {
-        const synth = { cancel: vi.fn(), speak: vi.fn() };
-        vi.stubGlobal('speechSynthesis', synth);
-        vi.stubGlobal(
-            'SpeechSynthesisUtterance',
-            class {
-                lang = '';
-                rate = 1;
-                text: string;
-                constructor(text: string) {
-                    this.text = text;
-                }
-            },
-        );
+        const synth = webSpeech();
 
         await speak('멈추세요');
 
@@ -70,7 +65,49 @@ describe('speak', () => {
             lang: 'ko-KR',
         });
     });
+
+    it('웹에서는 다 읽을 때까지 끝나지 않는다', async () => {
+        const synth = webSpeech(false);
+        let done = false;
+
+        const speaking = speak('이곳으로 갈까요?').then(() => {
+            done = true;
+        });
+        await Promise.resolve();
+        expect(done).toBe(false);
+
+        synth.speak.mock.calls[0][0].onend?.();
+        await speaking;
+        expect(done).toBe(true);
+    });
 });
+
+type FakeUtterance = { text: string; onend: (() => void) | null };
+
+/** speechSynthesis 흉내. finish 이면 읽자마자 끝난다. */
+function webSpeech(finish = true) {
+    const synth = {
+        cancel: vi.fn(),
+        speak: vi.fn((utterance: FakeUtterance) => {
+            if (finish) utterance.onend?.();
+        }),
+    };
+    vi.stubGlobal('speechSynthesis', synth);
+    vi.stubGlobal(
+        'SpeechSynthesisUtterance',
+        class {
+            lang = '';
+            rate = 1;
+            text: string;
+            onend: (() => void) | null = null;
+            onerror: (() => void) | null = null;
+            constructor(text: string) {
+                this.text = text;
+            }
+        },
+    );
+    return synth;
+}
 
 describe('vibrate', () => {
     it('웹에서 진동을 지원하지 않으면 false를 돌려준다', async () => {
@@ -129,7 +166,37 @@ describe('listenOnce', () => {
     });
 
     it('웹에서 음성 인식을 지원하지 않으면 null을 돌려준다', async () => {
+        expect(canListen()).toBe(false);
         expect(await listenOnce()).toBeNull();
+    });
+
+    it('듣는 중에 멈추면 들은 말을 버리고 null을 돌려준다', async () => {
+        const abort = vi.fn();
+        vi.stubGlobal(
+            'webkitSpeechRecognition',
+            class {
+                lang = '';
+                interimResults = true;
+                maxAlternatives = 5;
+                onresult: ((event: unknown) => void) | null = null;
+                onerror: (() => void) | null = null;
+                onend: (() => void) | null = null;
+                start() {
+                    this.onresult?.({ results: [[{ transcript: '다음' }]] });
+                }
+                abort() {
+                    abort();
+                    this.onend?.();
+                }
+            },
+        );
+
+        expect(canListen()).toBe(true);
+        const heard = listenOnce();
+        stopListening();
+
+        expect(await heard).toBeNull();
+        expect(abort).toHaveBeenCalled();
     });
 });
 
