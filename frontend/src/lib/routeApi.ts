@@ -133,8 +133,16 @@ export function routeSummary(route: PlannedRoute): string {
     return parts.join(', ');
 }
 
-/** 경로를 찾았을 때 읽어 줄 문장. 추천 경로부터 순서대로 알린다. */
-export function routesAnnouncement(routes: readonly PlannedRoute[]): string {
+const CHOOSE_BY_TAP = '원하는 경로를 고르고 안내 시작을 누르세요.';
+
+/**
+ * 경로를 찾았을 때 읽어 줄 문장. 추천 경로부터 순서대로 알리고,
+ * 끝에 고르는 방법(closing)을 덧붙인다. 말로 고를 때는 말하는 방법을 넘긴다.
+ */
+export function routesAnnouncement(
+    routes: readonly PlannedRoute[],
+    closing = CHOOSE_BY_TAP,
+): string {
     if (routes.length === 0) {
         return '경로를 찾지 못했습니다.';
     }
@@ -149,9 +157,7 @@ export function routesAnnouncement(routes: readonly PlannedRoute[]): string {
         routes.length === 1
             ? '경로를 하나 찾았습니다.'
             : `경로를 ${routes.length}개 찾았습니다.`;
-    return [intro, ...items, '원하는 경로를 고르고 안내 시작을 누르세요.'].join(
-        ' ',
-    );
+    return [intro, ...items, closing].join(' ');
 }
 
 /** 다시 찾은 경로 중 전에 고른 기준과 같은 경로. 없으면 추천 경로 */

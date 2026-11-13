@@ -3,7 +3,7 @@
 export { requestCompassPermission, watchCompass } from './compass';
 export { vibrate } from './haptics';
 export { allowScreenOff, keepScreenOn } from './keepAwake';
-export { listenOnce } from './listen';
+export { canListen, listenOnce, stopListening } from './listen';
 export {
     getCurrentPosition,
     LocationError,

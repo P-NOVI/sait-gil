@@ -403,6 +403,42 @@ input::placeholder {
     color: var(--color-muted);
 }
 
+/* ---------- 말로 대답을 듣는 중 ---------- */
+
+.voice-listening {
+    position: absolute;
+    top: var(--safe-top);
+    left: 50%;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 12px 20px;
+    border-radius: 999px;
+    background: var(--color-text);
+    color: var(--color-bg);
+    font-weight: 700;
+    white-space: nowrap;
+    transform: translateX(-50%);
+    box-shadow: var(--panel-shadow);
+}
+
+.voice-listening::before {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--level-danger);
+    content: '';
+    animation: voice-listening-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-listening-pulse {
+    50% {
+        opacity: 0.3;
+    }
+}
+
 /* ---------- 내 위치 버튼 ---------- */
 
 .my-location-control {
