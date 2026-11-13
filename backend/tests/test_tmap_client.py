@@ -130,3 +130,34 @@ async def test_reverse_geocode_params() -> None:
     assert seen[0].url.path == "/tmap/geo/reversegeocoding"
     assert (params["lon"], params["lat"]) == ("126.97", "37.56")
     assert params["addressType"] == "A10"
+
+
+@pytest.mark.anyio
+async def test_control_chars_in_strings_become_spaces() -> None:
+    # Tmap 이 이스케이프하지 않은 NUL 을 이름 사이에 넣어 보낸 실제 응답 모양
+    body = (
+        '{"features": [{"properties": {"name": "서울역 1번출구\x00올리브영 서울역점",'
+        ' "index": 45}}]}'
+    )
+    client = client_with(lambda request: httpx.Response(200, text=body))
+
+    result = await client.pedestrian_route(
+        (126.97, 37.56), (126.97, 37.55), 10, "출발", "도착"
+    )
+
+    properties = result["features"][0]["properties"]
+    assert properties == {"name": "서울역 1번출구 올리브영 서울역점", "index": 45}
+
+
+@pytest.mark.anyio
+async def test_unreadable_body_becomes_tmap_error() -> None:
+    client = client_with(
+        lambda request: httpx.Response(200, text="<html>점검 중</html>")
+    )
+
+    with pytest.raises(TmapError) as raised:
+        await client.pedestrian_route(
+            (127.0, 37.5), (127.0, 37.502), 10, "출발", "도착"
+        )
+
+    assert raised.value.status_code == 502
