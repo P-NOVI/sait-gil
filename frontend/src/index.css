@@ -347,6 +347,41 @@ input::placeholder {
     font-weight: 700;
 }
 
+.top-search__confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px 16px;
+    border-top: 1px solid var(--color-border);
+}
+
+.top-search__question {
+    margin: 0;
+    font-weight: 700;
+}
+
+.top-search__answers {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 8px;
+}
+
+.top-search__answers button {
+    min-height: 3.4rem;
+    padding: 4px 6px;
+    border: 2px solid var(--color-border);
+    border-radius: 14px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    background: var(--color-surface);
+}
+
+.top-search__answers .top-search__yes {
+    border-color: var(--color-primary-strong);
+    color: var(--color-on-primary);
+    background: var(--color-primary-strong);
+}
+
 .top-search__detail {
     font-size: 0.85rem;
     color: var(--color-muted);
