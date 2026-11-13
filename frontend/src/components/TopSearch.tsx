@@ -11,6 +11,11 @@ import type { RequestState } from '../hooks/useRequest';
 import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
 import {
+    PLACE_ANSWER_HINT,
+    type PlaceAnswer,
+    placeAnswer,
+} from '../lib/voiceCommand';
+import {
     NO_MORE_PLACES_TEXT,
     NO_PLACES_TEXT,
     placeQuestion,
@@ -28,8 +33,10 @@ type TopSearchProps = {
     onPick: (place: Place) => void;
     /** 말로 찾은 결과 중 확인하고 있는 곳. 확인 화면이 닫히면 null */
     onPreview: (place: Place | null) => void;
-    /** 말로 찾은 결과를 음성으로 읽는다. */
+    /** 말로 찾다가 생긴 안내를 음성으로 읽는다. */
     onAnnounce: (text: string) => void;
+    /** 말로 찾은 곳을 읽고 대답을 듣는다. 대답이 없으면 null */
+    onAsk: (text: string) => Promise<string | null>;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
 };
@@ -40,7 +47,7 @@ type Confirming = { places: Place[]; index: number };
 /**
  * 지도 위 검색창. 입력하거나 말한 목적지를 검색하고 결과에서 고른다.
  * 결과 수는 화면낭독기가 읽도록 status 로 알린다.
- * 말로 찾으면 첫 결과부터 하나씩 읽고 이곳으로 갈지 묻는다.
+ * 말로 찾으면 첫 결과부터 하나씩 읽고 이곳으로 갈지 묻는다. 말로도 버튼으로도 대답한다.
  */
 export default function TopSearch({
     inputRef,
@@ -50,6 +57,7 @@ export default function TopSearch({
     onPick,
     onPreview,
     onAnnounce,
+    onAsk,
     voice,
 }: TopSearchProps) {
     const [query, setQuery] = useState('');
@@ -63,8 +71,11 @@ export default function TopSearch({
     // 확인 화면을 닫을 때 포커스를 결과 목록(없으면 검색창)으로 옮긴다.
     const restoreFocus = useRef(false);
     const questionId = useId();
+    // 말로 한 대답이 도착했을 때 아직 그 질문을 보고 있는지 확인한다. 버튼으로 먼저 답했으면 버린다.
+    const asked = useRef<Confirming | null>(null);
 
     useEffect(() => {
+        asked.current = confirming;
         if (confirming) {
             confirmButton.current?.focus();
             return;
@@ -76,14 +87,62 @@ export default function TopSearch({
         }
     }, [confirming, inputRef]);
 
-    const ask = (places: Place[], index: number) => {
-        setConfirming({ places, index });
-        onAnnounce(placeQuestion(places[index], index, places.length));
-    };
+    useEffect(
+        () => () => {
+            asked.current = null;
+        },
+        [],
+    );
 
     const closeConfirm = () => {
         restoreFocus.current = true;
         setConfirming(null);
+    };
+
+    const pick = (place: Place) => {
+        setConfirming(null);
+        onPick(place);
+    };
+
+    const answer = (reply: PlaceAnswer, about: Confirming) => {
+        switch (reply) {
+            case 'yes':
+                pick(about.places[about.index]);
+                break;
+            case 'next':
+                showNext(about);
+                break;
+            case 'list':
+                closeConfirm();
+                break;
+        }
+    };
+
+    /** 이곳으로 갈지 읽고 묻는다. 못 알아들으면 고를 수 있는 말을 알려 주고 한 번 더 듣는다. */
+    const ask = async (places: Place[], index: number) => {
+        const about = { places, index };
+        setConfirming(about);
+        let heard = await onAsk(
+            placeQuestion(places[index], index, places.length),
+        );
+        let reply = heard === null ? null : placeAnswer(heard);
+        if (heard !== null && reply === null && asked.current === about) {
+            heard = await onAsk(PLACE_ANSWER_HINT);
+            reply = heard === null ? null : placeAnswer(heard);
+        }
+        if (reply && asked.current === about) {
+            answer(reply, about);
+        }
+    };
+
+    const showNext = ({ places, index }: Confirming) => {
+        if (index + 1 < places.length) {
+            void ask(places, index + 1);
+        } else {
+            setNotice(NO_MORE_PLACES_TEXT);
+            onAnnounce(NO_MORE_PLACES_TEXT);
+            closeConfirm();
+        }
     };
 
     const submit = (event: FormEvent) => {
@@ -127,21 +186,7 @@ export default function TopSearch({
             onAnnounce(NO_PLACES_TEXT);
             return;
         }
-        ask(found.places, 0);
-    };
-
-    const next = () => {
-        if (!confirming) {
-            return;
-        }
-        const index = confirming.index + 1;
-        if (index < confirming.places.length) {
-            ask(confirming.places, index);
-        } else {
-            setNotice(NO_MORE_PLACES_TEXT);
-            onAnnounce(NO_MORE_PLACES_TEXT);
-            closeConfirm();
-        }
+        void ask(found.places, 0);
     };
 
     const current = confirming ? confirming.places[confirming.index] : null;
@@ -239,14 +284,14 @@ export default function TopSearch({
                             type="button"
                             className="top-search__yes"
                             aria-describedby={voice ? undefined : questionId}
-                            onClick={() => {
-                                setConfirming(null);
-                                onPick(current);
-                            }}
+                            onClick={() => pick(current)}
                         >
                             여기로 갈게요
                         </button>
-                        <button type="button" onClick={next}>
+                        <button
+                            type="button"
+                            onClick={() => showNext(confirming)}
+                        >
                             다음 결과
                         </button>
                         <button type="button" onClick={closeConfirm}>

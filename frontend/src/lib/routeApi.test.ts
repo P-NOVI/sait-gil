@@ -118,6 +118,13 @@ describe('routesAnnouncement', () => {
         expect(text).not.toMatch(/\d(km|m)\b/);
         expect(text.endsWith('안내 시작을 누르세요.')).toBe(true);
     });
+
+    it('말로 고를 때는 말하는 방법으로 끝맺는다', () => {
+        const text = routesAnnouncement([route()], '번호를 말하세요.');
+
+        expect(text.endsWith('. 번호를 말하세요.')).toBe(true);
+        expect(text).not.toContain('누르세요');
+    });
 });
 
 describe('sameKindRoute', () => {

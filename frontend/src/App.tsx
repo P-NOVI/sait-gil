@@ -29,7 +29,9 @@ import {
     routeTitle,
     sameKindRoute,
 } from './lib/routeApi';
+import { ROUTE_ANSWER_HINT, routeAnswer } from './lib/voiceCommand';
 import {
+    canListen,
     getCurrentPosition,
     listenOnce,
     type LocationFix,
@@ -66,7 +68,7 @@ function errorMessage(error: unknown): string {
 
 export default function App() {
     const [settings, updateSettings] = useAccessibility();
-    const { announce, silence } = useAnnouncer(settings);
+    const { announce, ask, silence, listening } = useAnnouncer(settings);
 
     const [tab, setTab] = useState<Tab>('search');
     const [sheetOpen, setSheetOpen] = useState(true);
@@ -81,6 +83,13 @@ export default function App() {
     // 말로 찾은 결과 중 확인하고 있는 곳. 지도에 핀을 꽂고 그리로 옮긴다.
     const [preview, setPreview] = useState<Place | null>(null);
     const [chosen, setChosen] = useState(0);
+    // 말로 대답이 왔을 때 쓸 지금 고른 경로와 묻고 있는 경로 목록.
+    // 목록이 바뀌었거나 안내를 시작했으면 늦게 온 대답은 버린다.
+    const chosenNow = useRef(chosen);
+    const offered = useRef<PlannedRoute[] | null>(null);
+    useEffect(() => {
+        chosenNow.current = chosen;
+    }, [chosen]);
     // 안내 중인 경로. 경로를 다시 찾으면 바뀐다.
     const [guided, setGuided] = useState<PlannedRoute | null>(null);
     const navigating = guided !== null;
@@ -128,7 +137,45 @@ export default function App() {
         [routes.state],
     );
 
+    const startGuidance = (route: PlannedRoute) => {
+        offered.current = null;
+        setGuided(route);
+        announce(`${routeTitle(route)}로 안내를 시작합니다.`, 'route');
+    };
+
+    /** 찾은 경로를 읽고, 말로 고르거나 안내를 시작하게 한다. 못 알아들으면 한 번 더 묻는다. */
+    const offerRoutes = async (result: PlannedRoute[]) => {
+        if (result.length === 0) {
+            announce(routesAnnouncement(result));
+            return;
+        }
+        offered.current = result;
+        const byVoice = settings.voice && canListen();
+        let heard = await ask(
+            routesAnnouncement(result, byVoice ? ROUTE_ANSWER_HINT : undefined),
+        );
+        let reply = heard === null ? null : routeAnswer(heard, result);
+        if (heard !== null && reply === null && offered.current === result) {
+            heard = await ask(ROUTE_ANSWER_HINT);
+            reply = heard === null ? null : routeAnswer(heard, result);
+        }
+        if (!reply || offered.current !== result) {
+            return;
+        }
+        if (reply.action === 'repeat') {
+            void offerRoutes(result);
+            return;
+        }
+        const index = reply.index ?? chosenNow.current;
+        const route = result[index];
+        if (route) {
+            setChosen(index);
+            startGuidance(route);
+        }
+    };
+
     const findRoutes = async (goal: Place) => {
+        offered.current = null;
         const start = myLocation?.position ?? (await locate())?.position;
         if (!start) {
             return;
@@ -140,7 +187,7 @@ export default function App() {
         });
         if (result) {
             setChosen(0);
-            announce(routesAnnouncement(result));
+            void offerRoutes(result);
         }
     };
 
@@ -190,17 +237,12 @@ export default function App() {
         if (next === 'search' && tab === 'search') {
             searchInput.current?.focus();
         }
+        // 길찾기 탭을 떠나면 경로를 묻던 것은 그만 듣는다.
+        if (next !== 'route') {
+            offered.current = null;
+        }
         setTab(next);
         setSheetOpen(true);
-    };
-
-    const startGuidance = () => {
-        const route = found[chosen];
-        if (!route) {
-            return;
-        }
-        setGuided(route);
-        announce(`${routeTitle(route)}로 안내를 시작합니다.`, 'route');
     };
 
     const stopGuidance = () => {
@@ -239,7 +281,12 @@ export default function App() {
                 onFindRoutes={() => destination && void findRoutes(destination)}
                 onChoose={setChosen}
                 onSearchDestination={() => selectTab('search')}
-                onStart={startGuidance}
+                onStart={() => {
+                    const route = found[chosen];
+                    if (route) {
+                        startGuidance(route);
+                    }
+                }}
             />
         ) : (
             <SettingsPanel
@@ -263,6 +310,12 @@ export default function App() {
             data-navigating={navigating || undefined}
         >
             <h1 className="visually-hidden">사잇길</h1>
+            {/* 화면낭독기가 읽으면 마이크에 들어가므로 화면에만 보인다. */}
+            {listening && (
+                <p className="voice-listening" aria-hidden="true">
+                    듣고 있어요. 말씀하세요.
+                </p>
+            )}
             <MapView
                 paths={paths}
                 chosen={guided ? 0 : chosen}
@@ -308,6 +361,7 @@ export default function App() {
                             onPick={pickPlace}
                             onPreview={setPreview}
                             onAnnounce={(text) => announce(text)}
+                            onAsk={ask}
                             voice={settings.voice}
                         />
                     )}
