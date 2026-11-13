@@ -12,6 +12,7 @@ import VisionPanel from './components/VisionPanel';
 import { useAccessibility } from './hooks/useAccessibility';
 import { useAnnouncer } from './hooks/useAnnouncer';
 import { useGuidance } from './hooks/useGuidance';
+import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
 import type { LngLat } from './lib/geo';
 import {
@@ -32,6 +33,7 @@ import {
     getCurrentPosition,
     listenOnce,
     type LocationFix,
+    requestCompassPermission,
     visionAvailable,
 } from './platform';
 
@@ -110,6 +112,8 @@ export default function App() {
     }, [settle]);
 
     const locate = () => {
+        // iOS 는 버튼을 누른 순간에만 나침반 권한을 물을 수 있다.
+        void requestCompassPermission();
         setLocating(true);
         return settle(getCurrentPosition());
     };
@@ -170,6 +174,8 @@ export default function App() {
         announce,
         onReroute: reroute,
     });
+    const shownLocation = guidance.fix ?? myLocation;
+    const heading = useHeading(shownLocation?.course ?? null);
 
     const pickPlace = (place: Place) => {
         setPreview(null);
@@ -262,7 +268,8 @@ export default function App() {
                 chosen={guided ? 0 : chosen}
                 goal={preview?.position ?? destination?.position ?? null}
                 preview={preview?.position ?? null}
-                myLocation={guidance.fix ?? myLocation}
+                myLocation={shownLocation}
+                heading={heading}
                 follow={guidance.fix?.position ?? null}
                 onPathClick={guided ? undefined : setChosen}
             />

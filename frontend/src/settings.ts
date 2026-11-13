@@ -19,6 +19,18 @@ export const NAVIGATION = {
 
 export type NavigationSettings = typeof NAVIGATION;
 
+// 내 위치 마커의 방향(나침반 + GPS 보정)
+export const HEADING = {
+    // GPS 속력이 이보다 빠르면 걷는 중으로 보고 진행 방향을 믿는다(m/s).
+    minWalkSpeedMps: 0.7,
+    // 걷는 중 위치를 받을 때마다 나침반 보정값을 GPS 쪽으로 옮기는 비율(0~1)
+    offsetLearnRate: 0.2,
+    // 나침반 값이 올 때마다 새 값 쪽으로 옮기는 비율(0~1). 작을수록 덜 떨린다.
+    smoothing: 0.3,
+    // 이보다 적게 바뀌면 마커를 다시 돌리지 않는다(도).
+    minStepDeg: 2,
+} as const;
+
 // 이벤트까지 남은 거리가 이 안에 들어오면 미리 알린다.
 export const ALERT_DISTANCE_M: Readonly<Record<EventKind, number>> = {
     turn: 20,

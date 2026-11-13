@@ -4,6 +4,7 @@
 import { Geolocation, type Position } from '@capacitor/geolocation';
 
 import type { LngLat } from '../lib/geo';
+import type { Course } from '../lib/heading';
 import { isNativeApp } from './runtime';
 
 // 정확한 위치(GPS)를 먼저 기다리고, 실패하면 Wi-Fi·기지국 기반 위치로 다시 묻는다.
@@ -24,6 +25,8 @@ export type LocationFix = {
     position: LngLat;
     /** 오차 반경(m). 실제 위치는 이 원 안에 있을 가능성이 높다. */
     accuracy: number;
+    /** GPS 진행 방향·속력. 움직일 때만 온다. */
+    course?: Course;
 };
 
 export class LocationError extends Error {
@@ -39,13 +42,27 @@ const DENIED =
 const FAILED =
     '현재 위치를 찾지 못했습니다. 잠시 뒤 다시 시도하거나 밖으로 나가 보세요.';
 
-type Coords = { longitude: number; latitude: number; accuracy: number };
+type Coords = {
+    longitude: number;
+    latitude: number;
+    accuracy: number;
+    // 멈춰 있으면 웹은 NaN, 앱은 null 을 준다.
+    heading?: number | null;
+    speed?: number | null;
+};
+
+const isNumber = (value: number | null | undefined): value is number =>
+    typeof value === 'number' && Number.isFinite(value);
 
 function toFix(coords: Coords): LocationFix {
-    return {
+    const fix: LocationFix = {
         position: [coords.longitude, coords.latitude],
         accuracy: coords.accuracy,
     };
+    if (isNumber(coords.heading) && isNumber(coords.speed)) {
+        fix.course = { heading: coords.heading, speed: coords.speed };
+    }
+    return fix;
 }
 
 function isPermissionDenied(error: unknown): boolean {

@@ -57,6 +57,23 @@ describe('getCurrentPosition (웹)', () => {
         expect(await getCurrentPosition(geolocation)).toEqual(FIX);
     });
 
+    it('움직이는 중이면 진행 방향과 속력을 함께 준다', async () => {
+        const moving = { ...COORDS, heading: 45, speed: 1.2 };
+        const { geolocation } = webGeolocation({ coords: moving });
+
+        expect(await getCurrentPosition(geolocation)).toEqual({
+            ...FIX,
+            course: { heading: 45, speed: 1.2 },
+        });
+    });
+
+    it('멈춰 있어 방향이 NaN 이면 진행 방향을 빼고 준다', async () => {
+        const still = { ...COORDS, heading: NaN, speed: 0 };
+        const { geolocation } = webGeolocation({ coords: still });
+
+        expect(await getCurrentPosition(geolocation)).toEqual(FIX);
+    });
+
     it('GPS 가 실패하면 대략적인 위치로 다시 묻는다', async () => {
         const { fake, geolocation } = webGeolocation(
             { code: 3 },

@@ -218,7 +218,23 @@ input::placeholder {
     fill: #ffffff;
 }
 
+/* 56×56 칸 가운데에 점, 그 위에 바라보는 방향 부채꼴 */
+.my-location-marker {
+    position: relative;
+    width: 56px;
+    height: 56px;
+}
+
+.my-location-heading {
+    position: absolute;
+    inset: 0;
+    transform-origin: 50% 50%;
+}
+
 .my-location-dot {
+    position: absolute;
+    top: 18px;
+    left: 18px;
     box-sizing: border-box;
     width: 20px;
     height: 20px;
