@@ -199,25 +199,14 @@ function TmapView({
         return () => marker.setMap(null);
     }, [map, goal]);
 
-    // 내 위치 점과 오차 원
+    // 내 위치 점. 오차 원은 실내 등에서 지도를 덮어 그리지 않는다.
     useEffect(() => {
         if (!map || !myLocation) {
             return;
         }
-        const position = toLatLng(myLocation.position);
-        const circle = new Tmapv2.Circle({
-            center: position,
-            radius: myLocation.accuracy,
-            strokeWeight: 1,
-            strokeColor: MY_LOCATION_COLOR,
-            strokeOpacity: 0.4,
-            fillColor: MY_LOCATION_COLOR,
-            fillOpacity: 0.12,
-            map,
-        });
         const { html, size } = MY_LOCATION_MARKER;
         const dot = new Tmapv2.Marker({
-            position,
+            position: toLatLng(myLocation.position),
             iconHTML: html,
             iconSize: new Tmapv2.Size(size, size),
             offset: new Tmapv2.Point(size / 2, size / 2),
@@ -228,10 +217,7 @@ function TmapView({
         if (cone) {
             turnCone(cone, latestHeading.current);
         }
-        return () => {
-            dot.setMap(null);
-            circle.setMap(null);
-        };
+        return () => dot.setMap(null);
     }, [map, myLocation]);
 
     // 방향만 바뀌면 마커를 다시 만들지 않고 부채꼴만 돌린다.
