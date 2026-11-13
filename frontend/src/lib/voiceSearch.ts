@@ -18,6 +18,88 @@ const FINAL_COUNT = 28;
 const NO_FINAL = 0;
 const RIEUL_FINAL = 8;
 
+const DIGIT_WORDS: Record<string, number> = {
+    영: 0,
+    공: 0,
+    일: 1,
+    이: 2,
+    삼: 3,
+    사: 4,
+    오: 5,
+    육: 6,
+    칠: 7,
+    팔: 8,
+    구: 9,
+};
+const UNIT_WORDS: Record<string, number> = { 십: 10, 백: 100, 천: 1000 };
+const TEN_THOUSAND = 10000;
+const NUMBER_WORD = /^[영공일이삼사오육칠팔구십백천만]+$/;
+const NUMBER_WORD_WITH_UNIT =
+    /^([영공일이삼사오육칠팔구십백천만]+)(번길|번지|번|호|층)$/;
+// 앞말이 이렇게 끝나거나 뒷말이 이렇게 시작하면 한글 숫자를 주소 숫자로 본다.
+// "구로", "오목교"처럼 숫자 글자로 시작하는 이름은 띄어 쓴 숫자가 아니라 건드리지 않는다.
+const ADDRESS_BEFORE = /(?:\d|길|로|가|동|리|번지|다시|^산)$/;
+const ADDRESS_AFTER = /^(?:번|호|층|다시)/;
+// 받아쓰기는 "-"를 "다시"로 적는다. 숫자 사이의 "다시"만 바꾼다.
+const DASH_WORD = /(\d)\s*다시\s*(?=\d)/g;
+
+/** 한글 숫자를 숫자 글자로. "이십구" → "29", "일이삼" → "123". 숫자가 아니면 null */
+export function koreanNumber(word: string): string | null {
+    if (!NUMBER_WORD.test(word)) {
+        return null;
+    }
+    if (!/[십백천만]/.test(word)) {
+        return [...word].map((char) => DIGIT_WORDS[char]).join('');
+    }
+    let total = 0;
+    let section = 0;
+    let digit: number | null = null;
+    for (const char of word) {
+        if (char in DIGIT_WORDS) {
+            if (digit !== null) {
+                return null;
+            }
+            digit = DIGIT_WORDS[char];
+        } else if (char === '만') {
+            total += (section + (digit ?? 0) || 1) * TEN_THOUSAND;
+            section = 0;
+            digit = null;
+        } else {
+            section += (digit ?? 1) * UNIT_WORDS[char];
+            digit = null;
+        }
+    }
+    return String(total + section + (digit ?? 0));
+}
+
+/**
+ * 받아쓴 주소의 한글 숫자를 숫자로, 숫자 사이 "다시"를 "-"로 바꾼다.
+ * "세종대로 백십 다시 삼" → "세종대로 110-3", "이십구번길 칠" → "29번길 7"
+ */
+export function spokenNumbers(text: string): string {
+    const words = text.split(/\s+/).filter(Boolean);
+    return words
+        .map((word, index) => {
+            const withUnit = NUMBER_WORD_WITH_UNIT.exec(word);
+            if (withUnit) {
+                const number = koreanNumber(withUnit[1]);
+                return number === null ? word : number + withUnit[2];
+            }
+            const number = koreanNumber(word);
+            if (number === null) {
+                return word;
+            }
+            const before = words[index - 1];
+            const after = words[index + 1];
+            const inAddress =
+                (before !== undefined && ADDRESS_BEFORE.test(before)) ||
+                (after !== undefined && ADDRESS_AFTER.test(after));
+            return inAddress ? number : word;
+        })
+        .join(' ')
+        .replace(DASH_WORD, '$1-');
+}
+
 /** 글자의 받침 번호. 한글이 아니면 null, 받침이 없으면 0 */
 function finalConsonant(char: string): number | null {
     const code = char.charCodeAt(0);
@@ -32,21 +114,21 @@ function finalConsonant(char: string): number | null {
  * 끝의 "로"가 조사인지 이름 끝인지 모를 때만 두 개(로를 둔 것, 뗀 것)를 돌려준다.
  */
 export function spokenQueries(heard: string): string[] {
-    const trimmed = heard.replace(TRAILING_MARKS, '').trim();
+    const trimmed = spokenNumbers(heard.replace(TRAILING_MARKS, '').trim());
     const rest = trimmed.replace(REQUEST_ENDING, '').trim();
     if (!rest || rest === trimmed) {
         return [trimmed];
     }
     const withoutParticle = rest.replace(SURE_PARTICLE, '').trim();
     if (withoutParticle !== rest) {
-        return [withoutParticle || rest];
+        return [spokenNumbers(withoutParticle) || rest];
     }
     if (rest.length < 2 || !rest.endsWith('로')) {
         return [rest];
     }
-    const before = rest.slice(0, -1).trim();
-    // "종로로"의 끝 "로"는 조사다.
-    if (before.endsWith('로')) {
+    const before = spokenNumbers(rest.slice(0, -1).trim());
+    // "종로로"의 끝 "로"는 조사다. 주소 숫자("29번길 7로") 뒤의 "로"도 조사다.
+    if (before.endsWith('로') || /\d$/.test(before)) {
         return [before];
     }
     // 조사 "로"는 받침이 없거나 ㄹ 받침인 글자 뒤에만 온다. 종로·대학로의 "로"는 이름이다.
@@ -107,7 +189,10 @@ export function placeQuestion(
             ? `, ${spokenDistance(place.distance_m)} 거리`
             : '';
     const name = place.name.replace(NAME_BRACKETS, ' $1').trim();
-    return `${order}${name}${distance}. ${place.address}. 이곳으로 갈까요?`;
+    // 주소로 찾으면 이름이 곧 주소라 한 번만 읽는다.
+    const address =
+        compact(place.address) === compact(name) ? '' : ` ${place.address}.`;
+    return `${order}${name}${distance}.${address} 이곳으로 갈까요?`;
 }
 
 export const NO_MORE_PLACES_TEXT =
