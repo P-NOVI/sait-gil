@@ -39,6 +39,8 @@ type MapViewProps = {
     myLocation: LocationFix | null;
     /** 안내 중 따라갈 위치. null 이면 따라가지 않는다. */
     follow: LngLat | null;
+    /** 말로 찾은 결과 중 확인하고 있는 곳. 지도를 그리로 옮긴다. */
+    preview?: LngLat | null;
     /** 경로를 고르면 그 번호를 알린다. */
     onPathClick?: (index: number) => void;
 };
@@ -69,6 +71,7 @@ function TmapView({
     goal,
     myLocation,
     follow,
+    preview = null,
     onPathClick,
 }: MapViewProps) {
     const container = useRef<HTMLDivElement>(null);
@@ -213,6 +216,17 @@ function TmapView({
             map.setCenter(toLatLng(myLocation.position));
         }
     }, [map, myLocation, hasPaths, following]);
+
+    // 말로 찾은 곳을 확인하는 동안 그곳을 가운데에 둔다.
+    useEffect(() => {
+        if (!map || !preview) {
+            return;
+        }
+        if (map.getZoom() < DEFAULT_ZOOM) {
+            map.setZoom(DEFAULT_ZOOM);
+        }
+        map.panTo(toLatLng(preview));
+    }, [map, preview, resized]);
 
     // 안내 중에는 내 위치를 따라간다. 지도 크기가 바뀌어도 내 위치를 가운데에 둔다.
     useEffect(() => {

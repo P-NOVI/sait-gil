@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Place } from './placeApi';
-import { placeQuestion, searchSpoken, spokenQueries } from './voiceSearch';
+import {
+    koreanNumber,
+    placeQuestion,
+    searchSpoken,
+    spokenNumbers,
+    spokenQueries,
+} from './voiceSearch';
 
 const station: Place = {
     name: '서울역',
@@ -52,6 +58,62 @@ describe('spokenQueries', () => {
 
     it('말끝을 지우면 남는 게 없을 때는 원래 말을 쓴다', () => {
         expect(spokenQueries('찾아 줘')).toEqual(['찾아 줘']);
+    });
+});
+
+describe('koreanNumber', () => {
+    it.each([
+        ['칠', '7'],
+        ['십', '10'],
+        ['이십구', '29'],
+        ['백십', '110'],
+        ['삼백오', '305'],
+        ['천이백', '1200'],
+        ['만오천', '15000'],
+        ['일이삼', '123'],
+        ['공일', '01'],
+    ])('"%s"는 %s', (word, number) => {
+        expect(koreanNumber(word)).toBe(number);
+    });
+
+    it.each(['구로', '이마트', '7', '이삼십'])(
+        '숫자가 아니면 null: "%s"',
+        (word) => {
+            expect(koreanNumber(word)).toBeNull();
+        },
+    );
+});
+
+describe('spokenNumbers', () => {
+    it.each([
+        ['양재대로 29번길 칠', '양재대로 29번길 7'],
+        ['이십구번길 칠', '29번길 7'],
+        ['세종대로 백십', '세종대로 110'],
+        ['세종대로 백십 다시 삼', '세종대로 110-3'],
+        ['세종대로 110 다시 3', '세종대로 110-3'],
+        ['세종대로 110다시3', '세종대로 110-3'],
+        ['강남역 오 번 출구', '강남역 5 번 출구'],
+        ['신림동 산 백일', '신림동 산 101'],
+    ])('"%s" → "%s"', (heard, text) => {
+        expect(spokenNumbers(heard)).toBe(text);
+    });
+
+    it.each(['구로', '오목교역', '이마트 칠곡점', '다시 찾아 줘', '일산'])(
+        '숫자 글자로 시작하는 이름은 그대로 둔다: "%s"',
+        (heard) => {
+            expect(spokenNumbers(heard)).toBe(heard);
+        },
+    );
+});
+
+describe('spokenQueries 주소', () => {
+    it.each([
+        ['양재대로 29번길 칠로 가 줘', ['양재대로 29번길 7']],
+        ['양재대로 29번길 칠에 가 줘', ['양재대로 29번길 7']],
+        ['세종대로 백십 다시 삼으로 안내해 줘', ['세종대로 110-3']],
+        ['양재대로 29번길 칠', ['양재대로 29번길 7']],
+    ])('"%s"는 %j로 검색한다', (heard, queries) => {
+        expect(spokenQueries(heard)).toEqual(queries);
     });
 });
 
@@ -110,6 +172,18 @@ describe('placeQuestion', () => {
     it('결과가 하나이고 거리를 모르면 이름과 주소만 읽는다', () => {
         expect(placeQuestion({ ...station, distance_m: null }, 0, 1)).toBe(
             '서울역. 서울 용산구 한강대로 405. 이곳으로 갈까요?',
+        );
+    });
+
+    it('이름이 주소와 같으면 한 번만 읽는다', () => {
+        const address = {
+            ...station,
+            name: '서울 중구 세종대로 110',
+            address: '서울 중구 세종대로 110',
+            distance_m: null,
+        };
+        expect(placeQuestion(address, 0, 1)).toBe(
+            '서울 중구 세종대로 110. 이곳으로 갈까요?',
         );
     });
 

@@ -26,6 +26,8 @@ type TopSearchProps = {
     /** 말로 목적지를 넣는다. 알아들은 말을 돌려주고, 못 알아들으면 null */
     onListen: () => Promise<string | null>;
     onPick: (place: Place) => void;
+    /** 말로 찾은 결과 중 확인하고 있는 곳. 확인 화면이 닫히면 null */
+    onPreview: (place: Place | null) => void;
     /** 말로 찾은 결과를 음성으로 읽는다. */
     onAnnounce: (text: string) => void;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
@@ -46,6 +48,7 @@ export default function TopSearch({
     onSearch,
     onListen,
     onPick,
+    onPreview,
     onAnnounce,
     voice,
 }: TopSearchProps) {
@@ -142,6 +145,13 @@ export default function TopSearch({
     };
 
     const current = confirming ? confirming.places[confirming.index] : null;
+
+    useEffect(() => {
+        onPreview(current);
+    }, [current, onPreview]);
+
+    // 검색창이 닫히면(다른 탭) 지도에서 확인하던 곳도 지운다.
+    useEffect(() => () => onPreview(null), [onPreview]);
 
     const places =
         results.status === 'success'
