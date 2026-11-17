@@ -119,7 +119,7 @@ async def current_areas(settings: Settings, now: datetime | None = None) -> list
     moment = now or datetime.now(KST)
 
     def read() -> dict[str, int]:
-        engine = collector_engine(database_url, settings.collector_connect_timeout_s)
+        engine = collector_engine(database_url, settings.route_db_connect_timeout_s)
         with Session(engine) as session:
             return latest_levels(
                 session,

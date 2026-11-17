@@ -61,8 +61,9 @@ async def forecast_sensors(settings: Settings, slot: datetime) -> list[Sensor]:
         return []
 
     def read() -> dict[int, float]:
-        engine = collector_engine(database_url, settings.collector_connect_timeout_s)
+        engine = collector_engine(database_url, settings.route_db_connect_timeout_s)
         with Session(engine) as session:
+            # slot 날짜보다 뒤에 낸 예측은 아직 없으므로 오늘까지 낸 것 중 최신과 같다.
             return latest_forecasts(session, slot, slot.date())
 
     try:

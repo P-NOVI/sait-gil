@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # 수집 DB. 로컬은 Docker PostgreSQL, 배포는 Neon 이다. 주소에 비밀번호가 들어 있다.
     collector_database_url: SecretStr = SecretStr("")
     collector_connect_timeout_s: int = 10
+    # 길찾기 중 수집 DB(예측·도시데이터)에 접속을 기다리는 시간(초).
+    # 수집기보다 짧게 두어 DB 장애 때 길찾기가 오래 멈추지 않게 한다.
+    route_db_connect_timeout_s: int = 3
     # S-DoT 이력은 DB의 최신 측정 시각에서 이만큼 앞까지 최신 쪽부터 거슬러 받는다.
     # 늦게 올라온 행도 받으려고 겹쳐 받는다(이미 있는 행은 건너뛴다).
     collector_sdot_overlap_minutes: int = 60
