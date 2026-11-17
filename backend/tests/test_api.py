@@ -1,15 +1,23 @@
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
-from app.dependencies import get_sensor_cache, get_sensors, get_tmap_client
+from app.dependencies import (
+    get_sensor_cache,
+    get_sensors,
+    get_timeline_caches,
+    get_timeline_reader,
+    get_tmap_client,
+)
 from app.main import app
 from app.services.sensor_service import SensorCache
+from app.services.timeline_service import TimelineCaches
 from app.services.tmap_client import TmapError
-from core.congestion import Sensor
+from core.congestion import Area, Layer, Sensor, Timeline, constant_timeline
 from tests.fakes import FakeTmap
 from tests.helpers import tmap_response
 
@@ -40,6 +48,9 @@ def client(tmap: FakeTmap, tmp_path: Path) -> Iterator[TestClient]:
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_tmap_client] = lambda: tmap
     app.dependency_overrides[get_sensors] = lambda: []
+    # 수집 DB 주소가 없어 예측·구역은 빈 값이다. 테스트마다 캐시를 새로 쓴다.
+    caches = TimelineCaches.from_settings(settings)
+    app.dependency_overrides[get_timeline_caches] = lambda: caches
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -75,6 +86,32 @@ def test_routes_less_crowded_avoids_sensor(client: TestClient, tmap: FakeTmap) -
         ["less_crowded"],
     ]
     assert routes[0]["congestion_score"] > routes[1]["congestion_score"] == 0
+    assert [e["kind"] for e in routes[0]["events"]].count("crowd") == 1
+
+
+def test_routes_less_crowded_avoids_crowded_area(
+    client: TestClient, tmap: FakeTmap
+) -> None:
+    tmap.routes = {0: STRAIGHT, 10: DETOUR}
+    # 곧은 길만 지나는 좁은 '붐빔' 구역. 센서는 없다.
+    ring = [
+        (126.9998, 37.5004),
+        (127.0002, 37.5004),
+        (127.0002, 37.5016),
+        (126.9998, 37.5016),
+    ]
+
+    async def read(now: datetime, until: datetime) -> Timeline:
+        return constant_timeline(Layer(areas=[Area([ring], 1.0)]), now)
+
+    app.dependency_overrides[get_timeline_reader] = lambda: read
+
+    routes = client.post("/api/routes", json=ROUTE_BODY).json()["routes"]
+
+    assert [r["kinds"] for r in routes] == [
+        ["recommended", "gentle"],
+        ["less_crowded"],
+    ]
     assert [e["kind"] for e in routes[0]["events"]].count("crowd") == 1
 
 

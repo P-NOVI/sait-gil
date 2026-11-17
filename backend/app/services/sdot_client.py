@@ -34,12 +34,25 @@ def sdot_http(
     )
 
 
+def page_path(start: int, count: int) -> str:
+    """최신순 start 번째 행부터 count 행을 받는 주소."""
+    return f"/{SERVICE_NAME}/{start}/{start + count - 1}/"
+
+
 async def fetch_people_rows(
     http: httpx.AsyncClient, count: int
 ) -> list[dict[str, Any]]:
     """최신 count 행."""
     try:
-        response = await http.get(f"/{SERVICE_NAME}/1/{count}/")
+        response = await http.get(page_path(1, count))
+    except httpx.HTTPError as error:
+        raise SdotError(f"S-DoT 응답 실패: {type(error).__name__}") from None
+    return people_rows(response)
+
+
+def people_rows(response: httpx.Response) -> list[dict[str, Any]]:
+    """sDoTPeople 응답의 행 목록. 데이터가 없으면 빈 목록이다."""
+    try:
         response.raise_for_status()
         body = response.json()
         # 성공하면 서비스 이름 아래에, 인증 오류 같은 실패는 바로 RESULT 로 온다.

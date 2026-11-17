@@ -1,0 +1,31 @@
+[project]
+name = "pipeline"
+version = "0.1.0"
+requires-python = ">=3.12"
+# 유동인구 예측 학습셋 단계(steps/13·16)용. DEM·영역 스크립트는 backend 환경으로 돌린다.
+dependencies = [
+    "numpy>=2.5.4",
+    "psycopg[binary]>=3.2",
+    "pyarrow>=26.0.0",
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.isort]
+# steps/common.py
+known-first-party = ["common"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
