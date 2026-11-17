@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -6,15 +7,17 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
 from app.dependencies import (
-    get_areas,
     get_sensor_cache,
     get_sensors,
+    get_timeline_caches,
+    get_timeline_reader,
     get_tmap_client,
 )
 from app.main import app
 from app.services.sensor_service import SensorCache
+from app.services.timeline_service import TimelineCaches
 from app.services.tmap_client import TmapError
-from core.congestion import Area, Sensor
+from core.congestion import Area, Layer, Sensor, Timeline, constant_timeline
 from tests.fakes import FakeTmap
 from tests.helpers import tmap_response
 
@@ -45,7 +48,9 @@ def client(tmap: FakeTmap, tmp_path: Path) -> Iterator[TestClient]:
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_tmap_client] = lambda: tmap
     app.dependency_overrides[get_sensors] = lambda: []
-    app.dependency_overrides[get_areas] = lambda: []
+    # 수집 DB 주소가 없어 예측·구역은 빈 값이다. 테스트마다 캐시를 새로 쓴다.
+    caches = TimelineCaches.from_settings(settings)
+    app.dependency_overrides[get_timeline_caches] = lambda: caches
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -95,7 +100,11 @@ def test_routes_less_crowded_avoids_crowded_area(
         (127.0002, 37.5016),
         (126.9998, 37.5016),
     ]
-    app.dependency_overrides[get_areas] = lambda: [Area([ring], 1.0)]
+
+    async def read(now: datetime, until: datetime) -> Timeline:
+        return constant_timeline(Layer(areas=[Area([ring], 1.0)]), now)
+
+    app.dependency_overrides[get_timeline_reader] = lambda: read
 
     routes = client.post("/api/routes", json=ROUTE_BODY).json()["routes"]
 

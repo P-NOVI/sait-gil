@@ -1,13 +1,19 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from core.congestion import (
     Area,
+    Layer,
     Sensor,
+    Timeline,
     area_level,
     congestion_level,
     congestion_summary,
+    hour_slots,
     point_in_rings,
     point_levels,
+    timed_point_levels,
 )
 from core.geo import LinePoint
 
@@ -104,3 +110,44 @@ def test_point_levels_takes_larger_of_sensor_and_area() -> None:
     )
 
     assert levels == [0.9, 0.5, 0.0]
+
+
+# --- 도착 시간대 ---
+
+KST = timezone(timedelta(hours=9))
+DEPART = datetime(2026, 11, 17, 9, 50, tzinfo=KST)
+
+
+def test_hour_slots_cover_walk() -> None:
+    assert hour_slots(DEPART, DEPART + timedelta(minutes=75)) == [
+        datetime(2026, 11, 17, 9, tzinfo=KST),
+        datetime(2026, 11, 17, 10, tzinfo=KST),
+        datetime(2026, 11, 17, 11, tzinfo=KST),
+    ]
+
+
+def test_timeline_slot_and_fallback_layer() -> None:
+    nine, ten = (datetime(2026, 11, 17, h, tzinfo=KST) for h in (9, 10))
+    first = Layer([Sensor((127.0, 37.5), 0.2)])
+    timeline = Timeline(DEPART, 1.0, {nine: first})
+
+    # 1.0m/s 로 600m 는 10분 뒤 10:00 이다.
+    assert timeline.slot_at(599) == nine
+    assert timeline.slot_at(600) == ten
+    # 10시 값이 없으면 9시 값을 쓰고, 그 앞도 없으면 빈 값이다.
+    assert timeline.layer(ten) == first
+    assert timeline.layer(nine - timedelta(hours=1)) == Layer()
+
+
+def test_timed_point_levels_use_arrival_slot() -> None:
+    nine, ten = (datetime(2026, 11, 17, h, tzinfo=KST) for h in (9, 10))
+    sensor_at = (127.0, 37.5)
+    timeline = Timeline(
+        DEPART,
+        1.0,
+        {nine: Layer([Sensor(sensor_at, 0.2)]), ten: Layer([Sensor(sensor_at, 0.9)])},
+    )
+    # 같은 자리라도 9시대에 닿는 점과 10시대에 닿는 점의 혼잡도가 다르다.
+    points = [LinePoint(sensor_at, 0.0), LinePoint(sensor_at, 900.0)]
+
+    assert timed_point_levels(points, timeline, 50) == [0.2, 0.9]

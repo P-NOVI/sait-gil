@@ -1,18 +1,22 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 
 from app.config import Settings, get_settings
-from app.services.citydata_service import AreaCache, current_areas
 from app.services.sensor_service import SensorCache, realtime_sensors
+from app.services.timeline_service import TimelineCaches, build_timeline
 from app.services.tmap_client import TmapClient, tmap_http
-from core.congestion import Area, Sensor
+from core.congestion import Sensor, Timeline
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 _sensor_cache = SensorCache()
-_area_cache = AreaCache()
+_timeline_caches: TimelineCaches | None = None
+
+# (출발 시각, 걷기를 마치는 시각) → 시간대별 혼잡도
+TimelineReader = Callable[[datetime, datetime], Awaitable[Timeline]]
 
 
 async def get_tmap_client(settings: SettingsDep) -> AsyncIterator[TmapClient]:
@@ -43,24 +47,25 @@ async def get_sensors(
     return sensors
 
 
-def get_area_cache() -> AreaCache:
-    return _area_cache
+def get_timeline_caches(settings: SettingsDep) -> TimelineCaches:
+    global _timeline_caches
+    if _timeline_caches is None:
+        _timeline_caches = TimelineCaches.from_settings(settings)
+    return _timeline_caches
 
 
-async def get_areas(
-    settings: SettingsDep, cache: Annotated[AreaCache, Depends(get_area_cache)]
-) -> list[Area]:
-    """경로 혼잡 점수에 쓰는 도시데이터 구역 혼잡도(수집 DB).
+def get_timeline_reader(
+    settings: SettingsDep,
+    sensors: Annotated[list[Sensor], Depends(get_sensors)],
+    caches: Annotated[TimelineCaches, Depends(get_timeline_caches)],
+) -> TimelineReader:
+    """경로 혼잡 점수에 쓰는 시간대별 혼잡도(실시간·예측 S-DoT, 도시데이터 구역)."""
 
-    CITYDATA_CACHE_TTL_S 동안 같은 값을 쓴다. 실패한 빈 결과도 들고 있는다.
-    """
-    areas = cache.get(settings.citydata_cache_ttl_s)
-    if areas is None:
-        areas = await current_areas(settings)
-        cache.set(areas)
-    return areas
+    async def read(now: datetime, until: datetime) -> Timeline:
+        return await build_timeline(settings, now, until, sensors, caches)
+
+    return read
 
 
 TmapClientDep = Annotated[TmapClient, Depends(get_tmap_client)]
-SensorsDep = Annotated[list[Sensor], Depends(get_sensors)]
-AreasDep = Annotated[list[Area], Depends(get_areas)]
+TimelineReaderDep = Annotated[TimelineReader, Depends(get_timeline_reader)]

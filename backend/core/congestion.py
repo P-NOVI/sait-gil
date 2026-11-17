@@ -3,10 +3,15 @@
 S-DoT 센서는 서울에 백여 개뿐이라, 서울 실시간 도시데이터의 주요 장소 구역 혼잡도로
 빈 곳을 채운다. 점마다 반경 안 센서와 점을 품은 구역 중 가장 큰 혼잡도를 쓰고,
 어디에도 걸리지 않는 점은 0 이다.
+
+혼잡도는 시간대(한 시간)마다 다르다. 점마다 출발 시각에 그 점까지 걸어가는 시간을
+더해 도착 시간대를 구하고, 그 시간대의 센서·구역 혼잡도(Layer)를 쓴다.
 """
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections import defaultdict
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from itertools import chain, pairwise
 
 from core.geo import LinePoint, LngLat, distance_m
@@ -29,6 +34,53 @@ class Area:
     rings: Sequence[Ring]
     # 0~1
     level: float
+
+
+@dataclass(frozen=True)
+class Layer:
+    """한 시간대의 센서·구역 혼잡도."""
+
+    sensors: Sequence[Sensor] = ()
+    areas: Sequence[Area] = ()
+
+
+@dataclass(frozen=True)
+class Timeline:
+    """출발 시각, 걷는 속도, 시간대(정시)별 혼잡도."""
+
+    departed_at: datetime
+    speed_mps: float
+    layers: Mapping[datetime, Layer] = field(default_factory=dict)
+
+    def slot_at(self, distance_m: float) -> datetime:
+        """출발점에서 distance_m 떨어진 곳에 닿는 시간대(정시)."""
+        return floor_hour(
+            self.departed_at + timedelta(seconds=distance_m / self.speed_mps)
+        )
+
+    def layer(self, slot: datetime) -> Layer:
+        """slot 의 혼잡도. 없으면 그 앞 가장 늦은 시간대, 그것도 없으면 빈 값."""
+        if slot in self.layers:
+            return self.layers[slot]
+        earlier = [known for known in self.layers if known <= slot]
+        return self.layers[max(earlier)] if earlier else Layer()
+
+
+def constant_timeline(layer: Layer, departed_at: datetime) -> Timeline:
+    """시간대와 관계없이 layer 하나를 쓰는 타임라인."""
+    return Timeline(departed_at, 1.0, {floor_hour(departed_at): layer})
+
+
+def floor_hour(moment: datetime) -> datetime:
+    return moment.replace(minute=0, second=0, microsecond=0)
+
+
+def hour_slots(start: datetime, end: datetime) -> list[datetime]:
+    """start 가 속한 정시부터 end 가 속한 정시까지 한 시간 간격."""
+    slots = [floor_hour(start)]
+    while slots[-1] < floor_hour(end):
+        slots.append(slots[-1] + timedelta(hours=1))
+    return slots
 
 
 @dataclass(frozen=True)
@@ -84,6 +136,24 @@ def point_levels(
             and point_in_rings(point.position, area.rings)
         )
         levels.append(max(chain(nearby, covering), default=0.0))
+    return levels
+
+
+def timed_point_levels(
+    points: Sequence[LinePoint], timeline: Timeline, radius_m: float
+) -> list[float]:
+    """점마다 도착 시간대의 혼잡도로 point_levels 를 낸다."""
+    groups: dict[datetime, list[int]] = defaultdict(list)
+    for index, point in enumerate(points):
+        groups[timeline.slot_at(point.distance_m)].append(index)
+    levels = [0.0] * len(points)
+    for slot, indices in groups.items():
+        layer = timeline.layer(slot)
+        found = point_levels(
+            [points[i] for i in indices], layer.sensors, radius_m, layer.areas
+        )
+        for index, level in zip(indices, found, strict=True):
+            levels[index] = level
     return levels
 
 

@@ -1,23 +1,23 @@
 """Tmap 경로 응답들로 띄울 세 경로(추천, 덜 붐비는 길, 완만한 길)를 만든다.
 
 Tmap 호출은 여기서 하지 않는다. 받은 응답(추천 경로가 먼저, 후보가 다음)과
-센서·구역 혼잡도로 경로마다 혼잡·경사 점수를 매기고,
-고른 경로의 미리 알림 이벤트를 만든다.
+시간대별 센서·구역 혼잡도(Timeline)로 경로마다 혼잡·경사 점수를 매기고,
+고른 경로의 미리 알림 이벤트를 만든다. 경로 위 점은 그 점에 닿는 시간대의 혼잡도를 쓴다.
 """
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from functools import partial
 from typing import Any
 
 from app.config import Settings
 from app.services.elevation_service import sample_elevations
 from core.congestion import (
-    Area,
     CongestionSummary,
-    Sensor,
+    Timeline,
     congestion_summary,
-    point_levels,
+    timed_point_levels,
 )
 from core.geo import LinePoint, LngLat, line_key, sample_line
 from core.route_choice import RouteKind, ScoredRoute, choose_routes
@@ -46,15 +46,11 @@ class _Measured:
 
 def plan_routes(
     responses: Sequence[Mapping[str, Any]],
-    sensors: Sequence[Sensor],
+    timeline: Timeline,
     settings: Settings,
     read_elevations: ElevationReader | None = None,
-    areas: Sequence[Area] = (),
 ) -> list[PlannedRoute]:
-    """responses[0] 은 기본 옵션으로 받은 추천 경로다. 같은 경로는 한 번만 센다.
-
-    areas 는 도시데이터 구역 혼잡도다. 센서 혼잡도와 겹치면 큰 값을 쓴다.
-    """
+    """responses[0] 은 기본 옵션으로 받은 추천 경로다. 같은 경로는 한 번만 센다."""
     if read_elevations is None:
         read_elevations = partial(sample_elevations, settings.dem_path)
     routes = _unique_routes(responses)
@@ -63,7 +59,7 @@ def plan_routes(
     ]
     elevations = _read_all(samples, read_elevations)
     measured = [
-        _measure(route, points, heights, sensors, areas, settings)
+        _measure(route, points, heights, timeline, settings)
         for route, points, heights in zip(routes, samples, elevations, strict=True)
     ]
     options = choose_routes(
@@ -87,6 +83,14 @@ def plan_routes(
         )
         for option in options
     ]
+
+
+def walk_end(
+    responses: Sequence[Mapping[str, Any]], departed_at: datetime, speed_mps: float
+) -> datetime:
+    """가장 긴 경로를 speed_mps 로 다 걸었을 때의 시각."""
+    longest = max((route.length_m for route in _unique_routes(responses)), default=0)
+    return departed_at + timedelta(seconds=longest / speed_mps)
 
 
 def _unique_routes(responses: Sequence[Mapping[str, Any]]) -> list[TmapRoute]:
@@ -121,11 +125,10 @@ def _measure(
     route: TmapRoute,
     points: Sequence[LinePoint],
     heights: Sequence[float | None],
-    sensors: Sequence[Sensor],
-    areas: Sequence[Area],
+    timeline: Timeline,
     settings: Settings,
 ) -> _Measured:
-    levels = point_levels(points, sensors, settings.congestion_radius_m, areas)
+    levels = timed_point_levels(points, timeline, settings.congestion_radius_m)
     return _Measured(
         route=route,
         congestion=congestion_summary(points, levels, settings.crowded_level),

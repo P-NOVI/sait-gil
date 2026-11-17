@@ -39,12 +39,41 @@ class Settings(BaseSettings):
     citydata_timeout_s: float = 10.0
     # 수집기가 동시에 보내는 요청 수
     citydata_concurrency: int = 5
+    # 기상청 API허브 단기예보(날씨 수집). 키가 요청 주소의 쿼리에 들어가므로
+    # 주소를 로그에 남기지 않는다.
     kma_api_key: str = ""
+    kma_base_url: str = (
+        "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0"
+    )
+    kma_timeout_s: float = 10.0
+    # 한 번에 받는 행 수. 단기예보는 1,000건이 넘어서 쪽을 나눠 받는다.
+    kma_page_size: int = 1000
+    # 수집 한 번 안에서 같은 격자·기준 시각을 다시 부르지 않는 시간(초)
+    kma_cache_ttl_s: float = 600.0
 
     database_url: str = ""
     # 수집 DB. 로컬은 Docker PostgreSQL, 배포는 Neon 이다. 주소에 비밀번호가 들어 있다.
     collector_database_url: SecretStr = SecretStr("")
     collector_connect_timeout_s: int = 10
+    # S-DoT 이력은 DB의 최신 측정 시각에서 이만큼 앞까지 최신 쪽부터 거슬러 받는다.
+    # 늦게 올라온 행도 받으려고 겹쳐 받는다(이미 있는 행은 건너뛴다).
+    collector_sdot_overlap_minutes: int = 60
+    # 한 번에 받는 최대 쪽 수. 1000행이 약 1.5시간치라 하루가 약 12쪽, 300쪽은 약 25일.
+    # 여기에 걸리면 넣지 않고 실패로 끝나 다음 실행이 같은 지점부터 다시 받는다.
+    collector_sdot_max_pages: int = 300
+    # 수집 DB가 비었을 때만 받는 S-DoT 최신 행 수
+    collector_sdot_rows: int = 2000
+    # 날씨 실황은 지난 이 시간 안에서 DB에 없는 정시만 받는다.
+    # 기상청은 24시간 안만 준다.
+    collector_backfill_hours: int = 12
+    # 하루치 단기예보는 이 시(時) 발표분을 발표 뒤 이 시간만큼 받는다.
+    # 67시간은 05시 발표부터 모레 24시까지다.
+    # 유동인구 예측이 오늘·내일·모레 날씨로 쓴다.
+    collector_daily_issue_hour: int = 5
+    collector_daily_hours: int = 67
+    # 자치구 위치를 구할 때 쓰는 최근 S-DoT 수집 기간(일). 유동인구는 하루 한 번
+    # 받으므로, 그 실행이 며칠 빠져도 날씨가 멈추지 않게 넉넉히 둔다.
+    collector_district_days: int = 7
 
     frontend_url: str = "http://localhost:5173"
     allowed_origins: list[str] = ["http://localhost:5173"]
@@ -72,6 +101,14 @@ class Settings(BaseSettings):
     citydata_match_window_minutes: float = 40.0
     # DB에서 읽은 구역 혼잡도를 다시 쓰는 시간(초)
     citydata_cache_ttl_s: float = 300.0
+    # 경로 위 점마다 도착 시각(출발 + 걸은 거리 ÷ 이 속도)의 혼잡도를 쓴다(m/s).
+    # 시각장애인 보행을 생각해 보통 걸음(약 1.2m/s)보다 조금 느리게 잡은 초안이다.
+    walking_speed_mps: float = 1.0
+    # 예측 유동인구(명/시간)를 10분 유동인구로 바꿀 때 나누는 값(한 시간의 10분
+    # 구간 수). 그래서 예측도 congestion_full_count 와 같은 기준으로 혼잡도가 된다.
+    forecast_bins_per_hour: int = 6
+    # 시간대별 예측 혼잡도를 다시 쓰는 시간(초). 예측은 하루 한 번 바뀐다.
+    forecast_cache_ttl_s: float = 600.0
     # 1/50~1/12 구간, 1/12 초과 구간 길이에 곱하는 경사 점수 배율
     slope_moderate_weight: float = 0.5
     slope_hard_weight: float = 2.0

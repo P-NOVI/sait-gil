@@ -6,8 +6,7 @@
 
 import json
 import logging
-import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -140,19 +139,3 @@ async def current_areas(settings: Settings, now: datetime | None = None) -> list
     if not levels:
         logger.warning("최근 도시데이터가 없어 도시데이터 없이 경로를 고릅니다.")
     return areas_with_levels(shapes, levels, settings.citydata_level_values)
-
-
-class AreaCache:
-    """구역 혼잡도 한 벌을 잠시 들고 있는다."""
-
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
-        self._clock = clock
-        self._entry: tuple[float, list[Area]] | None = None
-
-    def get(self, ttl_s: float) -> list[Area] | None:
-        if self._entry is None or self._clock() - self._entry[0] >= ttl_s:
-            return None
-        return self._entry[1]
-
-    def set(self, areas: list[Area]) -> None:
-        self._entry = (self._clock(), areas)

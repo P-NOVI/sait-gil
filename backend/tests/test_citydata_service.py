@@ -14,7 +14,6 @@ from app.collector.models import CollectorBase
 from app.config import Settings
 from app.services.citydata_client import population_rows
 from app.services.citydata_service import (
-    AreaCache,
     areas_with_levels,
     current_areas,
     latest_levels,
@@ -166,16 +165,3 @@ async def test_current_areas_db_failure_hides_url(
     assert areas == []
     assert "수집 DB 실패" in caplog.text
     assert url not in caplog.text
-
-
-def test_area_cache_expires_after_ttl() -> None:
-    clock = [0.0]
-    cache = AreaCache(clock=lambda: clock[0])
-    areas = [Area([[(127.0, 37.5)]], 0.5)]
-
-    assert cache.get(300) is None
-    cache.set(areas)
-    clock[0] = 299.9
-    assert cache.get(300) == areas
-    clock[0] = 300.0
-    assert cache.get(300) is None

@@ -1,8 +1,10 @@
 from collections.abc import Sequence
+from datetime import datetime
 
 from app.config import Settings
 from app.services.route_service import plan_routes
-from core.congestion import Sensor
+from app.services.sdot_client import KST
+from core.congestion import Layer, Sensor, constant_timeline
 from core.geo import LngLat
 from core.route_choice import RouteKind
 from core.route_events import EventKind
@@ -16,7 +18,9 @@ RECOMMENDED = tmap_response([START, (127.0, 37.501), END], [200, 11, 201])
 DETOUR = tmap_response(
     [START, (127.001, 37.5), (127.001, 37.502), END], [200, 12, 12, 201]
 )
-SENSORS = [Sensor((127.0, 37.501), 1.0)]
+TIMELINE = constant_timeline(
+    Layer([Sensor((127.0, 37.501), 1.0)]), datetime(2026, 11, 17, 9, tzinfo=KST)
+)
 
 
 def flat_detour(positions: Sequence[LngLat]) -> list[float | None]:
@@ -34,7 +38,7 @@ def settings() -> Settings:
 
 
 def test_plan_routes_picks_detour_as_less_crowded_and_gentle() -> None:
-    planned = plan_routes([RECOMMENDED, DETOUR], SENSORS, settings(), flat_detour)
+    planned = plan_routes([RECOMMENDED, DETOUR], TIMELINE, settings(), flat_detour)
 
     assert [p.kinds for p in planned] == [
         (RouteKind.RECOMMENDED,),
@@ -48,14 +52,14 @@ def test_plan_routes_picks_detour_as_less_crowded_and_gentle() -> None:
 
 
 def test_plan_routes_events_include_crowd_start() -> None:
-    recommended = plan_routes([RECOMMENDED], SENSORS, settings(), flat_detour)[0]
+    recommended = plan_routes([RECOMMENDED], TIMELINE, settings(), flat_detour)[0]
 
     kinds = [event.kind for event in recommended.events]
     assert kinds == [EventKind.CROWD, EventKind.DESTINATION]
 
 
 def test_plan_routes_counts_same_route_once() -> None:
-    planned = plan_routes([RECOMMENDED, RECOMMENDED], SENSORS, settings(), flat_detour)
+    planned = plan_routes([RECOMMENDED, RECOMMENDED], TIMELINE, settings(), flat_detour)
 
     assert len(planned) == 1
     assert planned[0].kinds == (
@@ -66,4 +70,4 @@ def test_plan_routes_counts_same_route_once() -> None:
 
 
 def test_plan_routes_without_routes() -> None:
-    assert plan_routes([], SENSORS, settings(), flat_detour) == []
+    assert plan_routes([], TIMELINE, settings(), flat_detour) == []
