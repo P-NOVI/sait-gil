@@ -4,13 +4,15 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 
 from app.config import Settings, get_settings
+from app.services.citydata_service import AreaCache, current_areas
 from app.services.sensor_service import SensorCache, realtime_sensors
 from app.services.tmap_client import TmapClient, tmap_http
-from core.congestion import Sensor
+from core.congestion import Area, Sensor
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 _sensor_cache = SensorCache()
+_area_cache = AreaCache()
 
 
 async def get_tmap_client(settings: SettingsDep) -> AsyncIterator[TmapClient]:
@@ -41,5 +43,24 @@ async def get_sensors(
     return sensors
 
 
+def get_area_cache() -> AreaCache:
+    return _area_cache
+
+
+async def get_areas(
+    settings: SettingsDep, cache: Annotated[AreaCache, Depends(get_area_cache)]
+) -> list[Area]:
+    """경로 혼잡 점수에 쓰는 도시데이터 구역 혼잡도(수집 DB).
+
+    CITYDATA_CACHE_TTL_S 동안 같은 값을 쓴다. 실패한 빈 결과도 들고 있는다.
+    """
+    areas = cache.get(settings.citydata_cache_ttl_s)
+    if areas is None:
+        areas = await current_areas(settings)
+        cache.set(areas)
+    return areas
+
+
 TmapClientDep = Annotated[TmapClient, Depends(get_tmap_client)]
 SensorsDep = Annotated[list[Sensor], Depends(get_sensors)]
+AreasDep = Annotated[list[Area], Depends(get_areas)]

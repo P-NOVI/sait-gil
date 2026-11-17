@@ -1,9 +1,12 @@
 import pytest
 
 from core.congestion import (
+    Area,
     Sensor,
+    area_level,
     congestion_level,
     congestion_summary,
+    point_in_rings,
     point_levels,
 )
 from core.geo import LinePoint
@@ -43,3 +46,61 @@ def test_congestion_summary_crowded_from_start() -> None:
     summary = congestion_summary(points, [0.9, 0.9], crowded_level=0.5)
 
     assert [p.distance_m for p in summary.crowded_starts] == [0.0]
+
+
+SQUARE = [(127.0, 37.5), (127.01, 37.5), (127.01, 37.51), (127.0, 37.51)]
+# ㄷ 자 모양 오목 다각형. 가운데 홈(127.003~127.007, 37.503 위)은 밖이다.
+NOTCHED = [
+    (127.0, 37.5),
+    (127.01, 37.5),
+    (127.01, 37.51),
+    (127.007, 37.51),
+    (127.007, 37.503),
+    (127.003, 37.503),
+    (127.003, 37.51),
+    (127.0, 37.51),
+]
+HOLE = [(127.004, 37.504), (127.006, 37.504), (127.006, 37.506), (127.004, 37.506)]
+
+
+def test_area_level_maps_steps_to_values() -> None:
+    values = [0.0, 0.25, 0.5, 1.0]
+
+    assert [area_level(step, values) for step in (1, 2, 3, 4)] == values
+    with pytest.raises(ValueError):
+        area_level(5, values)
+    with pytest.raises(ValueError):
+        area_level(0, values)
+
+
+@pytest.mark.parametrize(
+    ("position", "rings", "inside"),
+    [
+        ((127.005, 37.505), [SQUARE], True),
+        ((127.02, 37.505), [SQUARE], False),
+        ((127.001, 37.508), [NOTCHED], True),
+        ((127.005, 37.508), [NOTCHED], False),
+        ((127.005, 37.501), [NOTCHED], True),
+        ((127.005, 37.505), [SQUARE, HOLE], False),
+        ((127.002, 37.505), [SQUARE, HOLE], True),
+        ((127.005, 37.505), [], False),
+    ],
+)
+def test_point_in_rings(
+    position: tuple[float, float], rings: list, inside: bool
+) -> None:
+    assert point_in_rings(position, rings) is inside
+
+
+def test_point_levels_takes_larger_of_sensor_and_area() -> None:
+    in_area_near_sensor = LinePoint((127.005, 37.505), 0)
+    in_area_only = LinePoint((127.002, 37.502), 400)
+    outside = LinePoint((127.02, 37.505), 1500)
+    sensors = [Sensor((127.005, 37.5052), 0.9)]
+    areas = [Area([SQUARE], 0.5)]
+
+    levels = point_levels(
+        [in_area_near_sensor, in_area_only, outside], sensors, radius_m=50, areas=areas
+    )
+
+    assert levels == [0.9, 0.5, 0.0]

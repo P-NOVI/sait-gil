@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from app.dependencies import SensorsDep, SettingsDep, TmapClientDep
+from app.dependencies import AreasDep, SensorsDep, SettingsDep, TmapClientDep
 from app.services.route_candidates import fetch_routes
 from app.services.route_service import PlannedRoute, plan_routes
 from app.services.tmap_client import TmapError
@@ -64,6 +64,7 @@ async def find_routes(
     request: RouteRequest,
     client: TmapClientDep,
     sensors: SensorsDep,
+    areas: AreasDep,
     settings: SettingsDep,
 ) -> RoutesResponse:
     start = (request.start.lng, request.start.lat)
@@ -79,7 +80,9 @@ async def find_routes(
         )
     except TmapError as error:
         raise _http_error(error) from error
-    planned = await run_in_threadpool(plan_routes, responses, sensors, settings)
+    planned = await run_in_threadpool(
+        plan_routes, responses, sensors, settings, None, areas
+    )
     if not planned:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "경로를 찾지 못했습니다.")
     return RoutesResponse(routes=[_route_out(route) for route in planned])

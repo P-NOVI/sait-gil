@@ -1,7 +1,8 @@
 """Tmap 경로 응답들로 띄울 세 경로(추천, 덜 붐비는 길, 완만한 길)를 만든다.
 
 Tmap 호출은 여기서 하지 않는다. 받은 응답(추천 경로가 먼저, 후보가 다음)과
-센서 혼잡도로 경로마다 혼잡·경사 점수를 매기고, 고른 경로의 미리 알림 이벤트를 만든다.
+센서·구역 혼잡도로 경로마다 혼잡·경사 점수를 매기고,
+고른 경로의 미리 알림 이벤트를 만든다.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -12,6 +13,7 @@ from typing import Any
 from app.config import Settings
 from app.services.elevation_service import sample_elevations
 from core.congestion import (
+    Area,
     CongestionSummary,
     Sensor,
     congestion_summary,
@@ -47,8 +49,12 @@ def plan_routes(
     sensors: Sequence[Sensor],
     settings: Settings,
     read_elevations: ElevationReader | None = None,
+    areas: Sequence[Area] = (),
 ) -> list[PlannedRoute]:
-    """responses[0] 은 기본 옵션으로 받은 추천 경로다. 같은 경로는 한 번만 센다."""
+    """responses[0] 은 기본 옵션으로 받은 추천 경로다. 같은 경로는 한 번만 센다.
+
+    areas 는 도시데이터 구역 혼잡도다. 센서 혼잡도와 겹치면 큰 값을 쓴다.
+    """
     if read_elevations is None:
         read_elevations = partial(sample_elevations, settings.dem_path)
     routes = _unique_routes(responses)
@@ -57,7 +63,7 @@ def plan_routes(
     ]
     elevations = _read_all(samples, read_elevations)
     measured = [
-        _measure(route, points, heights, sensors, settings)
+        _measure(route, points, heights, sensors, areas, settings)
         for route, points, heights in zip(routes, samples, elevations, strict=True)
     ]
     options = choose_routes(
@@ -116,9 +122,10 @@ def _measure(
     points: Sequence[LinePoint],
     heights: Sequence[float | None],
     sensors: Sequence[Sensor],
+    areas: Sequence[Area],
     settings: Settings,
 ) -> _Measured:
-    levels = point_levels(points, sensors, settings.congestion_radius_m)
+    levels = point_levels(points, sensors, settings.congestion_radius_m, areas)
     return _Measured(
         route=route,
         congestion=congestion_summary(points, levels, settings.crowded_level),

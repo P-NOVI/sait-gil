@@ -5,11 +5,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
-from app.dependencies import get_sensor_cache, get_sensors, get_tmap_client
+from app.dependencies import (
+    get_areas,
+    get_sensor_cache,
+    get_sensors,
+    get_tmap_client,
+)
 from app.main import app
 from app.services.sensor_service import SensorCache
 from app.services.tmap_client import TmapError
-from core.congestion import Sensor
+from core.congestion import Area, Sensor
 from tests.fakes import FakeTmap
 from tests.helpers import tmap_response
 
@@ -40,6 +45,7 @@ def client(tmap: FakeTmap, tmp_path: Path) -> Iterator[TestClient]:
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_tmap_client] = lambda: tmap
     app.dependency_overrides[get_sensors] = lambda: []
+    app.dependency_overrides[get_areas] = lambda: []
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -75,6 +81,28 @@ def test_routes_less_crowded_avoids_sensor(client: TestClient, tmap: FakeTmap) -
         ["less_crowded"],
     ]
     assert routes[0]["congestion_score"] > routes[1]["congestion_score"] == 0
+    assert [e["kind"] for e in routes[0]["events"]].count("crowd") == 1
+
+
+def test_routes_less_crowded_avoids_crowded_area(
+    client: TestClient, tmap: FakeTmap
+) -> None:
+    tmap.routes = {0: STRAIGHT, 10: DETOUR}
+    # 곧은 길만 지나는 좁은 '붐빔' 구역. 센서는 없다.
+    ring = [
+        (126.9998, 37.5004),
+        (127.0002, 37.5004),
+        (127.0002, 37.5016),
+        (126.9998, 37.5016),
+    ]
+    app.dependency_overrides[get_areas] = lambda: [Area([ring], 1.0)]
+
+    routes = client.post("/api/routes", json=ROUTE_BODY).json()["routes"]
+
+    assert [r["kinds"] for r in routes] == [
+        ["recommended", "gentle"],
+        ["less_crowded"],
+    ]
     assert [e["kind"] for e in routes[0]["events"]].count("crowd") == 1
 
 

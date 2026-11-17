@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -32,10 +33,18 @@ class Settings(BaseSettings):
     sdot_cache_ttl_s: float = 60.0
     # 이보다 오래전에 잰 값은 쓰지 않는다(분)
     sdot_max_age_minutes: float = 60.0
+    # 서울 실시간 인구데이터(citydata_ppltn, SEOUL_API_KEY). 한 번에 한 장소만 준다.
+    # 이 주소도 HTTP 만 받고 키가 주소에 들어간다.
+    citydata_base_url: str = "http://openapi.seoul.go.kr:8088"
+    citydata_timeout_s: float = 10.0
+    # 수집기가 동시에 보내는 요청 수
+    citydata_concurrency: int = 5
     kma_api_key: str = ""
 
     database_url: str = ""
-    collector_database_url: str = ""
+    # 수집 DB. 로컬은 Docker PostgreSQL, 배포는 Neon 이다. 주소에 비밀번호가 들어 있다.
+    collector_database_url: SecretStr = SecretStr("")
+    collector_connect_timeout_s: int = 10
 
     frontend_url: str = "http://localhost:5173"
     allowed_origins: list[str] = ["http://localhost:5173"]
@@ -43,6 +52,7 @@ class Settings(BaseSettings):
     # 경로 점수(B안)에 쓰는 데이터. pipeline/ 이 만들고 커밋하지 않는다.
     dem_path: Path = PROCESSED_DIR / "seoul_dem_5m.tif"
     sensors_path: Path = PROCESSED_DIR / "sdot_sensors.json"
+    citydata_areas_path: Path = PROCESSED_DIR / "citydata_areas.json"
 
     # 경로 점수 기준 (CLAUDE.md "경로 결정 방식"). 초안 값이다.
     # 경로 선 위에 점을 찍는 간격
@@ -52,6 +62,16 @@ class Settings(BaseSettings):
     congestion_full_count: float = 300.0
     # 혼잡도가 이 값 이상으로 올라서는 곳을 혼잡 구간 시작으로 알린다
     crowded_level: float = 0.5
+    # 도시데이터 혼잡 단계(여유, 보통, 약간 붐빔, 붐빔)를 바꾼 혼잡도.
+    # 단계는 그 장소의 최근 28일 대비 값이라 S-DoT 혼잡도와 기준이 다르다.
+    citydata_level_values: list[float] = [0.0, 0.25, 0.5, 1.0]
+    # 가장 최근 수집분이 이보다 오래되면 도시데이터를 쓰지 않는다(시간).
+    # 예측이 12시간치라 수집 간격(6시간)보다 넉넉히 둔다.
+    citydata_max_age_h: float = 12.0
+    # 지금 시각과 이만큼 안에 있는 값(현재값·시간별 예측)만 쓴다(분)
+    citydata_match_window_minutes: float = 40.0
+    # DB에서 읽은 구역 혼잡도를 다시 쓰는 시간(초)
+    citydata_cache_ttl_s: float = 300.0
     # 1/50~1/12 구간, 1/12 초과 구간 길이에 곱하는 경사 점수 배율
     slope_moderate_weight: float = 0.5
     slope_hard_weight: float = 2.0
