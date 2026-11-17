@@ -1,16 +1,22 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 
 from app.config import Settings, get_settings
 from app.services.sensor_service import SensorCache, realtime_sensors
+from app.services.timeline_service import TimelineCaches, build_timeline
 from app.services.tmap_client import TmapClient, tmap_http
-from core.congestion import Sensor
+from core.congestion import Sensor, Timeline
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 _sensor_cache = SensorCache()
+_timeline_caches: TimelineCaches | None = None
+
+# (출발 시각, 걷기를 마치는 시각) → 시간대별 혼잡도
+TimelineReader = Callable[[datetime, datetime], Awaitable[Timeline]]
 
 
 async def get_tmap_client(settings: SettingsDep) -> AsyncIterator[TmapClient]:
@@ -41,5 +47,25 @@ async def get_sensors(
     return sensors
 
 
+def get_timeline_caches(settings: SettingsDep) -> TimelineCaches:
+    global _timeline_caches
+    if _timeline_caches is None:
+        _timeline_caches = TimelineCaches.from_settings(settings)
+    return _timeline_caches
+
+
+def get_timeline_reader(
+    settings: SettingsDep,
+    sensors: Annotated[list[Sensor], Depends(get_sensors)],
+    caches: Annotated[TimelineCaches, Depends(get_timeline_caches)],
+) -> TimelineReader:
+    """경로 혼잡 점수에 쓰는 시간대별 혼잡도(실시간·예측 S-DoT, 도시데이터 구역)."""
+
+    async def read(now: datetime, until: datetime) -> Timeline:
+        return await build_timeline(settings, now, until, sensors, caches)
+
+    return read
+
+
 TmapClientDep = Annotated[TmapClient, Depends(get_tmap_client)]
-SensorsDep = Annotated[list[Sensor], Depends(get_sensors)]
+TimelineReaderDep = Annotated[TimelineReader, Depends(get_timeline_reader)]

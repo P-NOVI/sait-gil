@@ -1,10 +1,13 @@
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from app.dependencies import SensorsDep, SettingsDep, TmapClientDep
+from app.dependencies import SettingsDep, TimelineReaderDep, TmapClientDep
 from app.services.route_candidates import fetch_routes
-from app.services.route_service import PlannedRoute, plan_routes
+from app.services.route_service import PlannedRoute, plan_routes, walk_end
+from app.services.sdot_client import KST
 from app.services.tmap_client import TmapError
 from core.route_choice import RouteKind
 from core.route_events import Direction, EventKind
@@ -63,7 +66,7 @@ class RoutesResponse(BaseModel):
 async def find_routes(
     request: RouteRequest,
     client: TmapClientDep,
-    sensors: SensorsDep,
+    read_timeline: TimelineReaderDep,
     settings: SettingsDep,
 ) -> RoutesResponse:
     start = (request.start.lng, request.start.lat)
@@ -79,7 +82,12 @@ async def find_routes(
         )
     except TmapError as error:
         raise _http_error(error) from error
-    planned = await run_in_threadpool(plan_routes, responses, sensors, settings)
+    # 경로 위 점마다 지금 출발해 그 점에 닿는 시간대의 혼잡도를 쓴다.
+    now = datetime.now(KST)
+    timeline = await read_timeline(
+        now, walk_end(responses, now, settings.walking_speed_mps)
+    )
+    planned = await run_in_threadpool(plan_routes, responses, timeline, settings)
     if not planned:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "경로를 찾지 못했습니다.")
     return RoutesResponse(routes=[_route_out(route) for route in planned])

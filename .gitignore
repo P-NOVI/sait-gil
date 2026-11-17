@@ -16,6 +16,8 @@ dist/
 
 # 데이터·모델
 data/
+# ml 검증·예측 그래프 결과
+/models/
 *.db
 *.pt
 *.onnx
