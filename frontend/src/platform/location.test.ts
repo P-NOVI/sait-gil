@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const native = vi.hoisted(() => ({ value: false }));
 const plugin = vi.hoisted(() => ({
     requestPermissions: vi.fn(),
+    checkPermissions: vi.fn(),
     getCurrentPosition: vi.fn(),
     watchPosition: vi.fn(),
     clearWatch: vi.fn(),
@@ -49,6 +50,21 @@ beforeEach(() => {
     native.value = false;
     vi.clearAllMocks();
 });
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+});
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** 앱으로 돌아온 것처럼 visibilitychange 를 보낼 수 있는 document */
+function visibleDocument() {
+    const fake = Object.assign(new EventTarget(), {
+        visibilityState: 'visible',
+    });
+    vi.stubGlobal('document', fake);
+    return () => fake.dispatchEvent(new Event('visibilitychange'));
+}
 
 describe('getCurrentPosition (웹)', () => {
     it('GPS 위치를 [경도, 위도] 로 돌려준다', async () => {
@@ -101,6 +117,24 @@ describe('getCurrentPosition (웹)', () => {
 });
 
 describe('getCurrentPosition (앱)', () => {
+    it('대략적인 위치만 허용해도 정밀 위치를 다시 요구하지 않고 위치를 찾는다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'granted',
+        });
+        plugin.getCurrentPosition.mockResolvedValueOnce({ coords: COORDS });
+
+        expect(await getCurrentPosition()).toEqual({
+            ...FIX,
+            approximate: true,
+        });
+        expect(plugin.getCurrentPosition).toHaveBeenCalledTimes(1);
+        expect(plugin.getCurrentPosition).toHaveBeenCalledWith(
+            expect.objectContaining({ enableHighAccuracy: false }),
+        );
+    });
+
     it('권한을 거절하면 플러그인으로 위치를 묻지 않는다', async () => {
         native.value = true;
         plugin.requestPermissions.mockResolvedValue({ location: 'denied' });
@@ -146,5 +180,133 @@ describe('watchLocation (웹)', () => {
 
         expect(onFix).toHaveBeenCalledWith(FIX);
         expect(fake.clearWatch).toHaveBeenCalledWith(7);
+    });
+});
+
+describe('watchLocation (앱)', () => {
+    it('대략적인 위치만 허용하면 정밀 위치를 요청하지 않고 추적한다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'granted',
+        });
+        plugin.watchPosition.mockResolvedValue('watch');
+        plugin.clearWatch.mockResolvedValue(undefined);
+        const onFix = vi.fn();
+
+        const stop = watchLocation(onFix, vi.fn());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(plugin.watchPosition).toHaveBeenCalledWith(
+            expect.objectContaining({ enableHighAccuracy: false }),
+            expect.any(Function),
+        );
+        plugin.watchPosition.mock.calls[0][1]({ coords: COORDS });
+        stop();
+        expect(onFix).toHaveBeenCalledWith({ ...FIX, approximate: true });
+        expect(plugin.clearWatch).toHaveBeenCalledWith({ id: 'watch' });
+    });
+
+    it('정확한 위치를 허용하면 대략적인 위치로 표시하지 않는다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValue({ location: 'granted' });
+        plugin.watchPosition.mockResolvedValue('watch');
+        const onFix = vi.fn();
+
+        const stop = watchLocation(onFix, vi.fn());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        plugin.watchPosition.mock.calls[0][1]({ coords: COORDS });
+        stop();
+
+        expect(onFix).toHaveBeenCalledWith(FIX);
+    });
+
+    it('위치 권한을 모두 거절하면 추적을 시작하지 않고 권한 안내를 보낸다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'denied',
+        });
+        const onError = vi.fn();
+
+        const stop = watchLocation(vi.fn(), onError);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(plugin.watchPosition).not.toHaveBeenCalled();
+        expect(onError).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: expect.stringContaining('위치 권한'),
+            }),
+        );
+        stop();
+    });
+
+    it('앱으로 돌아왔을 때 정확한 위치가 켜졌으면 정확한 위치로 다시 추적한다', async () => {
+        native.value = true;
+        const comeBack = visibleDocument();
+        plugin.requestPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'granted',
+        });
+        plugin.checkPermissions.mockResolvedValue({ location: 'granted' });
+        plugin.watchPosition
+            .mockResolvedValueOnce('coarse')
+            .mockResolvedValueOnce('precise');
+        plugin.clearWatch.mockResolvedValue(undefined);
+        const onFix = vi.fn();
+
+        const stop = watchLocation(onFix, vi.fn());
+        await flush();
+        comeBack();
+        await flush();
+        plugin.watchPosition.mock.calls[1][1]({ coords: COORDS });
+        stop();
+
+        expect(plugin.clearWatch).toHaveBeenCalledWith({ id: 'coarse' });
+        expect(plugin.watchPosition).toHaveBeenLastCalledWith(
+            expect.objectContaining({ enableHighAccuracy: true }),
+            expect.any(Function),
+        );
+        expect(onFix).toHaveBeenCalledWith(FIX);
+        expect(plugin.clearWatch).toHaveBeenLastCalledWith({ id: 'precise' });
+    });
+
+    it('돌아와도 대략적인 위치뿐이면 추적을 바꾸지 않는다', async () => {
+        native.value = true;
+        const comeBack = visibleDocument();
+        plugin.requestPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'granted',
+        });
+        plugin.checkPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'granted',
+        });
+        plugin.watchPosition.mockResolvedValue('coarse');
+
+        const stop = watchLocation(vi.fn(), vi.fn());
+        await flush();
+        comeBack();
+        await flush();
+        stop();
+
+        expect(plugin.checkPermissions).toHaveBeenCalledTimes(1);
+        expect(plugin.watchPosition).toHaveBeenCalledTimes(1);
+    });
+
+    it('멈춘 뒤에는 돌아와도 권한을 확인하지 않는다', async () => {
+        native.value = true;
+        const comeBack = visibleDocument();
+        plugin.requestPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'granted',
+        });
+        plugin.watchPosition.mockResolvedValue('coarse');
+
+        const stop = watchLocation(vi.fn(), vi.fn());
+        await flush();
+        stop();
+        comeBack();
+        await flush();
+
+        expect(plugin.checkPermissions).not.toHaveBeenCalled();
     });
 });
