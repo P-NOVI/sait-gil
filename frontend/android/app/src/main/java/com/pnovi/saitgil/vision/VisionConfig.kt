@@ -7,8 +7,13 @@ package com.pnovi.saitgil.vision
 data class VisionConfig(
     /** 거리 추정에 쓰는 사람 평균 키(m) */
     val personHeightM: Double = 1.7,
-    /** 초점거리를 모를 때 쓰는 카메라 가로 화각(도) */
-    val defaultHorizontalFovDeg: Double = 66.0,
+    /** 위나 아래가 잘린 박스는 키 대신 이 사람 폭(m, 어깨·팔 포함)으로 거리를 잰다 */
+    val personWidthM: Double = 0.5,
+    /**
+     * 초점거리를 모를 때 쓰는 카메라 화각(도). 센서 긴 변 기준이다.
+     * 팀 카메라 기준 0.5배(35mm 환산 약 13mm, 4:3)의 추정값이다. 실측 사진으로 구한 보정값으로 바꿀 예정이다.
+     */
+    val defaultLongSideFovDeg: Double = 105.0,
     /** 이 거리(m) 안에 사람이 걸친 칸을 막힌 방향으로 본다 */
     val blockedDistanceM: Double = 4.0,
     /** 막힌 칸이 이만큼 이상이면 주의 */
@@ -36,4 +41,6 @@ data class VisionConfig(
     val trackIouThreshold: Double = 0.3,
     /** 이 프레임 수보다 오래 안 보인 사람은 추적에서 뺀다 */
     val trackMaxMissedFrames: Int = 5,
+    /** 접근 경고에 넣는 빈 방향은 이 프레임 수만큼 연달아 비어 있던 것만 쓴다. 한 프레임 튀는 방향을 막는다 */
+    val freeConfirmFrames: Int = 3,
 )

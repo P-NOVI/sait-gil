@@ -40,7 +40,8 @@ class SaitgilVisionPlugin : Plugin() {
             sensitivity = CrowdSensitivity.fromWire(requested)
                 ?: return call.reject("지원하지 않는 민감도입니다: $requested")
         }
-        analyzer = CrowdAnalyzer()
+        // 카메라 분석 스레드의 onDetections 와 같은 잠금으로 바꿔 쓰던 중인 분석기를 바꾸지 않는다.
+        synchronized(this) { analyzer = CrowdAnalyzer() }
         if (getPermissionState(CAMERA) == PermissionState.GRANTED) {
             startCamera(call)
         } else {

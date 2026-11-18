@@ -111,7 +111,8 @@ export default function VisionPanel({
                     aria-pressed={enabled}
                     onClick={onToggle}
                 >
-                    카메라 인식 {enabled ? '켜짐' : '꺼짐'}
+                    {/* 상태는 aria-pressed 와 위 문장이 알려 글자는 고정한다. 화면낭독기가 두 번 읽지 않게 한다. */}
+                    카메라 인식
                 </button>
             )}
         </section>

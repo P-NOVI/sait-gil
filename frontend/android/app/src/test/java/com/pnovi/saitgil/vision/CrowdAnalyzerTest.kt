@@ -10,10 +10,10 @@ import kotlin.math.tan
 class CrowdAnalyzerTest {
     private val config = VisionConfig()
 
-    // 세로로 든 휴대폰 영상
+    // 목걸이로 세워 건 휴대폰 영상(세운 화면 기준). 화각은 센서 긴 변(세로)에 맞춘다.
     private val widthPx = 480
     private val heightPx = 640
-    private val focalPx = (widthPx / 2.0) / tan(Math.toRadians(config.defaultHorizontalFovDeg / 2))
+    private val focalPx = (heightPx / 2.0) / tan(Math.toRadians(config.defaultLongSideFovDeg / 2))
 
     /** distanceM 만큼 떨어진 사람 박스. 칸(0~4) 가운데에 세운다. */
     private fun person(sector: Int, distanceM: Double, width: Double = 0.1): PersonBox {
@@ -54,6 +54,42 @@ class CrowdAnalyzerTest {
     }
 
     @Test
+    fun focalLengthComesFromLongSideWhicheverWayUp() {
+        val upright = DetectionFrame(0, emptyList(), widthPx, heightPx)
+        val sideways = DetectionFrame(0, emptyList(), heightPx, widthPx)
+
+        assertEquals(focalPx, focalLengthPx(upright, config), 1e-6)
+        assertEquals(focalPx, focalLengthPx(sideways, config), 1e-6)
+    }
+
+    @Test
+    fun bottomClippedBoxIsMeasuredByWidth() {
+        // 다리가 화면 아래로 잘린 0.8m 앞 사람. 높이로 재면 실제보다 멀게(위험 거리 밖으로) 나온다.
+        val width = focalPx * config.personWidthM / 0.8 / widthPx
+        val box = PersonBox(0.5 - width / 2, 0.45, width, 0.55, 0.9)
+        val byHeight = focalPx * config.personHeightM / (box.height * heightPx)
+
+        assertEquals(0.8, estimateDistanceM(box, frame(0, box), config)!!, 1e-6)
+        assertEquals(true, byHeight > config.dangerDistanceM)
+        assertEquals(CrowdLevel.DANGER, CrowdAnalyzer(config).analyze(frame(0, box)).frame.level)
+    }
+
+    @Test
+    fun switchingToWidthMeasureIsNotAnApproach() {
+        // 높이로 2.5m, 잘린 뒤 폭으로 2.0m 로 재더라도 그 차이는 다가온 것이 아니다.
+        val width = focalPx * config.personWidthM / 2.0 / widthPx
+        val full = PersonBox(0.5 - width / 2, 0.3, width, focalPx * config.personHeightM / 2.5 / heightPx, 0.9)
+        val clipped = PersonBox(full.left, 0.3, width, 0.7, 0.9)
+        val analyzer = CrowdAnalyzer(config)
+
+        val alerts = (0 until 16).map { index ->
+            analyzer.analyze(frame(index * 100L, if (index < 6) full else clipped)).alert
+        }
+
+        assertNull(alerts.firstOrNull { it != null })
+    }
+
+    @Test
     fun mapsHorizontalPositionToClockSectors() {
         assertEquals(listOf(10, 11, 12, 1, 2), listOf(0.05, 0.3, 0.5, 0.7, 0.99).map { CLOCK_SECTORS[sectorOf(it)] })
         assertEquals(2, CLOCK_SECTORS[sectorOf(1.0)])
@@ -69,12 +105,35 @@ class CrowdAnalyzerTest {
     }
 
     @Test
+    fun portraitHalfZoomCameraNamesOnly11To1() {
+        // 세로로 건 0.5배 카메라는 좌우 약 ±44° 라 양 끝 칸(약 ±38°)도 11시·1시다.
+        assertEquals(listOf(11, 11, 12, 1, 1), clockLabels(frame(0), config))
+    }
+
+    @Test
+    fun widerCameraNames10And2() {
+        // 좌우 ±60° 를 넘게 보는 카메라라면 양 끝 칸이 10시·2시다.
+        val wide = DetectionFrame(0, emptyList(), widthPx, heightPx, focalLengthPx = 100.0)
+
+        assertEquals(listOf(10, 11, 12, 1, 2), clockLabels(wide, config))
+    }
+
+    @Test
+    fun sharedNameIsFreeOnlyWhenAllItsSectorsAre() {
+        val labels = listOf(11, 11, 12, 1, 1)
+
+        // 오른쪽 안쪽 칸(1시)이 막히면 오른쪽 바깥 칸이 비어도 1시가 비었다고 하지 않는다.
+        assertEquals(listOf(11, 12), freeDirections(setOf(3), labels))
+        assertEquals(listOf(12, 11, 1), freeDirections(emptySet(), labels))
+    }
+
+    @Test
     fun emptyViewIsClear() {
         val result = CrowdAnalyzer(config).analyze(frame(0))
 
         assertEquals(CrowdLevel.CLEAR, result.frame.level)
         assertNull(result.frame.nearestPersonM)
-        assertEquals(listOf(12, 11, 1, 10, 2), result.frame.freeDirections)
+        assertEquals(listOf(12, 11, 1), result.frame.freeDirections)
         assertNull(result.alert)
     }
 
@@ -89,7 +148,8 @@ class CrowdAnalyzerTest {
             frame(0, person(0, 3.0), person(1, 3.0), person(3, 3.0)),
         )
         assertEquals(CrowdLevel.CROWDED, crowded.frame.level)
-        assertEquals(listOf(12, 2), crowded.frame.freeDirections)
+        // 왼쪽 두 칸(11시)과 오른쪽 안쪽 칸(1시)이 막혀 비어 있는 방향은 12시뿐이다.
+        assertEquals(listOf(12), crowded.frame.freeDirections)
         assertEquals(3.0, crowded.frame.nearestPersonM!!, 1e-6)
     }
 
@@ -141,6 +201,21 @@ class CrowdAnalyzerTest {
         assertEquals(AlertKind.DANGER, alert!!.kind)
         assertEquals(distances[index], alert.distanceM!!, 1e-6)
         assertEquals(results[index].frame.freeDirections, alert.freeDirections)
+    }
+
+    @Test
+    fun approachAlertOnlyNamesSteadilyFreeDirections() {
+        // 1시 칸을 막던 사람이 경고 직전 한 프레임만 사라진다. 그 1시는 아직 믿을 만한 빈 방향이 아니다.
+        val analyzer = CrowdAnalyzer(config)
+        val results = List(12) { 3.6 - it * 0.12 }.mapIndexed { index, distance ->
+            val side = if (index in 3..5) arrayOf(person(3, 3.0)) else emptyArray()
+            analyzer.analyze(frame(index * 100L, person(2, distance), *side))
+        }
+
+        val index = results.indexOfFirst { it.alert != null }
+        assertEquals(6, index)
+        assertEquals(true, 1 in results[index].frame.freeDirections)
+        assertEquals(false, 1 in results[index].alert!!.freeDirections)
     }
 
     @Test
