@@ -10,11 +10,13 @@ import SettingsPanel from './components/SettingsPanel';
 import TopSearch from './components/TopSearch';
 import VisionPanel from './components/VisionPanel';
 import { useAccessibility } from './hooks/useAccessibility';
-import { useAnnouncer } from './hooks/useAnnouncer';
+import { listened, useAnnouncer } from './hooks/useAnnouncer';
 import { useGuidance } from './hooks/useGuidance';
 import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
+import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
+import { REROUTE_FAILED_KEY } from './lib/guidance';
 import {
     findAddress,
     type Place,
@@ -102,11 +104,23 @@ export default function App() {
     const [guided, setGuided] = useState<PlannedRoute | null>(null);
     const navigating = guided !== null;
 
+    // 안내 중 알림을 알림 중재로 보낸다. useGuidance 가 아래에서 만들어져 ref 로 잇는다.
+    const reportAlert = useRef<(alert: Alert) => void>(() => undefined);
+
     // 실패하면 화면에 띄우는 문장을 음성으로도 읽는다.
+    // 안내 중 재탐색 실패는 다른 안내처럼 알림 중재를 거친다.
     const places = useRequest(requestPlaces, announce);
-    const routes = useRequest(requestRoutes, (message) =>
-        announce(navigating ? keptRouteText(message) : message),
-    );
+    const routes = useRequest(requestRoutes, (message) => {
+        if (navigating) {
+            reportAlert.current({
+                key: REROUTE_FAILED_KEY,
+                level: 'route',
+                text: keptRouteText(message),
+            });
+        } else {
+            announce(message);
+        }
+    });
     const whereAmI = useRequest(requestAddress, announce);
 
     const settle = useCallback(
@@ -168,16 +182,24 @@ export default function App() {
         let heard = await ask(
             routesAnnouncement(result, byVoice ? ROUTE_ANSWER_HINT : undefined),
         );
-        let reply = heard === null ? null : routeAnswer(heard, result);
-        if (heard !== null && reply === null && offered.current === result) {
+        let reply =
+            heard.status === 'heard' ? routeAnswer(heard.text, result) : null;
+        if (
+            heard.status === 'heard' &&
+            reply === null &&
+            offered.current === result
+        ) {
             heard = await ask(ROUTE_ANSWER_HINT);
-            reply = heard === null ? null : routeAnswer(heard, result);
+            reply =
+                heard.status === 'heard'
+                    ? routeAnswer(heard.text, result)
+                    : null;
         }
         if (offered.current !== result) {
             return;
         }
         if (!reply) {
-            if (byVoice) {
+            if (listened(heard)) {
                 announce(NOT_HEARD_TEXT);
             }
             return;
@@ -241,6 +263,9 @@ export default function App() {
         announce,
         onReroute: reroute,
     });
+    useEffect(() => {
+        reportAlert.current = guidance.report;
+    }, [guidance.report]);
     const shownLocation = guidance.fix ?? myLocation;
     const heading = useHeading(shownLocation?.course ?? null);
 

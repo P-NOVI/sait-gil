@@ -31,6 +31,14 @@ describe('pickAlert', () => {
         );
     });
 
+    it('알림에 쿨다운이 따로 있으면 그것을 쓴다', () => {
+        const lost: Alert = { ...TURN, key: 'lost', cooldownMs: 30_000 };
+        const spokenAt = new Map([['lost', 0]]);
+
+        expect(pickAlert([lost], spokenAt, 20_000, COOLDOWN)).toBeNull();
+        expect(pickAlert([lost], spokenAt, 30_000, COOLDOWN)).toBe(lost);
+    });
+
     it('읽을 것이 없으면 null', () => {
         expect(pickAlert([], new Map(), 0, COOLDOWN)).toBeNull();
     });

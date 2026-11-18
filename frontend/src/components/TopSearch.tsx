@@ -7,6 +7,7 @@ import {
     useState,
 } from 'react';
 
+import { type Answer, listened } from '../hooks/useAnnouncer';
 import type { RequestState } from '../hooks/useRequest';
 import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
@@ -37,8 +38,8 @@ type TopSearchProps = {
     onPreview: (place: Place | null) => void;
     /** 말로 찾다가 생긴 안내를 음성으로 읽는다. */
     onAnnounce: (text: string) => void;
-    /** 말로 찾은 곳을 읽고 대답을 듣는다. 대답이 없으면 null */
-    onAsk: (text: string) => Promise<string | null>;
+    /** 말로 찾은 곳을 읽고 대답을 듣는다. */
+    onAsk: (text: string) => Promise<Answer>;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
 };
@@ -127,17 +128,21 @@ export default function TopSearch({
         let heard = await onAsk(
             placeQuestion(places[index], index, places.length),
         );
-        let reply = heard === null ? null : placeAnswer(heard);
-        if (heard !== null && reply === null && asked.current === about) {
+        let reply = heard.status === 'heard' ? placeAnswer(heard.text) : null;
+        if (
+            heard.status === 'heard' &&
+            reply === null &&
+            asked.current === about
+        ) {
             heard = await onAsk(PLACE_ANSWER_HINT);
-            reply = heard === null ? null : placeAnswer(heard);
+            reply = heard.status === 'heard' ? placeAnswer(heard.text) : null;
         }
         if (asked.current !== about) {
             return;
         }
         if (reply) {
             answer(reply, about);
-        } else if (voice) {
+        } else if (listened(heard)) {
             onAnnounce(NOT_HEARD_TEXT);
         }
     };

@@ -17,6 +17,24 @@ import {
 import { VIBRATION_PATTERNS } from '../settings';
 
 /**
+ * ask 의 결과. heard: 알아들은 말, silent: 들었지만 대답이 없음,
+ * interrupted: 다른 말이 끼어듦, unavailable: 음성 안내를 껐거나 듣는 기능이 없음.
+ */
+export type Answer =
+    | { status: 'heard'; text: string }
+    | { status: 'silent' }
+    | { status: 'interrupted' }
+    | { status: 'unavailable' };
+
+/**
+ * 들으려 했는데 대답이 없었거나 알아듣지 못할 말이 왔는지.
+ * 끼어들었거나 들을 수 없었으면 못 알아들었다고 말하지 않는다.
+ */
+export function listened(answer: Answer): boolean {
+    return answer.status === 'heard' || answer.status === 'silent';
+}
+
+/**
  * 음성·진동으로 알린다. 접근성 설정의 음성 속도·진동 세기를 따르고,
  * 음성 안내를 껐으면 진동만 한다.
  * ask 는 묻고 나서 마이크를 켜 대답을 듣는다.
@@ -53,30 +71,34 @@ export function useAnnouncer(settings: AccessibilitySettings) {
     );
 
     /**
-     * 읽고 나서 마이크를 켜 대답을 듣고, 알아들은 말을 돌려준다.
-     * 음성 안내를 껐거나, 듣는 기능이 없거나, 다른 말이 끼어들었거나, 대답이 없으면 null.
+     * 읽고 나서 마이크를 켜 대답을 듣는다.
      * 음성 안내를 끈 사람(화면낭독기 사용자)에게는 묻지 않는다.
      */
     const ask = useCallback(
-        async (text: string): Promise<string | null> => {
+        async (text: string): Promise<Answer> => {
             if (!voice) {
-                return null;
+                return { status: 'unavailable' };
             }
             interrupt();
             const mine = turn.current;
             await speak(text, { rate: SPEECH_RATES[speechSpeed] }).catch(
                 () => undefined,
             );
-            if (turn.current !== mine || !canListen()) {
-                return null;
+            if (turn.current !== mine) {
+                return { status: 'interrupted' };
+            }
+            if (!canListen()) {
+                return { status: 'unavailable' };
             }
             setListening(true);
             const heard = await listenOnce().catch(() => null);
             if (turn.current !== mine) {
-                return null;
+                return { status: 'interrupted' };
             }
             setListening(false);
-            return heard;
+            return heard
+                ? { status: 'heard', text: heard }
+                : { status: 'silent' };
         },
         [interrupt, voice, speechSpeed],
     );

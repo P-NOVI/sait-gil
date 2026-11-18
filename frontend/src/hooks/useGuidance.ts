@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { AlertLevel } from '../lib/alertArbiter';
+import type { Alert, AlertLevel } from '../lib/alertArbiter';
 import { pickAlert } from '../lib/alertArbiter';
 import type { LngLat } from '../lib/geo';
 import {
     type GuidanceStep,
     type GuidedRoute,
     guidanceStep,
+    LOCATION_LOST_KEY,
     markAnnounced,
     NEW_GUIDANCE,
 } from '../lib/guidance';
@@ -16,6 +17,7 @@ import {
     type LocationFix,
     watchLocation,
 } from '../platform';
+import { LOCATION_LOST_COOLDOWN_MS } from '../settings';
 
 export type Guidance = {
     /** 마지막으로 받은 위치 */
@@ -36,6 +38,11 @@ type Options = {
     onReroute: (position: LngLat) => void;
 };
 
+export type GuidanceControl = Guidance & {
+    /** 안내 중 생긴 알림(오류 등)을 알림 중재의 쿨다운을 거쳐 읽는다. */
+    report: (alert: Alert) => void;
+};
+
 const IDLE: Guidance = { fix: null, step: null, lastAlert: null, error: null };
 
 /**
@@ -47,27 +54,34 @@ export function useGuidance({
     route,
     announce,
     onReroute,
-}: Options): Guidance {
+}: Options): GuidanceControl {
     const [guidance, setGuidance] = useState<Guidance>(IDLE);
     // 위치 콜백이 최신 값을 쓰도록 ref 에 둔다.
     const latest = useRef({ route, announce, onReroute });
     useEffect(() => {
         latest.current = { route, announce, onReroute };
     });
+    // key 별 마지막으로 읽은 시각. 안내를 시작할 때마다 비운다.
+    const spokenAt = useRef(new Map<string, number>());
+
+    const report = useCallback((alert: Alert) => {
+        const now = Date.now();
+        if (pickAlert([alert], spokenAt.current, now)) {
+            spokenAt.current.set(alert.key, now);
+            latest.current.announce(alert.text, alert.level);
+        }
+    }, []);
 
     useEffect(() => {
         if (!active) {
             return;
         }
         let state = NEW_GUIDANCE;
-        const spokenAt = new Map<string, number>();
-        // 위치를 놓쳤다고 읽었는지. 다시 잡을 때까지는 또 읽지 않는다.
-        let lost = false;
+        spokenAt.current = new Map();
         void keepScreenOn().catch(() => false);
 
         const stop = watchLocation(
             (fix) => {
-                lost = false;
                 const current = latest.current;
                 if (!current.route) {
                     setGuidance((previous) => ({
@@ -85,9 +99,9 @@ export function useGuidance({
                 );
                 state = step.state;
                 const now = Date.now();
-                const alert = pickAlert(step.alerts, spokenAt, now);
+                const alert = pickAlert(step.alerts, spokenAt.current, now);
                 if (alert) {
-                    spokenAt.set(alert.key, now);
+                    spokenAt.current.set(alert.key, now);
                     state = markAnnounced(state, alert);
                     current.announce(alert.text, alert.level);
                 }
@@ -102,10 +116,12 @@ export function useGuidance({
                 }));
             },
             (error) => {
-                if (!lost) {
-                    lost = true;
-                    latest.current.announce(error.message);
-                }
+                report({
+                    key: LOCATION_LOST_KEY,
+                    level: 'route',
+                    text: error.message,
+                    cooldownMs: LOCATION_LOST_COOLDOWN_MS,
+                });
                 setGuidance((previous) => ({
                     ...previous,
                     error: error.message,
@@ -118,7 +134,7 @@ export function useGuidance({
             void allowScreenOff().catch(() => undefined);
             setGuidance(IDLE);
         };
-    }, [active]);
+    }, [active, report]);
 
-    return guidance;
+    return useMemo(() => ({ ...guidance, report }), [guidance, report]);
 }
