@@ -90,16 +90,18 @@ function locateWeb(
     );
 }
 
-async function ensureNativePermission(): Promise<void> {
-    const { location } = await Geolocation.requestPermissions();
-    if (location !== 'granted') {
+/** 정확한 위치 허용 여부. Android 12+의 대략적인 위치만 허용한 경우도 사용할 수 있다. */
+async function ensureNativePermission(): Promise<boolean> {
+    const { location, coarseLocation } = await Geolocation.requestPermissions();
+    if (location !== 'granted' && coarseLocation !== 'granted') {
         throw new LocationError(DENIED);
     }
+    return location === 'granted';
 }
 
 async function currentNative(): Promise<LocationFix> {
-    await ensureNativePermission();
-    for (const options of [PRECISE, COARSE]) {
+    const precise = await ensureNativePermission();
+    for (const options of precise ? [PRECISE, COARSE] : [COARSE]) {
         try {
             const position: Position =
                 await Geolocation.getCurrentPosition(options);
@@ -157,14 +159,17 @@ export function watchLocation(
         let stopped = false;
         let id: string | null = null;
         ensureNativePermission()
-            .then(() =>
-                Geolocation.watchPosition(WATCH, (position, error) => {
-                    if (position) {
-                        onFix(toFix(position.coords));
-                    } else if (error) {
-                        onError(toLocationError(error));
-                    }
-                }),
+            .then((precise) =>
+                Geolocation.watchPosition(
+                    { ...WATCH, enableHighAccuracy: precise },
+                    (position, error) => {
+                        if (position) {
+                            onFix(toFix(position.coords));
+                        } else if (error) {
+                            onError(toLocationError(error));
+                        }
+                    },
+                ),
             )
             .then((watchId) => {
                 id = watchId;

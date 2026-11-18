@@ -101,6 +101,21 @@ describe('getCurrentPosition (웹)', () => {
 });
 
 describe('getCurrentPosition (앱)', () => {
+    it('대략적인 위치만 허용해도 정밀 위치를 다시 요구하지 않고 위치를 찾는다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'granted',
+        });
+        plugin.getCurrentPosition.mockResolvedValueOnce({ coords: COORDS });
+
+        expect(await getCurrentPosition()).toEqual(FIX);
+        expect(plugin.getCurrentPosition).toHaveBeenCalledTimes(1);
+        expect(plugin.getCurrentPosition).toHaveBeenCalledWith(
+            expect.objectContaining({ enableHighAccuracy: false }),
+        );
+    });
+
     it('권한을 거절하면 플러그인으로 위치를 묻지 않는다', async () => {
         native.value = true;
         plugin.requestPermissions.mockResolvedValue({ location: 'denied' });
@@ -146,5 +161,45 @@ describe('watchLocation (웹)', () => {
 
         expect(onFix).toHaveBeenCalledWith(FIX);
         expect(fake.clearWatch).toHaveBeenCalledWith(7);
+    });
+});
+
+describe('watchLocation (앱)', () => {
+    it('대략적인 위치만 허용하면 정밀 위치를 요청하지 않고 추적한다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'granted',
+        });
+        plugin.watchPosition.mockResolvedValue('watch');
+        plugin.clearWatch.mockResolvedValue(undefined);
+
+        const stop = watchLocation(vi.fn(), vi.fn());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(plugin.watchPosition).toHaveBeenCalledWith(
+            expect.objectContaining({ enableHighAccuracy: false }),
+            expect.any(Function),
+        );
+        stop();
+        expect(plugin.clearWatch).toHaveBeenCalledWith({ id: 'watch' });
+    });
+
+    it('위치 권한을 모두 거절하면 추적을 시작하지 않고 권한 안내를 보낸다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValue({
+            location: 'denied',
+            coarseLocation: 'denied',
+        });
+        const onError = vi.fn();
+
+        const stop = watchLocation(vi.fn(), onError);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(plugin.watchPosition).not.toHaveBeenCalled();
+        expect(onError).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: expect.stringContaining('위치 권한'),
+            }),
+        );
+        stop();
     });
 });
