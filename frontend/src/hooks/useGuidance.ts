@@ -134,14 +134,18 @@ export function useGuidance({
             (fix) => {
                 const current = latest.current;
                 // 대략적인 위치로는 판단을 계속 보류해 말없이 멈추므로, 이유를 안내마다 한 번 읽는다.
+                // 읽는 중이면 버리고 다음 위치에서 다시 넘긴다.
                 const error = fix.approximate ? APPROXIMATE_TEXT : null;
                 if (fix.approximate) {
-                    report({
-                        key: APPROXIMATE_KEY,
-                        level: 'route',
-                        text: APPROXIMATE_TEXT,
-                        cooldownMs: Infinity,
-                    });
+                    report(
+                        {
+                            key: APPROXIMATE_KEY,
+                            level: 'route',
+                            text: APPROXIMATE_TEXT,
+                            cooldownMs: Infinity,
+                        },
+                        'drop',
+                    );
                 }
                 if (!current.route) {
                     setGuidance((previous) => ({
