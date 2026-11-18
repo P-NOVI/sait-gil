@@ -3,6 +3,7 @@
 
 import type { LngLat } from './geo';
 import type { GuidedRoute } from './guidance';
+import { spokenDistance } from './guidanceText';
 import { postJson } from './http';
 
 /** 경로가 뽑힌 기준. 한 경로가 여러 기준에 뽑히면 함께 온다. */
@@ -119,6 +120,11 @@ export function minutes(seconds: number): number {
     return Math.max(1, Math.round(seconds / 60));
 }
 
+/** 보이고 읽을 가파른 구간 길이(m). 반올림해 0 이면 알리지 않는다. */
+function hardSlopeM(route: PlannedRoute): number {
+    return Math.round(route.slope.hard_m);
+}
+
 /** 화면에 보일 경로 한 줄 요약 */
 export function routeSummary(route: PlannedRoute): string {
     const parts = [distanceLabel(route.distance_m)];
@@ -127,8 +133,9 @@ export function routeSummary(route: PlannedRoute): string {
     }
     const crowded = crowdedSpots(route);
     parts.push(crowded > 0 ? `붐비는 구간 ${crowded}곳` : '붐비는 구간 없음');
-    if (route.slope.hard_m > 0) {
-        parts.push(`가파른 구간 ${Math.round(route.slope.hard_m)}m`);
+    const hard = hardSlopeM(route);
+    if (hard > 0) {
+        parts.push(`가파른 구간 ${hard}m`);
     }
     return parts.join(', ');
 }
@@ -141,36 +148,39 @@ function spokenSummary(route: PlannedRoute): string {
     const parts = [
         route.time_s !== null
             ? `${minutes(route.time_s)}분`
-            : distanceLabel(route.distance_m)
-                  .replace(/km$/, '킬로미터')
-                  .replace(/m$/, '미터'),
+            : spokenDistance(route.distance_m),
     ];
     const crowded = crowdedSpots(route);
     if (crowded > 0) {
         parts.push(`붐비는 곳 ${crowded}곳`);
     }
-    if (route.slope.hard_m > 0) {
-        parts.push(`가파른 곳 ${Math.round(route.slope.hard_m)}미터`);
+    const hard = hardSlopeM(route);
+    if (hard > 0) {
+        parts.push(`가파른 곳 ${hard}미터`);
     }
     return parts.join(', ');
 }
 
 const CHOOSE_BY_TAP = '원하는 경로를 고르고 안내 시작을 누르세요.';
+// 경로가 하나면 고를 것이 없으므로 시작하는 방법만 알린다.
+const START_BY_TAP = '안내 시작을 누르세요.';
 
 /**
  * 경로를 찾았을 때 읽어 줄 문장. 추천 경로부터 순서대로 알리고,
  * 끝에 고르는 방법(closing)을 덧붙인다. 말로 고를 때는 묻는 말을 넘긴다.
+ * 경로가 하나면 번호를 붙이지 않는다.
  */
 export function routesAnnouncement(
     routes: readonly PlannedRoute[],
-    closing = CHOOSE_BY_TAP,
+    closing = routes.length === 1 ? START_BY_TAP : CHOOSE_BY_TAP,
 ): string {
     if (routes.length === 0) {
         return '경로를 찾지 못했습니다.';
     }
     const items = routes.map((route, index) => {
+        const order = routes.length === 1 ? '' : `${index + 1}번 `;
         const note = mergedKindsNote(route);
-        return `${index + 1}번 ${routeTitle(route)}, ${spokenSummary(route)}.${note ? ` ${note}` : ''}`;
+        return `${order}${routeTitle(route)}, ${spokenSummary(route)}.${note ? ` ${note}` : ''}`;
     });
     return [`경로 ${routes.length}개.`, ...items, closing].join(' ');
 }

@@ -33,9 +33,9 @@ import {
 } from './lib/routeApi';
 import {
     NOT_HEARD_TEXT,
-    ROUTE_ANSWER_HINT,
-    ROUTE_QUESTION,
     routeAnswer,
+    routeAnswerHint,
+    routeQuestion,
 } from './lib/voiceCommand';
 import {
     canListen,
@@ -181,7 +181,10 @@ export default function App() {
         offered.current = result;
         const byVoice = settings.voice && canListen();
         let heard = await ask(
-            routesAnnouncement(result, byVoice ? ROUTE_QUESTION : undefined),
+            routesAnnouncement(
+                result,
+                byVoice ? routeQuestion(result.length) : undefined,
+            ),
         );
         let reply =
             heard.status === 'heard' ? routeAnswer(heard.text, result) : null;
@@ -190,7 +193,7 @@ export default function App() {
             reply === null &&
             offered.current === result
         ) {
-            heard = await ask(ROUTE_ANSWER_HINT);
+            heard = await ask(routeAnswerHint(result.length));
             reply =
                 heard.status === 'heard'
                     ? routeAnswer(heard.text, result)

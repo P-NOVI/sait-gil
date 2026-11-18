@@ -16,6 +16,22 @@ export const PLACE_ANSWER_HINT =
 export const ROUTE_QUESTION = '원하시는 경로를 말씀하세요.';
 export const ROUTE_ANSWER_HINT =
     '경로 번호를 말하거나, 안내 시작이라고 말하세요.';
+/**
+ * 경로가 하나일 때 묻는 말. 고를 것이 없으므로 시작하는 말만 알려 준다.
+ * "안내를 시작할까요?" 처럼 물으면 "아니요"도 받아야 해서 시작하는 방법만 말한다.
+ */
+export const START_HINT = '안내를 시작하려면 안내 시작이라고 말하세요.';
+
+/** 경로를 읽은 뒤 묻는 말 */
+export function routeQuestion(count: number): string {
+    return count === 1 ? START_HINT : ROUTE_QUESTION;
+}
+
+/** 대답을 못 알아들었을 때 한 번 더 묻는 말 */
+export function routeAnswerHint(count: number): string {
+    return count === 1 ? START_HINT : ROUTE_ANSWER_HINT;
+}
+
 /** 한 번 더 물어도 대답을 못 알아들었을 때 */
 export const NOT_HEARD_TEXT =
     '대답을 알아듣지 못했습니다. 화면의 버튼을 눌러 고르세요.';
