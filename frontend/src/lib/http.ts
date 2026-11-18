@@ -54,7 +54,20 @@ export async function requestJson<T>(
         const detail = await errorDetail(response);
         throw new ApiError(response.status, detail ?? SERVER_ERROR);
     }
-    return (await response.json()) as T;
+    try {
+        return (await response.json()) as T;
+    } catch (error) {
+        if (isAbort(error)) {
+            throw error;
+        }
+        // 주소가 틀려 HTML 이 오면 "Unexpected token '<'" 같은 원문이 읽히므로 바꾼다.
+        throw new ApiError(response.status, SERVER_ERROR);
+    }
+}
+
+/** 화면·음성으로 내보낼 실패 문장. 코드 오류 원문은 내보내지 않는다. */
+export function userMessage(error: unknown): string {
+    return error instanceof ApiError ? error.message : SERVER_ERROR;
 }
 
 export function postJson<T>(

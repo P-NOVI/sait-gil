@@ -199,3 +199,5 @@ export const NO_MORE_PLACES_TEXT =
     '더 이상 검색 결과가 없습니다. 다시 말하거나 목록에서 고르세요.';
 export const NO_PLACES_TEXT =
     '검색 결과가 없습니다. 다른 이름으로 다시 말하세요.';
+export const LISTEN_FAILED_TEXT =
+    '말을 알아듣지 못했습니다. 다시 말하거나 글자로 입력하세요.';

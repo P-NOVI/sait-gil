@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.dependencies import SettingsDep, TmapClientDep
+from app.routers.tmap_errors import tmap_http_error
 from app.services.place_service import parse_address, parse_places
 from app.services.tmap_client import TmapError
 
@@ -48,7 +49,7 @@ async def search_places(
     try:
         response = await client.search_pois(query, center, settings.place_search_count)
     except TmapError as error:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, error.message) from error
+        raise tmap_http_error(error) from error
     return PlacesResponse(
         places=[
             PlaceOut(
@@ -70,7 +71,7 @@ async def find_address(
     try:
         response = await client.reverse_geocode((lng, lat))
     except TmapError as error:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, error.message) from error
+        raise tmap_http_error(error) from error
     address = parse_address(response)
     if address is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "주소를 찾지 못했습니다.")

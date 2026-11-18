@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from typing import Annotated
@@ -10,7 +11,11 @@ from app.services.timeline_service import TimelineCaches, build_timeline
 from app.services.tmap_client import TmapClient, tmap_http
 from core.congestion import Sensor, Timeline
 
+logger = logging.getLogger(__name__)
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+TMAP_UNAVAILABLE = "지도 서비스를 지금 쓸 수 없습니다."
 
 _sensor_cache = SensorCache()
 _timeline_caches: TimelineCaches | None = None
@@ -21,9 +26,9 @@ TimelineReader = Callable[[datetime, datetime], Awaitable[Timeline]]
 
 async def get_tmap_client(settings: SettingsDep) -> AsyncIterator[TmapClient]:
     if not settings.tmap_app_key:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "TMAP_APP_KEY 가 설정되지 않았습니다."
-        )
+        # 앱이 detail 을 화면·음성으로 내보내므로 설정 이름은 로그에만 남긴다.
+        logger.error("TMAP_APP_KEY 가 설정되지 않았습니다.")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, TMAP_UNAVAILABLE)
     async for http in tmap_http(settings):
         yield TmapClient(http)
 
