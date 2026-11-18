@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ApiError, isAbort, postJson, requestJson } from './http';
+import { ApiError, isAbort, postJson, requestJson, userMessage } from './http';
 
 function respond(status: number, body: unknown) {
     return vi
@@ -57,6 +57,19 @@ describe('requestJson', () => {
         expect((error as ApiError).message).toContain('인터넷 연결');
     });
 
+    it('성공 응답이 JSON 이 아니면 파싱 원문 대신 기본 문장을 쓴다', async () => {
+        const fetcher = vi
+            .fn<typeof fetch>()
+            .mockResolvedValue(
+                new Response('<!doctype html><html></html>', { status: 200 }),
+            );
+
+        const error = await failure(requestJson('/api/x', {}, fetcher));
+
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).message).toContain('서버에서 문제');
+    });
+
     it('끊은 요청은 ApiError 로 바꾸지 않는다', async () => {
         const fetcher = vi
             .fn<typeof fetch>()
@@ -80,5 +93,16 @@ describe('postJson', () => {
         expect(init?.headers).toMatchObject({
             'Content-Type': 'application/json',
         });
+    });
+});
+
+describe('userMessage', () => {
+    it('ApiError 문장은 그대로, 그 밖의 오류는 기본 문장으로 바꾼다', () => {
+        expect(userMessage(new ApiError(404, '경로를 찾지 못했습니다.'))).toBe(
+            '경로를 찾지 못했습니다.',
+        );
+        expect(
+            userMessage(new TypeError('Cannot read properties of undefined')),
+        ).toContain('서버에서 문제');
     });
 });

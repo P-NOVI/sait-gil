@@ -66,7 +66,10 @@ type MapViewProps = {
 type MapState =
     | { status: 'loading' }
     | { status: 'ready'; map: Tmapv2.Map }
-    | { status: 'error'; message: string };
+    | { status: 'error' };
+
+// 지도 SDK 오류 원문(키·스크립트 이름)은 콘솔에만 남기고 화면에는 이 문장을 보인다.
+const MAP_FAILED = '지도를 불러오지 못했습니다.';
 
 /**
  * Tmap 지도. 지도는 보조 화면이라 키가 없거나 불러오지 못해도 나머지 기능은 그대로 쓴다.
@@ -119,13 +122,8 @@ function TmapView({
             })
             .catch((error: unknown) => {
                 if (!cancelled) {
-                    setState({
-                        status: 'error',
-                        message:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                    });
+                    console.warn(error);
+                    setState({ status: 'error' });
                 }
             });
         return () => {
@@ -263,7 +261,7 @@ function TmapView({
         <div className="map-view" aria-hidden="true">
             <div ref={container} className="map-view__canvas" />
             {state.status === 'error' && (
-                <p className="map-view__error">{state.message}</p>
+                <p className="map-view__error">{MAP_FAILED}</p>
             )}
         </div>
     );

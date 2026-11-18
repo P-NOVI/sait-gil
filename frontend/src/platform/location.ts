@@ -131,7 +131,12 @@ export async function getCurrentPosition(
     geolocation: Geolocation | undefined = globalThis.navigator?.geolocation,
 ): Promise<LocationFix> {
     if (isNativeApp()) {
-        return currentNative();
+        // 기기 위치가 꺼져 있으면 플러그인이 영어 원문으로 실패하므로 안내 문장으로 바꾼다.
+        return currentNative().catch((error: unknown) => {
+            throw error instanceof LocationError
+                ? error
+                : toLocationError(error);
+        });
     }
     if (!geolocation) {
         throw new LocationError(UNSUPPORTED);
