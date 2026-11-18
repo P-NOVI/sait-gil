@@ -106,17 +106,31 @@ describe('routesAnnouncement', () => {
         expect(routesAnnouncement([])).toBe('경로를 찾지 못했습니다.');
     });
 
-    it('단위를 읽는 말로 바꿔 번호 순서로 알린다', () => {
+    it('번호 순서로 시간과 붐비는 곳·가파른 곳만 짧게 알린다', () => {
         const text = routesAnnouncement([
             route(),
-            route({ kinds: ['less_crowded'], distance_m: 980 }),
+            route({ kinds: ['less_crowded'], time_s: null, distance_m: 980 }),
+            route({
+                kinds: ['gentle'],
+                time_s: 1020,
+                events: [crowd],
+                slope: { moderate_m: 0, hard_m: 40.4, score: 0.1 },
+            }),
         ]);
 
-        expect(text).toContain('경로를 2개 찾았습니다.');
-        expect(text).toContain('1번 추천 경로, 1.2킬로미터, 약 15분');
-        expect(text).toContain('2번 덜 붐비는 길, 980미터');
-        expect(text).not.toMatch(/\d(km|m)\b/);
-        expect(text.endsWith('안내 시작을 누르세요.')).toBe(true);
+        expect(text).toBe(
+            '경로 3개. 1번 추천 경로, 15분. 2번 덜 붐비는 길, 980미터. ' +
+                '3번 완만한 길, 17분, 붐비는 곳 1곳, 가파른 곳 40미터. ' +
+                '원하는 경로를 고르고 안내 시작을 누르세요.',
+        );
+    });
+
+    it('시간이 없으면 거리를 읽는 말로 알린다', () => {
+        const text = routesAnnouncement([
+            route({ time_s: null, distance_m: 1234 }),
+        ]);
+
+        expect(text).toContain('1번 추천 경로, 1.2킬로미터.');
     });
 
     it('말로 고를 때는 말하는 방법으로 끝맺는다', () => {

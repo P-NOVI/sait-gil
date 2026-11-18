@@ -29,7 +29,11 @@ import {
     routeTitle,
     sameKindRoute,
 } from './lib/routeApi';
-import { ROUTE_ANSWER_HINT, routeAnswer } from './lib/voiceCommand';
+import {
+    ROUTE_ANSWER_HINT,
+    ROUTE_QUESTION,
+    routeAnswer,
+} from './lib/voiceCommand';
 import {
     canListen,
     getCurrentPosition,
@@ -152,7 +156,7 @@ export default function App() {
         offered.current = result;
         const byVoice = settings.voice && canListen();
         let heard = await ask(
-            routesAnnouncement(result, byVoice ? ROUTE_ANSWER_HINT : undefined),
+            routesAnnouncement(result, byVoice ? ROUTE_QUESTION : undefined),
         );
         let reply = heard === null ? null : routeAnswer(heard, result);
         if (heard !== null && reply === null && offered.current === result) {

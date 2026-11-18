@@ -12,6 +12,8 @@ export type RouteAnswer =
 
 export const PLACE_ANSWER_HINT =
     '여기로 갈게, 다음, 목록 중에 하나를 말하세요.';
+/** 경로를 읽은 뒤 묻는 말. "1번", "2번 경로로 가 줘", "완만한 길" 처럼 대답한다. */
+export const ROUTE_QUESTION = '원하시는 경로를 말씀하세요.';
 export const ROUTE_ANSWER_HINT =
     '경로 번호를 말하거나, 안내 시작이라고 말하세요.';
 
