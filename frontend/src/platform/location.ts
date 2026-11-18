@@ -27,6 +27,8 @@ export type LocationFix = {
     accuracy: number;
     /** GPS 진행 방향·속력. 움직일 때만 온다. */
     course?: Course;
+    /** 앱에서 대략적인 위치만 허용해 받은 위치. 오차가 커 경로 이탈·도착을 판단하지 못한다. */
+    approximate?: true;
 };
 
 export class LocationError extends Error {
@@ -39,6 +41,9 @@ export class LocationError extends Error {
 const UNSUPPORTED = '이 기기는 위치 찾기를 지원하지 않습니다.';
 const DENIED =
     '위치 권한이 꺼져 있습니다. 설정에서 사잇길의 위치 권한을 허용하세요.';
+/** 대략적인 위치만 허용했을 때 안내 중 한 번 읽는 말 */
+export const APPROXIMATE_TEXT =
+    '정확한 위치를 허용해야 길안내를 할 수 있습니다. 설정에서 사잇길의 정확한 위치 사용을 켜세요.';
 const FAILED =
     '현재 위치를 찾지 못했습니다. 잠시 뒤 다시 시도하거나 밖으로 나가 보세요.';
 
@@ -63,6 +68,11 @@ function toFix(coords: Coords): LocationFix {
         fix.course = { heading: coords.heading, speed: coords.speed };
     }
     return fix;
+}
+
+/** 앱에서 받은 위치. 정확한 위치를 허용하지 않았으면 대략적인 위치로 표시한다. */
+function toNativeFix(coords: Coords, precise: boolean): LocationFix {
+    return precise ? toFix(coords) : { ...toFix(coords), approximate: true };
 }
 
 function isPermissionDenied(error: unknown): boolean {
@@ -90,20 +100,22 @@ function locateWeb(
     );
 }
 
-async function ensureNativePermission(): Promise<void> {
-    const { location } = await Geolocation.requestPermissions();
-    if (location !== 'granted') {
+/** 정확한 위치 허용 여부. Android 12+의 대략적인 위치만 허용한 경우도 사용할 수 있다. */
+async function ensureNativePermission(): Promise<boolean> {
+    const { location, coarseLocation } = await Geolocation.requestPermissions();
+    if (location !== 'granted' && coarseLocation !== 'granted') {
         throw new LocationError(DENIED);
     }
+    return location === 'granted';
 }
 
 async function currentNative(): Promise<LocationFix> {
-    await ensureNativePermission();
-    for (const options of [PRECISE, COARSE]) {
+    const precise = await ensureNativePermission();
+    for (const options of precise ? [PRECISE, COARSE] : [COARSE]) {
         try {
             const position: Position =
                 await Geolocation.getCurrentPosition(options);
-            return toFix(position.coords);
+            return toNativeFix(position.coords, precise);
         } catch {
             // 정확한 위치가 실패하면 대략적인 위치로 다시 묻는다.
         }
@@ -145,6 +157,89 @@ export async function getCurrentPosition(
 }
 
 /**
+ * 앱 위치 추적. 정확한 위치를 허용하지 않았으면 앱으로 돌아올 때마다 권한을 다시 확인한다.
+ * 안내를 듣고 설정에서 정확한 위치를 켜고 돌아오면 안내를 다시 시작하지 않아도 정확한 위치로 추적한다.
+ */
+function watchNative(
+    onFix: (fix: LocationFix) => void,
+    onError: (error: LocationError) => void,
+): () => void {
+    let stopped = false;
+    let id: string | null = null;
+    let precise = false;
+    // 시작·다시 시작을 차례로 처리해 추적이 둘 겹치지 않게 한다.
+    let queue = Promise.resolve();
+    const run = (operation: () => Promise<void>) => {
+        queue = queue
+            .then(operation)
+            .catch((error: unknown) =>
+                onError(
+                    error instanceof LocationError
+                        ? error
+                        : toLocationError(error),
+                ),
+            );
+    };
+
+    const startWatch = async () => {
+        const allowPrecise = precise;
+        const watchId = await Geolocation.watchPosition(
+            { ...WATCH, enableHighAccuracy: allowPrecise },
+            (position, error) => {
+                if (position) {
+                    onFix(toNativeFix(position.coords, allowPrecise));
+                } else if (error) {
+                    onError(toLocationError(error));
+                }
+            },
+        );
+        if (stopped) {
+            await Geolocation.clearWatch({ id: watchId });
+            return;
+        }
+        id = watchId;
+    };
+
+    // 권한을 다시 묻지 않고 확인만 한다. 정확한 위치가 켜졌으면 추적을 바꾼다.
+    const recheck = async () => {
+        if (stopped || precise) {
+            return;
+        }
+        const { location } = await Geolocation.checkPermissions();
+        if (stopped || location !== 'granted') {
+            return;
+        }
+        precise = true;
+        if (id) {
+            const previous = id;
+            id = null;
+            await Geolocation.clearWatch({ id: previous });
+        }
+        await startWatch();
+    };
+
+    const onVisible = () => {
+        if (globalThis.document?.visibilityState === 'visible') {
+            run(recheck);
+        }
+    };
+    globalThis.document?.addEventListener('visibilitychange', onVisible);
+
+    run(async () => {
+        precise = await ensureNativePermission();
+        await startWatch();
+    });
+
+    return () => {
+        stopped = true;
+        globalThis.document?.removeEventListener('visibilitychange', onVisible);
+        if (id) {
+            void Geolocation.clearWatch({ id });
+        }
+    };
+}
+
+/**
  * 위치가 바뀔 때마다 onFix 로 알린다. 돌려준 함수를 부르면 멈춘다.
  * 위치를 잠시 못 받아도 멈추지 않고, 다음 위치가 오면 다시 onFix 를 부른다.
  */
@@ -154,37 +249,7 @@ export function watchLocation(
     geolocation: Geolocation | undefined = globalThis.navigator?.geolocation,
 ): () => void {
     if (isNativeApp()) {
-        let stopped = false;
-        let id: string | null = null;
-        ensureNativePermission()
-            .then(() =>
-                Geolocation.watchPosition(WATCH, (position, error) => {
-                    if (position) {
-                        onFix(toFix(position.coords));
-                    } else if (error) {
-                        onError(toLocationError(error));
-                    }
-                }),
-            )
-            .then((watchId) => {
-                id = watchId;
-                if (stopped) {
-                    void Geolocation.clearWatch({ id: watchId });
-                }
-            })
-            .catch((error: unknown) =>
-                onError(
-                    error instanceof LocationError
-                        ? error
-                        : toLocationError(error),
-                ),
-            );
-        return () => {
-            stopped = true;
-            if (id) {
-                void Geolocation.clearWatch({ id });
-            }
-        };
+        return watchNative(onFix, onError);
     }
     if (!geolocation) {
         onError(new LocationError(UNSUPPORTED));

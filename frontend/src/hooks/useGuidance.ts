@@ -4,6 +4,7 @@ import type { Alert, AlertLevel } from '../lib/alertArbiter';
 import { pickAlert } from '../lib/alertArbiter';
 import type { LngLat } from '../lib/geo';
 import {
+    APPROXIMATE_KEY,
     ARRIVED_KEY,
     type GuidanceStep,
     type GuidedRoute,
@@ -14,6 +15,7 @@ import {
 } from '../lib/guidance';
 import {
     allowScreenOff,
+    APPROXIMATE_TEXT,
     keepScreenOn,
     type LocationFix,
     watchLocation,
@@ -27,7 +29,7 @@ export type Guidance = {
     step: GuidanceStep | null;
     /** 마지막으로 알린 문장. 화면에도 보이고 다시 듣기에 쓴다. */
     lastAlert: string | null;
-    /** 위치를 받지 못할 때의 이유 */
+    /** 위치를 받지 못하거나 대략적인 위치만 받을 때의 이유 */
     error: string | null;
 };
 
@@ -131,11 +133,25 @@ export function useGuidance({
         const stop = watchLocation(
             (fix) => {
                 const current = latest.current;
+                // 대략적인 위치로는 판단을 계속 보류해 말없이 멈추므로, 이유를 안내마다 한 번 읽는다.
+                // 읽는 중이면 버리고 다음 위치에서 다시 넘긴다.
+                const error = fix.approximate ? APPROXIMATE_TEXT : null;
+                if (fix.approximate) {
+                    report(
+                        {
+                            key: APPROXIMATE_KEY,
+                            level: 'route',
+                            text: APPROXIMATE_TEXT,
+                            cooldownMs: Infinity,
+                        },
+                        'drop',
+                    );
+                }
                 if (!current.route) {
                     setGuidance((previous) => ({
                         ...previous,
                         fix,
-                        error: null,
+                        error,
                     }));
                     return;
                 }
@@ -163,7 +179,7 @@ export function useGuidance({
                     fix,
                     step,
                     lastAlert: alert?.text ?? previous.lastAlert,
-                    error: null,
+                    error,
                 }));
                 if (alert?.key === ARRIVED_KEY) {
                     current.onArrive();

@@ -6,12 +6,13 @@
     "scripts": {
         "dev": "vite",
         "build": "tsc -b && vite build",
+        "build:android": "tsc -b && vite build --mode android",
         "lint": "eslint .",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
         "test": "vitest run",
         "preview": "vite preview",
-        "cap:sync": "npm run build && cap sync",
+        "cap:sync": "npm run build:android && cap sync android",
         "cap:android": "cap open android"
     },
     "dependencies": {

@@ -79,7 +79,12 @@ class Settings(BaseSettings):
     collector_district_days: int = 7
 
     frontend_url: str = "http://localhost:5173"
-    allowed_origins: list[str] = ["http://localhost:5173"]
+    # Android WebView 기본 Origin, iOS Capacitor Origin, 로컬 웹 개발 주소.
+    allowed_origins: list[str] = [
+        "http://localhost:5173",
+        "https://localhost",
+        "capacitor://localhost",
+    ]
 
     # 경로 점수(B안)에 쓰는 데이터. pipeline/ 이 만들고 커밋하지 않는다.
     dem_path: Path = PROCESSED_DIR / "seoul_dem_5m.tif"
