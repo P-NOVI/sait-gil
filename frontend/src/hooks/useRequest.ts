@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { isAbort } from '../lib/http';
+import { isAbort, userMessage } from '../lib/http';
 
 export type RequestState<T> =
     | { status: 'idle' }
@@ -47,8 +47,7 @@ export function useRequest<A extends unknown[], T>(
                 return data;
             } catch (error) {
                 if (!isAbort(error) && controller.current === current) {
-                    const message =
-                        error instanceof Error ? error.message : String(error);
+                    const message = userMessage(error);
                     setState({ status: 'error', message });
                     latestOnError.current?.(message);
                 }

@@ -5,6 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from app.dependencies import SettingsDep, TimelineReaderDep, TmapClientDep
+from app.routers.tmap_errors import tmap_http_error
 from app.services.route_candidates import fetch_routes
 from app.services.route_service import PlannedRoute, plan_routes, walk_end
 from app.services.sdot_client import KST
@@ -16,6 +17,9 @@ router = APIRouter(prefix="/api/routes", tags=["routes"])
 
 # 응답 거리 소수 자릿수 (0.1m)
 DISTANCE_DIGITS = 1
+
+# Tmap 이 출발·도착 값을 받지 않았을 때(4xx) 사용자에게 보일 문장
+BAD_POINTS = "이 출발지와 도착지로는 경로를 찾지 못했습니다."
 
 
 class Point(BaseModel):
@@ -81,7 +85,7 @@ async def find_routes(
             request.end_name,
         )
     except TmapError as error:
-        raise _http_error(error) from error
+        raise tmap_http_error(error, BAD_POINTS) from error
     # 경로 위 점마다 지금 출발해 그 점에 닿는 시간대의 혼잡도를 쓴다.
     now = datetime.now(KST)
     timeline = await read_timeline(
@@ -91,13 +95,6 @@ async def find_routes(
     if not planned:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "경로를 찾지 못했습니다.")
     return RoutesResponse(routes=[_route_out(route) for route in planned])
-
-
-def _http_error(error: TmapError) -> HTTPException:
-    """출발·도착 값 문제(4xx)는 400 으로, Tmap 쪽 문제는 502 로 알린다."""
-    if 400 <= error.status_code < 500 and error.status_code not in (401, 403, 429):
-        return HTTPException(status.HTTP_400_BAD_REQUEST, error.message)
-    return HTTPException(status.HTTP_502_BAD_GATEWAY, error.message)
 
 
 def _route_out(planned: PlannedRoute) -> RouteOut:

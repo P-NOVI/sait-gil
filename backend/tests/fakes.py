@@ -11,12 +11,12 @@ class FakeTmap:
     def __init__(
         self,
         routes: Mapping[int, dict | TmapError] | None = None,
-        pois: dict | None = None,
-        address: dict | None = None,
+        pois: dict | TmapError | None = None,
+        address: dict | TmapError | None = None,
     ) -> None:
         self.routes = routes or {}
-        self.pois = pois or {}
-        self.address = address or {}
+        self.pois: dict | TmapError = pois or {}
+        self.address: dict | TmapError = address or {}
         self.route_options: list[int] = []
 
     async def pedestrian_route(
@@ -37,7 +37,11 @@ class FakeTmap:
     async def search_pois(
         self, keyword: str, center: LngLat | None, count: int
     ) -> dict[str, Any]:
+        if isinstance(self.pois, TmapError):
+            raise self.pois
         return self.pois
 
     async def reverse_geocode(self, position: LngLat) -> dict[str, Any]:
+        if isinstance(self.address, TmapError):
+            raise self.address
         return self.address
