@@ -20,6 +20,7 @@ export const ARRIVED_KEY = 'goal:arrived';
 export const REROUTE_KEY = 'route:reroute';
 export const REROUTE_FAILED_KEY = 'route:reroute-failed';
 export const LOCATION_LOST_KEY = 'location:lost';
+export const APPROXIMATE_KEY = 'location:approximate';
 
 /** 사용자가 고른 경로. 이벤트 목록은 백엔드가 경로마다 만들어 준다. */
 export type GuidedRoute = RouteLine & { events: RouteEvent[] };

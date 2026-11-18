@@ -27,6 +27,8 @@ export type LocationFix = {
     accuracy: number;
     /** GPS 진행 방향·속력. 움직일 때만 온다. */
     course?: Course;
+    /** 앱에서 대략적인 위치만 허용해 받은 위치. 오차가 커 경로 이탈·도착을 판단하지 못한다. */
+    approximate?: true;
 };
 
 export class LocationError extends Error {
@@ -39,6 +41,9 @@ export class LocationError extends Error {
 const UNSUPPORTED = '이 기기는 위치 찾기를 지원하지 않습니다.';
 const DENIED =
     '위치 권한이 꺼져 있습니다. 설정에서 사잇길의 위치 권한을 허용하세요.';
+/** 대략적인 위치만 허용했을 때 안내 중 한 번 읽는 말 */
+export const APPROXIMATE_TEXT =
+    '정확한 위치를 허용해야 길안내를 할 수 있습니다. 설정에서 사잇길의 정확한 위치 사용을 켜세요.';
 const FAILED =
     '현재 위치를 찾지 못했습니다. 잠시 뒤 다시 시도하거나 밖으로 나가 보세요.';
 
@@ -63,6 +68,11 @@ function toFix(coords: Coords): LocationFix {
         fix.course = { heading: coords.heading, speed: coords.speed };
     }
     return fix;
+}
+
+/** 앱에서 받은 위치. 정확한 위치를 허용하지 않았으면 대략적인 위치로 표시한다. */
+function toNativeFix(coords: Coords, precise: boolean): LocationFix {
+    return precise ? toFix(coords) : { ...toFix(coords), approximate: true };
 }
 
 function isPermissionDenied(error: unknown): boolean {
@@ -105,7 +115,7 @@ async function currentNative(): Promise<LocationFix> {
         try {
             const position: Position =
                 await Geolocation.getCurrentPosition(options);
-            return toFix(position.coords);
+            return toNativeFix(position.coords, precise);
         } catch {
             // 정확한 위치가 실패하면 대략적인 위치로 다시 묻는다.
         }
@@ -164,7 +174,7 @@ export function watchLocation(
                     { ...WATCH, enableHighAccuracy: precise },
                     (position, error) => {
                         if (position) {
-                            onFix(toFix(position.coords));
+                            onFix(toNativeFix(position.coords, precise));
                         } else if (error) {
                             onError(toLocationError(error));
                         }

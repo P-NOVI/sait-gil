@@ -5,6 +5,7 @@ export { vibrate } from './haptics';
 export { allowScreenOff, keepScreenOn } from './keepAwake';
 export { canListen, listenOnce, stopListening } from './listen';
 export {
+    APPROXIMATE_TEXT,
     getCurrentPosition,
     LocationError,
     type LocationFix,
