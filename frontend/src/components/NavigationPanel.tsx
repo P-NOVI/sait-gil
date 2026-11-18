@@ -16,6 +16,8 @@ type NavigationPanelProps = {
     onRepeat: (text: string) => void;
     onWhereAmI: () => void;
     onStop: () => void;
+    /** 한 번 듣고 명령("카메라 꺼")을 따른다. 말로 할 수 없으면 null 이고 버튼을 숨긴다. */
+    onSpeak: (() => void) | null;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
     /** 카메라 인파 인식 자리 */
@@ -59,6 +61,7 @@ export default function NavigationPanel({
     onRepeat,
     onWhereAmI,
     onStop,
+    onSpeak,
     voice,
     vision,
 }: NavigationPanelProps) {
@@ -97,6 +100,15 @@ export default function NavigationPanel({
             {vision}
 
             <div className="navigation-panel__actions">
+                {onSpeak && (
+                    <button
+                        type="button"
+                        className="navigation-panel__speak"
+                        onClick={onSpeak}
+                    >
+                        말하기
+                    </button>
+                )}
                 <button type="button" onClick={() => onRepeat(now)}>
                     다시 듣기
                 </button>

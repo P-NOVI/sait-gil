@@ -821,6 +821,11 @@ input::placeholder {
     background: var(--color-surface);
 }
 
+/* 말하기는 안내 중 가장 자주 쓰는 입구라 한 줄을 다 쓴다. */
+.navigation-panel__actions .navigation-panel__speak {
+    grid-column: 1 / -1;
+}
+
 .navigation-panel__actions .navigation-panel__stop {
     border-color: var(--color-stop);
     color: var(--color-stop);
@@ -889,6 +894,21 @@ input::placeholder {
 .vision-panel__status {
     margin: 0;
     font-size: 0.9rem;
+}
+
+.vision-panel__toggle {
+    min-height: 3.4rem;
+    padding: 4px 6px;
+    border: 2px solid var(--color-border);
+    border-radius: 14px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    background: var(--color-surface);
+}
+
+.vision-panel__toggle[aria-pressed='false'] {
+    border-style: dashed;
+    color: var(--color-muted);
 }
 
 /* ---------- 접근성 설정 ---------- */

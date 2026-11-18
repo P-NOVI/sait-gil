@@ -84,3 +84,13 @@ export const VIBRATION_PATTERNS: Readonly<Record<AlertLevel, number[]>> = {
     route: [200, 100, 200],
     crowd: [300],
 };
+
+// 안내 중 화면 아무 곳이나 두 번 탭하면 말하기(마이크)를 켠다.
+export const DOUBLE_TAP = {
+    // 두 탭 사이가 이보다 길면 따로 누른 것으로 본다(ms).
+    maxIntervalMs: 350,
+    // 두 탭 위치가 이보다 멀면 따로 누른 것으로 본다(px).
+    maxDistancePx: 40,
+} as const;
+
+export type DoubleTapSettings = typeof DOUBLE_TAP;

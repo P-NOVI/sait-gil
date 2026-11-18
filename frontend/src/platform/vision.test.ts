@@ -24,7 +24,9 @@ import {
 } from './vision';
 
 const remove = vi.fn();
-let emit: (state: unknown) => void = () => undefined;
+const listeners = new Map<string, (state: unknown) => void>();
+const emit = (state: unknown) => listeners.get('crowdState')?.(state);
+const emitAlert = (alert: unknown) => listeners.get('alert')?.(alert);
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 afterEach(async () => {
@@ -40,9 +42,10 @@ beforeEach(() => {
     plugin.start.mockResolvedValue(undefined);
     plugin.stop.mockResolvedValue(undefined);
     remove.mockResolvedValue(undefined);
+    listeners.clear();
     plugin.addListener.mockImplementation(
-        async (_event: string, listener: (state: unknown) => void) => {
-            emit = listener;
+        async (event: string, listener: (state: unknown) => void) => {
+            listeners.set(event, listener);
             return { remove };
         },
     );
@@ -85,7 +88,7 @@ describe('startVision', () => {
         const stop = await startVision(vi.fn());
 
         expect(plugin.start).toHaveBeenCalledTimes(1);
-        expect(plugin.addListener).toHaveBeenCalledTimes(1);
+        expect(plugin.addListener).toHaveBeenCalledTimes(2);
         stop();
     });
 
@@ -117,7 +120,7 @@ describe('startVision', () => {
         expect(plugin.start).not.toHaveBeenCalled();
     });
 
-    it('앱에서는 crowdState 를 구독한 뒤 시작한다', async () => {
+    it('앱에서는 crowdState 와 alert 를 구독한 뒤 시작한다', async () => {
         native.value = true;
 
         await startVision(vi.fn());
@@ -126,10 +129,46 @@ describe('startVision', () => {
             'crowdState',
             expect.any(Function),
         );
-        expect(plugin.start).toHaveBeenCalledTimes(1);
-        expect(plugin.addListener.mock.invocationCallOrder[0]).toBeLessThan(
-            plugin.start.mock.invocationCallOrder[0],
+        expect(plugin.addListener).toHaveBeenCalledWith(
+            'alert',
+            expect.any(Function),
         );
+        expect(plugin.start).toHaveBeenCalledTimes(1);
+        expect(
+            Math.max(...plugin.addListener.mock.invocationCallOrder),
+        ).toBeLessThan(plugin.start.mock.invocationCallOrder[0]);
+    });
+
+    it('정면 접근 alert 를 거리·빈 방향과 함께 넘긴다', async () => {
+        native.value = true;
+        const onApproach = vi.fn();
+        await startVision(vi.fn(), onApproach);
+
+        emitAlert({
+            kind: 'danger',
+            message: '정면 접근',
+            distanceM: 2.2,
+            freeDirections: [1, '11', 3, 12],
+        });
+
+        expect(onApproach).toHaveBeenCalledWith({
+            distanceM: 2.2,
+            freeDirections: [1, 12],
+        });
+    });
+
+    it('정면 접근이 아니거나 거리가 잘못된 alert 는 버린다', async () => {
+        native.value = true;
+        const onApproach = vi.fn();
+        const stop = await startVision(vi.fn(), onApproach);
+
+        emitAlert({ kind: 'signal', message: '신호 변경', distanceM: 2 });
+        emitAlert({ kind: 'danger', distanceM: null, freeDirections: [] });
+        emitAlert('이상한 값');
+        stop();
+        emitAlert({ kind: 'danger', distanceM: 2, freeDirections: [] });
+
+        expect(onApproach).not.toHaveBeenCalled();
     });
 
     it('플러그인이 보낸 crowdState 를 VisionFrame 으로 넘긴다', async () => {
@@ -183,7 +222,7 @@ describe('startVision', () => {
         await flush();
 
         expect(plugin.stop).toHaveBeenCalledTimes(1);
-        expect(remove).toHaveBeenCalledTimes(1);
+        expect(remove).toHaveBeenCalledTimes(2);
     });
 
     it('빈 방향은 넓은 순서를 유지하며 잘못된 값만 뺀다', async () => {
@@ -268,6 +307,6 @@ describe('startVision', () => {
 
         await expect(startVision(vi.fn())).rejects.toThrow('시작 실패');
 
-        expect(remove).toHaveBeenCalledTimes(1);
+        expect(remove).toHaveBeenCalledTimes(2);
     });
 });

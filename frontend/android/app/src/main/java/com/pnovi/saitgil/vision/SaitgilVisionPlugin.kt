@@ -30,6 +30,9 @@ class SaitgilVisionPlugin : Plugin() {
     private var mode = VisionMode.CROWD
     private var sensitivity = CrowdSensitivity.NORMAL
 
+    // 안내마다 새로 만들어 지난 안내의 사람 추적을 이어 쓰지 않는다.
+    private var analyzer = CrowdAnalyzer()
+
     @PluginMethod
     fun start(call: PluginCall) {
         val requested = call.getString("sensitivity")
@@ -37,6 +40,8 @@ class SaitgilVisionPlugin : Plugin() {
             sensitivity = CrowdSensitivity.fromWire(requested)
                 ?: return call.reject("지원하지 않는 민감도입니다: $requested")
         }
+        // 카메라 분석 스레드의 onDetections 와 같은 잠금으로 바꿔 쓰던 중인 분석기를 바꾸지 않는다.
+        synchronized(this) { analyzer = CrowdAnalyzer() }
         if (getPermissionState(CAMERA) == PermissionState.GRANTED) {
             startCamera(call)
         } else {
@@ -97,6 +102,18 @@ class SaitgilVisionPlugin : Plugin() {
         preview?.remove()
         preview = null
         super.handleOnDestroy()
+    }
+
+    /**
+     * 추론 한 번의 사람 박스를 판단해 화면으로 보낸다. 카메라 분석 스레드에서 부른다.
+     * TODO: 모델이 붙으면 NO_MODEL 대신 LiteRT 추론으로 person 박스를 뽑아 이 함수로 넘긴다.
+     */
+    @Synchronized
+    private fun onDetections(frame: DetectionFrame) {
+        if (!running) return
+        val result = analyzer.analyze(frame)
+        emitCrowdState(result.frame)
+        result.alert?.let(::emitAlert)
     }
 
     private fun emitCrowdState(frame: CrowdFrame) {

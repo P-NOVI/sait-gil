@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { PlannedRoute, RouteKind } from './routeApi';
 import {
+    cameraAnswer,
+    navigationCommand,
     placeAnswer,
     ROUTE_ANSWER_HINT,
     ROUTE_QUESTION,
@@ -128,5 +130,48 @@ describe('routeQuestion', () => {
     it('경로가 여럿이면 원하는 경로를 묻는다', () => {
         expect(routeQuestion(3)).toBe(ROUTE_QUESTION);
         expect(routeAnswerHint(3)).toBe(ROUTE_ANSWER_HINT);
+    });
+});
+
+describe('cameraAnswer', () => {
+    it.each(['네', '응', '켜 줘', '켜요', '카메라 켜', '킬게', '좋아요'])(
+        '"%s" 는 켠다',
+        (heard) => {
+            expect(cameraAnswer(heard)).toBe('on');
+        },
+    );
+
+    it.each(['아니요', '꺼 줘', '끄자', '켜지 마', '안 켜도 돼', '필요 없어'])(
+        '"%s" 는 끈다',
+        (heard) => {
+            expect(cameraAnswer(heard)).toBe('off');
+        },
+    );
+
+    it('상관없는 말은 알아듣지 못한 것으로 본다', () => {
+        expect(cameraAnswer('오늘 날씨 어때')).toBeNull();
+    });
+});
+
+describe('navigationCommand', () => {
+    it('카메라를 끄고 켜는 명령을 알아듣는다', () => {
+        expect(navigationCommand('카메라 꺼 줘')).toEqual({
+            action: 'camera',
+            answer: 'off',
+        });
+        expect(navigationCommand('카메라 인식 켜')).toEqual({
+            action: 'camera',
+            answer: 'on',
+        });
+        expect(navigationCommand('인식 끄기')).toEqual({
+            action: 'camera',
+            answer: 'off',
+        });
+    });
+
+    it('카메라를 말하지 않은 짧은 대답은 명령으로 보지 않는다', () => {
+        expect(navigationCommand('네')).toBeNull();
+        expect(navigationCommand('꺼')).toBeNull();
+        expect(navigationCommand('카메라')).toBeNull();
     });
 });

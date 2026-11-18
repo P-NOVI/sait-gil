@@ -20,6 +20,7 @@ export {
     startVision,
     VISION_NOT_READY,
     visionAvailable,
+    type VisionApproach,
     type VisionFrame,
     type VisionLevel,
 } from './vision';
