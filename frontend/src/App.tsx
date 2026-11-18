@@ -78,7 +78,8 @@ function errorMessage(error: unknown): string {
 
 export default function App() {
     const [settings, updateSettings] = useAccessibility();
-    const { announce, ask, silence, listening } = useAnnouncer(settings);
+    const { announce, ask, silence, listening, busyFor, whenIdle } =
+        useAnnouncer(settings);
 
     const [tab, setTab] = useState<Tab>('search');
     const [sheetOpen, setSheetOpen] = useState(true);
@@ -257,11 +258,22 @@ export default function App() {
         [guided, destination, routes, announce],
     );
 
+    // 도착하면 읽던 도착 안내는 끊지 않고 안내를 끝낸다.
+    // 진행 중인 재탐색도 끊어 끝난 안내가 다시 시작되지 않게 한다.
+    const arrive = () => {
+        setGuided(null);
+        whereAmI.reset();
+        routes.reset();
+    };
+
     const guidance = useGuidance({
         active: navigating,
         route: guided,
         announce,
+        busyFor,
+        whenIdle,
         onReroute: reroute,
+        onArrive: arrive,
     });
     useEffect(() => {
         reportAlert.current = guidance.report;

@@ -46,10 +46,10 @@ describe('pickAlert', () => {
 
 describe('shouldInterrupt', () => {
     it('더 높은 단계만 읽던 알림을 끊는다', () => {
-        expect(shouldInterrupt(CROWD, DANGER)).toBe(true);
-        expect(shouldInterrupt(TURN, DANGER)).toBe(true);
-        expect(shouldInterrupt(TURN, CROSSWALK)).toBe(false);
-        expect(shouldInterrupt(DANGER, TURN)).toBe(false);
-        expect(shouldInterrupt(null, DANGER)).toBe(false);
+        expect(shouldInterrupt('crowd', 'danger')).toBe(true);
+        expect(shouldInterrupt('crowd', 'route')).toBe(true);
+        expect(shouldInterrupt('route', 'danger')).toBe(true);
+        expect(shouldInterrupt('route', 'route')).toBe(false);
+        expect(shouldInterrupt('danger', 'route')).toBe(false);
     });
 });

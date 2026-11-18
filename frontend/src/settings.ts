@@ -58,6 +58,9 @@ export const ALERT_COOLDOWN_MS: Readonly<Record<AlertLevel, number>> = {
 // 건물 사이처럼 신호가 잡혔다 놓쳤다 해도 이보다 자주 읽지 않는다.
 export const LOCATION_LOST_COOLDOWN_MS = 30_000;
 
+// 한 문장을 읽는 중으로 보는 가장 긴 시간. 끝 이벤트를 놓쳐도 이보다 오래 알림을 미루지 않는다.
+export const SPEECH_BUSY_MAX_MS = 15_000;
+
 // 알림 종류별 진동 패턴 [진동, 멈춤, 진동, …](ms). 접근성 설정의 진동 세기만큼 늘이고 줄인다.
 export const VIBRATION_PATTERNS: Readonly<Record<AlertLevel, number[]>> = {
     danger: [400, 100, 400, 100, 400],
