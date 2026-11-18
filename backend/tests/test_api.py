@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
 from app.dependencies import (
+    TMAP_UNAVAILABLE,
     get_sensor_cache,
     get_sensors,
     get_timeline_caches,
@@ -14,6 +15,8 @@ from app.dependencies import (
     get_tmap_client,
 )
 from app.main import app
+from app.routers.routes import BAD_POINTS
+from app.routers.tmap_errors import TMAP_DOWN
 from app.services.sensor_service import SensorCache
 from app.services.timeline_service import TimelineCaches
 from app.services.tmap_client import TmapError
@@ -139,18 +142,33 @@ def test_sensors_are_cached_between_requests(
 
 
 def test_routes_bad_request_from_tmap(client: TestClient, tmap: FakeTmap) -> None:
-    tmap.routes = {0: TmapError(400, "출발지와 도착지가 같습니다."), 10: DETOUR}
+    tmap.routes = {0: TmapError(400, "Invalid parameter: startX"), 10: DETOUR}
 
     response = client.post("/api/routes", json=ROUTE_BODY)
 
+    # 앱이 화면·음성으로 그대로 내보내므로 Tmap 원문 대신 사용자용 문장을 준다.
     assert response.status_code == 400
-    assert response.json()["detail"] == "출발지와 도착지가 같습니다."
+    assert response.json()["detail"] == BAD_POINTS
 
 
 def test_routes_tmap_down(client: TestClient, tmap: FakeTmap) -> None:
-    tmap.routes = {0: TmapError(502, "Tmap 연결 실패"), 10: DETOUR}
+    tmap.routes = {0: TmapError(502, "Tmap 연결 실패: ConnectTimeout"), 10: DETOUR}
 
-    assert client.post("/api/routes", json=ROUTE_BODY).status_code == 502
+    response = client.post("/api/routes", json=ROUTE_BODY)
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == TMAP_DOWN
+
+
+def test_routes_tmap_key_problem_is_not_users_fault(
+    client: TestClient, tmap: FakeTmap
+) -> None:
+    tmap.routes = {0: TmapError(429, "Tmap 오류 429"), 10: DETOUR}
+
+    response = client.post("/api/routes", json=ROUTE_BODY)
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == TMAP_DOWN
 
 
 def test_routes_validates_coordinates(client: TestClient) -> None:
@@ -168,6 +186,7 @@ def test_routes_without_key_is_unavailable() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 503
+    assert response.json()["detail"] == TMAP_UNAVAILABLE
 
 
 def test_places_search(client: TestClient, tmap: FakeTmap) -> None:
@@ -226,3 +245,17 @@ def test_address_not_found(client: TestClient) -> None:
     response = client.get("/api/places/address", params={"lng": 126.98, "lat": 37.566})
 
     assert response.status_code == 404
+
+
+def test_places_tmap_down_hides_tmap_message(
+    client: TestClient, tmap: FakeTmap
+) -> None:
+    tmap.pois = TmapError(502, "Tmap 응답을 읽지 못했습니다.")
+    tmap.address = TmapError(500, "Tmap 오류 500")
+
+    search = client.get("/api/places", params={"query": "서울역"})
+    address = client.get("/api/places/address", params={"lng": 126.98, "lat": 37.566})
+
+    for response in (search, address):
+        assert response.status_code == 502
+        assert response.json()["detail"] == TMAP_DOWN

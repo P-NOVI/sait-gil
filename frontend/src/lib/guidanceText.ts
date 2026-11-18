@@ -4,6 +4,8 @@ import { NEAR_M } from '../settings';
 import type { Direction, EventKind, RouteEvent } from './routeEvents';
 
 export const ARRIVED_TEXT = '목적지에 도착했습니다.';
+// 도착하면 이 말을 끝으로 안내를 끝낸다.
+export const ARRIVED_END_TEXT = `${ARRIVED_TEXT} 안내를 종료합니다.`;
 export const REROUTE_TEXT = '경로를 벗어났습니다. 경로를 다시 찾습니다.';
 
 const DIRECTION_LABELS: Record<Direction, string> = {

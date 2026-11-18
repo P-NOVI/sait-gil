@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { AlertLevel } from '../lib/alertArbiter';
+import type { Alert, AlertLevel } from '../lib/alertArbiter';
 import { pickAlert } from '../lib/alertArbiter';
 import type { LngLat } from '../lib/geo';
 import {
+    ARRIVED_KEY,
     type GuidanceStep,
     type GuidedRoute,
     guidanceStep,
+    LOCATION_LOST_KEY,
     markAnnounced,
     NEW_GUIDANCE,
 } from '../lib/guidance';
@@ -16,6 +18,7 @@ import {
     type LocationFix,
     watchLocation,
 } from '../platform';
+import { LOCATION_LOST_COOLDOWN_MS } from '../settings';
 
 export type Guidance = {
     /** 마지막으로 받은 위치 */
@@ -32,8 +35,19 @@ type Options = {
     active: boolean;
     route: GuidedRoute | null;
     announce: (text: string, level?: AlertLevel) => void;
+    /** level 알림이 읽던 말을 끊지 못해 기다려야 하는지 */
+    busyFor: (level: AlertLevel) => boolean;
+    /** 읽던 말이 끝나면 풀린다. */
+    whenIdle: () => Promise<void>;
     /** 경로를 벗어났을 때. 이 위치를 출발지로 경로를 다시 찾는다. */
     onReroute: (position: LngLat) => void;
+    /** 도착 안내를 읽기 시작한 뒤. 읽는 말을 끊지 않고 안내를 끝낸다. */
+    onArrive: () => void;
+};
+
+export type GuidanceControl = Guidance & {
+    /** 안내 중 생긴 알림(오류 등)을 알림 중재의 쿨다운을 거쳐 읽는다. */
+    report: (alert: Alert) => void;
 };
 
 const IDLE: Guidance = { fix: null, step: null, lastAlert: null, error: null };
@@ -41,26 +55,70 @@ const IDLE: Guidance = { fix: null, step: null, lastAlert: null, error: null };
 /**
  * 안내 중 GPS 위치를 받을 때마다 길안내 엔진을 한 걸음 돌린다.
  * 알릴 것이 여럿이면 알림 중재(위험 > 경로 > 혼잡)로 하나만 고르고, 나머지는 다음 위치에서 다시 고른다.
+ * 읽던 말보다 높은 단계가 아니면 끊지 않고 미룬다.
  */
 export function useGuidance({
     active,
     route,
     announce,
+    busyFor,
+    whenIdle,
     onReroute,
-}: Options): Guidance {
+    onArrive,
+}: Options): GuidanceControl {
     const [guidance, setGuidance] = useState<Guidance>(IDLE);
     // 위치 콜백이 최신 값을 쓰도록 ref 에 둔다.
-    const latest = useRef({ route, announce, onReroute });
-    useEffect(() => {
-        latest.current = { route, announce, onReroute };
+    const latest = useRef({
+        route,
+        announce,
+        busyFor,
+        whenIdle,
+        onReroute,
+        onArrive,
     });
+    useEffect(() => {
+        latest.current = {
+            route,
+            announce,
+            busyFor,
+            whenIdle,
+            onReroute,
+            onArrive,
+        };
+    });
+    // key 별 마지막으로 읽은 시각. 안내를 시작할 때마다 비운다.
+    const spokenAt = useRef(new Map<string, number>());
+    // 안내를 시작하고 끝낼 때마다 늘린다. 기다리던 알림은 안내가 바뀌면 버린다.
+    const session = useRef(0);
+
+    const report = useCallback((alert: Alert) => {
+        const mine = session.current;
+        const tell = () => {
+            if (session.current !== mine) {
+                return;
+            }
+            const current = latest.current;
+            const now = Date.now();
+            if (!pickAlert([alert], spokenAt.current, now)) {
+                return;
+            }
+            if (current.busyFor(alert.level)) {
+                void current.whenIdle().then(tell);
+                return;
+            }
+            spokenAt.current.set(alert.key, now);
+            current.announce(alert.text, alert.level);
+        };
+        tell();
+    }, []);
 
     useEffect(() => {
         if (!active) {
             return;
         }
         let state = NEW_GUIDANCE;
-        const spokenAt = new Map<string, number>();
+        spokenAt.current = new Map();
+        session.current += 1;
         void keepScreenOn().catch(() => false);
 
         const stop = watchLocation(
@@ -82,9 +140,12 @@ export function useGuidance({
                 );
                 state = step.state;
                 const now = Date.now();
-                const alert = pickAlert(step.alerts, spokenAt, now);
+                const picked = pickAlert(step.alerts, spokenAt.current, now);
+                // 읽는 중이라 미룬 알림은 표시하지 않아 다음 위치에서 다시 고른다.
+                const alert =
+                    picked && !current.busyFor(picked.level) ? picked : null;
                 if (alert) {
-                    spokenAt.set(alert.key, now);
+                    spokenAt.current.set(alert.key, now);
                     state = markAnnounced(state, alert);
                     current.announce(alert.text, alert.level);
                 }
@@ -97,20 +158,31 @@ export function useGuidance({
                     lastAlert: alert?.text ?? previous.lastAlert,
                     error: null,
                 }));
+                if (alert?.key === ARRIVED_KEY) {
+                    current.onArrive();
+                }
             },
-            (error) =>
+            (error) => {
+                report({
+                    key: LOCATION_LOST_KEY,
+                    level: 'route',
+                    text: error.message,
+                    cooldownMs: LOCATION_LOST_COOLDOWN_MS,
+                });
                 setGuidance((previous) => ({
                     ...previous,
                     error: error.message,
-                })),
+                }));
+            },
         );
 
         return () => {
+            session.current += 1;
             stop();
             void allowScreenOff().catch(() => undefined);
             setGuidance(IDLE);
         };
-    }, [active]);
+    }, [active, report]);
 
-    return guidance;
+    return useMemo(() => ({ ...guidance, report }), [guidance, report]);
 }

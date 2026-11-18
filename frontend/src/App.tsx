@@ -10,12 +10,14 @@ import SettingsPanel from './components/SettingsPanel';
 import TopSearch from './components/TopSearch';
 import VisionPanel from './components/VisionPanel';
 import { useAccessibility } from './hooks/useAccessibility';
-import { useAnnouncer } from './hooks/useAnnouncer';
+import { listened, useAnnouncer } from './hooks/useAnnouncer';
 import { useGuidance } from './hooks/useGuidance';
 import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
 import { useVision } from './hooks/useVision';
+import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
+import { REROUTE_FAILED_KEY } from './lib/guidance';
 import {
     findAddress,
     type Place,
@@ -30,7 +32,12 @@ import {
     routeTitle,
     sameKindRoute,
 } from './lib/routeApi';
-import { ROUTE_ANSWER_HINT, routeAnswer } from './lib/voiceCommand';
+import {
+    NOT_HEARD_TEXT,
+    routeAnswer,
+    routeAnswerHint,
+    routeQuestion,
+} from './lib/voiceCommand';
 import {
     canListen,
     getCurrentPosition,
@@ -48,6 +55,10 @@ const SHEET_TITLES: Record<Exclude<Tab, 'search'>, string> = {
 const TRY_TEXT = '음성과 진동으로 이렇게 알려 드립니다.';
 const NO_ADDRESS_TEXT = '이곳의 주소를 찾지 못했습니다.';
 const NO_LOCATION_TEXT = '내 위치를 아직 찾지 못했습니다.';
+
+/** 안내 중 경로를 다시 찾지 못했을 때. 하던 안내는 이어 간다. */
+const keptRouteText = (message: string) =>
+    `${message} 전 경로로 계속 안내합니다.`;
 
 const requestPlaces = (
     signal: AbortSignal,
@@ -69,7 +80,8 @@ function errorMessage(error: unknown): string {
 
 export default function App() {
     const [settings, updateSettings] = useAccessibility();
-    const { announce, ask, silence, listening } = useAnnouncer(settings);
+    const { announce, ask, silence, listening, busyFor, whenIdle } =
+        useAnnouncer(settings);
 
     const [tab, setTab] = useState<Tab>('search');
     const [sheetOpen, setSheetOpen] = useState(true);
@@ -95,12 +107,27 @@ export default function App() {
     const [guided, setGuided] = useState<PlannedRoute | null>(null);
     const navigating = guided !== null;
 
-    const places = useRequest(requestPlaces);
-    const routes = useRequest(requestRoutes);
-    const whereAmI = useRequest(requestAddress);
+    // 안내 중 알림을 알림 중재로 보낸다. useGuidance 가 아래에서 만들어져 ref 로 잇는다.
+    const reportAlert = useRef<(alert: Alert) => void>(() => undefined);
+
+    // 실패하면 화면에 띄우는 문장을 음성으로도 읽는다.
+    // 안내 중 재탐색 실패는 다른 안내처럼 알림 중재를 거친다.
+    const places = useRequest(requestPlaces, announce);
+    const routes = useRequest(requestRoutes, (message) => {
+        if (navigating) {
+            reportAlert.current({
+                key: REROUTE_FAILED_KEY,
+                level: 'route',
+                text: keptRouteText(message),
+            });
+        } else {
+            announce(message);
+        }
+    });
+    const whereAmI = useRequest(requestAddress, announce);
 
     const settle = useCallback(
-        (pending: Promise<LocationFix>) =>
+        (pending: Promise<LocationFix>, onError?: (message: string) => void) =>
             pending
                 .then(
                     (fix) => {
@@ -109,7 +136,9 @@ export default function App() {
                         return fix;
                     },
                     (error: unknown) => {
-                        setLocationError(errorMessage(error));
+                        const message = errorMessage(error);
+                        setLocationError(message);
+                        onError?.(message);
                         return null;
                     },
                 )
@@ -125,7 +154,8 @@ export default function App() {
         // iOS 는 버튼을 누른 순간에만 나침반 권한을 물을 수 있다.
         void requestCompassPermission();
         setLocating(true);
-        return settle(getCurrentPosition());
+        // 앱을 열 때 실패는 화면에만 띄우고, 찾아 달라고 했을 때만 읽는다.
+        return settle(getCurrentPosition(), announce);
     };
 
     const found = useMemo(
@@ -153,14 +183,31 @@ export default function App() {
         offered.current = result;
         const byVoice = settings.voice && canListen();
         let heard = await ask(
-            routesAnnouncement(result, byVoice ? ROUTE_ANSWER_HINT : undefined),
+            routesAnnouncement(
+                result,
+                byVoice ? routeQuestion(result.length) : undefined,
+            ),
         );
-        let reply = heard === null ? null : routeAnswer(heard, result);
-        if (heard !== null && reply === null && offered.current === result) {
-            heard = await ask(ROUTE_ANSWER_HINT);
-            reply = heard === null ? null : routeAnswer(heard, result);
+        let reply =
+            heard.status === 'heard' ? routeAnswer(heard.text, result) : null;
+        if (
+            heard.status === 'heard' &&
+            reply === null &&
+            offered.current === result
+        ) {
+            heard = await ask(routeAnswerHint(result.length));
+            reply =
+                heard.status === 'heard'
+                    ? routeAnswer(heard.text, result)
+                    : null;
         }
-        if (!reply || offered.current !== result) {
+        if (offered.current !== result) {
+            return;
+        }
+        if (!reply) {
+            if (listened(heard)) {
+                announce(NOT_HEARD_TEXT);
+            }
             return;
         }
         if (reply.action === 'repeat') {
@@ -216,13 +263,27 @@ export default function App() {
         [guided, destination, routes, announce],
     );
 
+    // 도착하면 읽던 도착 안내는 끊지 않고 안내를 끝낸다.
+    // 진행 중인 재탐색도 끊어 끝난 안내가 다시 시작되지 않게 한다.
+    const arrive = () => {
+        setGuided(null);
+        whereAmI.reset();
+        routes.reset();
+    };
+
     const guidance = useGuidance({
         active: navigating,
         route: guided,
         announce,
+        busyFor,
+        whenIdle,
         onReroute: reroute,
+        onArrive: arrive,
     });
     const visionFrame = useVision(navigating);
+    useEffect(() => {
+        reportAlert.current = guidance.report;
+    }, [guidance.report]);
     const shownLocation = guidance.fix ?? myLocation;
     const heading = useHeading(shownLocation?.course ?? null);
 
@@ -335,7 +396,7 @@ export default function App() {
                     rerouting={routes.state.status === 'loading'}
                     routeError={
                         routes.state.status === 'error'
-                            ? routes.state.message
+                            ? keptRouteText(routes.state.message)
                             : null
                     }
                     whereAmI={whereAmI.state}

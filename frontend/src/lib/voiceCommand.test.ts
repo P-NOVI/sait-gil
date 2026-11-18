@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PlannedRoute, RouteKind } from './routeApi';
-import { placeAnswer, routeAnswer } from './voiceCommand';
+import {
+    placeAnswer,
+    ROUTE_ANSWER_HINT,
+    ROUTE_QUESTION,
+    routeAnswer,
+    routeAnswerHint,
+    routeQuestion,
+    START_HINT,
+} from './voiceCommand';
 
 function route(...kinds: RouteKind[]): PlannedRoute {
     return {
@@ -61,7 +69,9 @@ describe('routeAnswer', () => {
     );
 
     it.each([
+        ['1번', 0],
         ['2번', 1],
+        ['2번 경로로 가줘', 1],
         ['3번 경로로 안내해 줘', 2],
         ['첫 번째', 0],
         ['두 번째 경로', 1],
@@ -102,5 +112,21 @@ describe('routeAnswer', () => {
 
     it('알아듣지 못한 말은 null', () => {
         expect(routeAnswer('배고파', ROUTES)).toBeNull();
+    });
+});
+
+describe('routeQuestion', () => {
+    it('경로가 하나면 고르라고 묻지 않고 시작하는 말만 알려 준다', () => {
+        expect(routeQuestion(1)).toBe(START_HINT);
+        expect(routeAnswerHint(1)).toBe(START_HINT);
+        expect(routeAnswer('안내 시작', [route('recommended')])).toEqual({
+            action: 'start',
+            index: null,
+        });
+    });
+
+    it('경로가 여럿이면 원하는 경로를 묻는다', () => {
+        expect(routeQuestion(3)).toBe(ROUTE_QUESTION);
+        expect(routeAnswerHint(3)).toBe(ROUTE_ANSWER_HINT);
     });
 });

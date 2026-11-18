@@ -119,6 +119,20 @@ describe('getCurrentPosition (앱)', () => {
         expect(await getCurrentPosition()).toEqual(FIX);
         expect(plugin.getCurrentPosition).toHaveBeenCalledTimes(2);
     });
+
+    it('플러그인 원문 오류는 위치 안내 문장으로 바꾼다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockRejectedValue(
+            new Error('Location services are not enabled'),
+        );
+
+        const error = await getCurrentPosition().catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(LocationError);
+        expect((error as Error).message).toContain(
+            '현재 위치를 찾지 못했습니다',
+        );
+    });
 });
 
 describe('watchLocation (웹)', () => {

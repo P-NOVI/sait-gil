@@ -85,6 +85,9 @@ describe('guidanceStep', () => {
         const state = markAnnounced(first.state, first.alerts[0]);
 
         expect(first.alerts.map((alert) => alert.key)).toEqual([ARRIVED_KEY]);
+        expect(first.alerts[0].text).toBe(
+            '목적지에 도착했습니다. 안내를 종료합니다.',
+        );
         expect(guidanceStep(ROUTE, state, north(498), 5).alerts).toEqual([]);
     });
 

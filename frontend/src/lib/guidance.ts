@@ -3,7 +3,7 @@
 
 import type { Alert } from './alertArbiter';
 import type { LngLat } from './geo';
-import { ARRIVED_TEXT, eventText, REROUTE_TEXT } from './guidanceText';
+import { ARRIVED_END_TEXT, eventText, REROUTE_TEXT } from './guidanceText';
 import {
     judge,
     type Judgement,
@@ -18,6 +18,8 @@ import { dueEvents, eventKey, type RouteEvent } from './routeEvents';
 
 export const ARRIVED_KEY = 'goal:arrived';
 export const REROUTE_KEY = 'route:reroute';
+export const REROUTE_FAILED_KEY = 'route:reroute-failed';
+export const LOCATION_LOST_KEY = 'location:lost';
 
 /** 사용자가 고른 경로. 이벤트 목록은 백엔드가 경로마다 만들어 준다. */
 export type GuidedRoute = RouteLine & { events: RouteEvent[] };
@@ -59,7 +61,11 @@ export function guidanceStep(
     );
     const alerts: Alert[] = [];
     if (judgement === 'arrived' && !state.announced.has(ARRIVED_KEY)) {
-        alerts.push({ key: ARRIVED_KEY, level: 'route', text: ARRIVED_TEXT });
+        alerts.push({
+            key: ARRIVED_KEY,
+            level: 'route',
+            text: ARRIVED_END_TEXT,
+        });
     }
     if (reroute) {
         alerts.push({ key: REROUTE_KEY, level: 'route', text: REROUTE_TEXT });
