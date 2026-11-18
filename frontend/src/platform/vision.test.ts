@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const native = vi.hoisted(() => ({ value: false }));
 const plugin = vi.hoisted(() => ({
@@ -11,6 +11,9 @@ vi.mock('@capacitor/core', () => ({
     Capacitor: { isNativePlatform: () => native.value },
     registerPlugin: () => plugin,
 }));
+vi.mock('../platform', async () => await import('./vision'));
+
+import { connectVision } from '../hooks/useVision';
 
 import {
     startVision,
@@ -21,6 +24,9 @@ import {
 
 const remove = vi.fn();
 let emit: (state: unknown) => void = () => undefined;
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+afterEach(flush);
 
 beforeEach(() => {
     native.value = false;
@@ -116,9 +122,86 @@ describe('startVision', () => {
 
         stop();
         stop();
+        await flush();
 
         expect(plugin.stop).toHaveBeenCalledTimes(1);
         expect(remove).toHaveBeenCalledTimes(1);
+    });
+
+    it('빈 방향은 넓은 순서를 유지하며 잘못된 값만 뺀다', async () => {
+        native.value = true;
+        const frames: VisionFrame[] = [];
+        const stop = await startVision((frame) => frames.push(frame));
+
+        emit({
+            level: 'crowded',
+            nearestPersonM: -1,
+            freeDirections: [2, 3, 12, '11', 10],
+        });
+
+        expect(frames[0]).toEqual({
+            level: 'crowded',
+            nearestPersonM: null,
+            freeDirections: [2, 12, 10],
+        });
+        stop();
+    });
+
+    it('종료한 연결이 늦게 시작되어도 새 연결의 인식을 끄지 않는다', async () => {
+        native.value = true;
+        let running = false;
+        plugin.start.mockImplementation(async () => {
+            running = true;
+        });
+        plugin.stop.mockImplementation(async () => {
+            running = false;
+        });
+
+        const disconnectFirst = connectVision(vi.fn());
+        disconnectFirst();
+        const disconnectSecond = connectVision(vi.fn());
+        await flush();
+
+        expect(plugin.start).toHaveBeenCalledTimes(2);
+        expect(plugin.stop).not.toHaveBeenCalled();
+        expect(running).toBe(true);
+
+        disconnectSecond();
+        await flush();
+        expect(plugin.stop).toHaveBeenCalledTimes(1);
+        expect(running).toBe(false);
+    });
+
+    it('이전 종료가 끝날 때까지 새 시작을 기다린다', async () => {
+        native.value = true;
+        let finishStop: () => void = () => undefined;
+        plugin.stop.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    finishStop = resolve;
+                }),
+        );
+        const stopFirst = await startVision(vi.fn());
+        stopFirst();
+        const second = startVision(vi.fn());
+        await flush();
+
+        expect(plugin.start).toHaveBeenCalledTimes(1);
+        finishStop();
+        const stopSecond = await second;
+        expect(plugin.start).toHaveBeenCalledTimes(2);
+        stopSecond();
+    });
+
+    it('종료에 실패해도 다음 연결을 시작할 수 있다', async () => {
+        native.value = true;
+        plugin.stop.mockRejectedValueOnce(new Error('종료 실패'));
+        const stopFirst = await startVision(vi.fn());
+        stopFirst();
+        const stopSecond = await startVision(vi.fn());
+
+        expect(plugin.start).toHaveBeenCalledTimes(2);
+        stopSecond();
     });
 
     it('시작에 실패하면 구독을 끊고 오류를 그대로 던진다', async () => {

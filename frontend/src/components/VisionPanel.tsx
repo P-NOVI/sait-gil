@@ -3,10 +3,11 @@ import {
     type CrowdLevel,
     VISION_NOT_READY,
     type VisionFrame,
+    type VisionLevel,
 } from '../platform';
 import { distanceLabel } from '../lib/routeApi';
 
-const LEVEL_LABELS: Record<CrowdLevel, string> = {
+const LEVEL_LABELS: Record<VisionLevel, string> = {
     clear: '여유',
     caution: '주의',
     crowded: '혼잡',
@@ -46,6 +47,7 @@ export default function VisionPanel({ available, frame }: VisionPanelProps) {
                         key={step}
                         data-on={
                             level !== null &&
+                            level !== 'unknown' &&
                             LEVELS.indexOf(step) <= LEVELS.indexOf(level)
                                 ? true
                                 : undefined

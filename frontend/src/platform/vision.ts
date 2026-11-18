@@ -6,15 +6,12 @@ import { type PluginListenerHandle, registerPlugin } from '@capacitor/core';
 
 import { isNativeApp } from './runtime';
 
-/** 밀집도 4단계(여유, 주의, 혼잡, 위험)와 판단 불가(카메라 가림·신뢰도 부족) */
-const CROWD_LEVELS = [
-    'clear',
-    'caution',
-    'crowded',
-    'danger',
-    'unknown',
-] as const;
+/** 밀집도 4단계. 민감도는 이 단계끼리만 비교한다. */
+const CROWD_LEVELS = ['clear', 'caution', 'crowded', 'danger'] as const;
 export type CrowdLevel = (typeof CROWD_LEVELS)[number];
+
+/** 카메라 가림·신뢰도 부족은 밀집도와 별개인 판단 불가 상태다. */
+export type VisionLevel = CrowdLevel | 'unknown';
 
 /** 빈 공간을 알리는 시계 방향 (10시~2시 5방향) */
 const CLOCK_DIRECTIONS = [10, 11, 12, 1, 2] as const;
@@ -22,7 +19,7 @@ export type ClockDirection = (typeof CLOCK_DIRECTIONS)[number];
 
 /** 한 번 추론한 결과 */
 export type VisionFrame = {
-    level: CrowdLevel;
+    level: VisionLevel;
     /** 앞쪽에서 가장 가까운 사람까지 거리(m). 사람이 없으면 null */
     nearestPersonM: number | null;
     /** 지나갈 만한 빈 방향. 넓은 순 */
@@ -42,6 +39,16 @@ type SaitgilVisionPlugin = {
 };
 
 let plugin: SaitgilVisionPlugin | null = null;
+// 플러그인은 하나를 공유한다. 이전 연결의 늦은 종료가 새 연결을 끄지 않게 한다.
+let owner: symbol | null = null;
+let lifecycle: Promise<void> = Promise.resolve();
+
+/** 시작·종료가 끝난 뒤 다음 명령을 보낸다. 실패해도 다음 연결은 시도할 수 있다. */
+function inOrder(operation: () => Promise<void>): Promise<void> {
+    const pending = lifecycle.then(operation);
+    lifecycle = pending.catch(() => undefined);
+    return pending;
+}
 
 // 웹에서는 부르지 않으므로 처음 쓸 때 등록한다.
 function visionPlugin(): SaitgilVisionPlugin {
@@ -65,11 +72,15 @@ function toFrame(state: unknown): VisionFrame {
     return {
         level,
         nearestPersonM:
-            typeof distance === 'number' && Number.isFinite(distance)
+            typeof distance === 'number' &&
+            Number.isFinite(distance) &&
+            distance >= 0
                 ? distance
                 : null,
-        freeDirections: CLOCK_DIRECTIONS.filter((direction) =>
-            directions.includes(direction),
+        // 플러그인이 보낸 넓은 순서를 유지한다. 고정된 시계 순서로 다시 정렬하지 않는다.
+        freeDirections: directions.filter(
+            (direction): direction is ClockDirection =>
+                CLOCK_DIRECTIONS.some((known) => known === direction),
         ),
     };
 }
@@ -90,23 +101,35 @@ export async function startVision(
         throw new Error(VISION_NOT_READY);
     }
     const vision = visionPlugin();
+    const session = Symbol('vision');
+    let stopped = false;
     // 첫 결과를 놓치지 않도록 구독한 뒤에 시작한다.
-    const listener = await vision.addListener('crowdState', (state) =>
-        onFrame(toFrame(state)),
-    );
+    const listener = await vision.addListener('crowdState', (state) => {
+        if (!stopped) {
+            onFrame(toFrame(state));
+        }
+    });
     try {
-        await vision.start();
+        await inOrder(async () => {
+            await vision.start();
+            owner = session;
+        });
     } catch (error) {
         await listener.remove();
         throw error;
     }
-    let stopped = false;
     return () => {
         if (stopped) {
             return;
         }
         stopped = true;
-        void listener.remove();
-        void vision.stop().catch(() => undefined);
+        void listener.remove().catch(() => undefined);
+        void inOrder(async () => {
+            if (owner !== session) {
+                return;
+            }
+            owner = null;
+            await vision.stop();
+        }).catch(() => undefined);
     };
 }
