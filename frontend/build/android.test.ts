@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateAndroidApiUrl } from './android';
+import { validateAndroidApiUrl } from './android.ts';
 
 describe('Android 빌드 서버 주소', () => {
     it.each([
@@ -9,6 +9,8 @@ describe('Android 빌드 서버 주소', () => {
         '/api',
         'http://api.example.com',
         'https://localhost',
+        'https://api.example.com/api',
+        'https://api.example.com/v1/',
     ])('%s 는 앱 API 주소로 빌드하지 않는다', (value) => {
         expect(() => validateAndroidApiUrl(value)).toThrow('VITE_API_BASE_URL');
     });
