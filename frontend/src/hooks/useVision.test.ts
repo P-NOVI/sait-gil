@@ -3,14 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const platform = vi.hoisted(() => ({
     startVision: vi.fn(),
     visionAvailable: vi.fn(),
-    readStored: vi.fn(),
-    writeStored: vi.fn(),
 }));
 
 vi.mock('../platform', () => platform);
 
 import type { VisionApproach, VisionFrame } from '../platform';
-import { connectVision, readVisionEnabled } from './useVision';
+import { connectVision } from './useVision';
 
 const FRAME: VisionFrame = {
     level: 'crowded',
@@ -132,18 +130,5 @@ describe('connectVision', () => {
 
         expect(() => disconnect()).not.toThrow();
         expect(start.stopVision).not.toHaveBeenCalled();
-    });
-});
-
-describe('readVisionEnabled', () => {
-    it('저장된 값이 없으면 켜고, 끈 값을 저장했으면 끈다', () => {
-        platform.readStored.mockReturnValue(null);
-        expect(readVisionEnabled()).toBe(true);
-
-        platform.readStored.mockReturnValue(false);
-        expect(readVisionEnabled()).toBe(false);
-
-        platform.readStored.mockReturnValue(true);
-        expect(readVisionEnabled()).toBe(true);
     });
 });

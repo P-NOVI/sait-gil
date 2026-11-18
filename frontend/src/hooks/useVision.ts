@@ -1,21 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Alert } from '../lib/alertArbiter';
 import { approachAlert, visionReader } from '../lib/visionAlerts';
 import {
     type CrowdLevel,
-    readStored,
     startVision,
     visionAvailable,
     type VisionApproach,
     type VisionFrame,
-    writeStored,
 } from '../platform';
 import { CAUTION_VIBRATION } from '../settings';
 import type { WhenBusy } from './useGuidance';
-
-// 카메라 인식을 켜 두었는지 기기에 저장하는 키
-const VISION_ENABLED_KEY = 'sait-gil:vision-enabled';
 
 type Options = {
     /** 안내 중일 때만 카메라 인식을 켠다. */
@@ -64,24 +59,19 @@ export function connectVision(
     };
 }
 
-/** 사용자가 고른 카메라 인식 켜짐 여부. 저장된 값이 없으면 켠다. */
-export function readVisionEnabled(): boolean {
-    return readStored(VISION_ENABLED_KEY) !== false;
-}
-
 export type VisionState = {
     /** 화면에 보일 마지막 결과. 꺼져 있거나 안내 중이 아니면 null */
     frame: VisionFrame | null;
-    /** 사용자가 카메라 인식을 켜 두었는지 */
+    /** 카메라 인식을 켜 두었는지 */
     enabled: boolean;
-    /** 카메라 인식을 끄거나 켠다. 바뀐 값을 돌려준다. */
-    toggle: () => boolean;
+    /** 카메라 인식을 켜거나 끈다. 안내를 시작할 때 묻고, 안내 중에는 버튼이나 말로 바꾼다. */
+    setEnabled: (enabled: boolean) => void;
 };
 
 /**
  * 안내 중 카메라 인파 인식 결과를 받아 알림 중재로 넘기고, 화면에 보일 마지막 결과를 돌려준다.
  * 인식 결과는 1초에 몇 번씩 오므로, 읽던 말을 끊지 못한 알림은 버리고 다음 결과에서 다시 고른다.
- * 사용자가 끄면 카메라를 바로 놓고, 켜 둔 여부는 기기에 저장해 다음 안내에도 쓴다.
+ * 끄면 카메라를 바로 놓는다. 켜짐 여부는 저장하지 않고 안내를 시작할 때마다 묻는다.
  */
 export function useVision({
     active,
@@ -90,10 +80,10 @@ export function useVision({
     buzz,
 }: Options): VisionState {
     const [frame, setFrame] = useState<VisionFrame | null>(null);
-    const [enabled, setEnabled] = useState(readVisionEnabled);
-    const latest = useRef({ minLevel, report, buzz, enabled });
+    const [enabled, setEnabled] = useState(true);
+    const latest = useRef({ minLevel, report, buzz });
     useEffect(() => {
-        latest.current = { minLevel, report, buzz, enabled };
+        latest.current = { minLevel, report, buzz };
     });
     const running = active && enabled;
 
@@ -123,16 +113,5 @@ export function useVision({
         };
     }, [running]);
 
-    const toggle = useCallback(() => {
-        const next = !latest.current.enabled;
-        latest.current = { ...latest.current, enabled: next };
-        setEnabled(next);
-        writeStored(VISION_ENABLED_KEY, next);
-        return next;
-    }, []);
-
-    return useMemo(
-        () => ({ frame, enabled, toggle }),
-        [frame, enabled, toggle],
-    );
+    return useMemo(() => ({ frame, enabled, setEnabled }), [frame, enabled]);
 }

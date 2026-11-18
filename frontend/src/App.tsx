@@ -12,6 +12,7 @@ import VisionPanel from './components/VisionPanel';
 import { useAccessibility } from './hooks/useAccessibility';
 import { listened, useAnnouncer } from './hooks/useAnnouncer';
 import { useGuidance } from './hooks/useGuidance';
+import { useDoubleTap } from './hooks/useDoubleTap';
 import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
 import { useVision } from './hooks/useVision';
@@ -34,10 +35,16 @@ import {
     sameKindRoute,
 } from './lib/routeApi';
 import {
+    cameraAnswer,
+    NAVIGATION_COMMAND_HINT,
+    navigationCommand,
     NOT_HEARD_TEXT,
     routeAnswer,
     routeAnswerHint,
     routeQuestion,
+    SPEAK_PROMPT,
+    VISION_DEFAULT_ON_TEXT,
+    VISION_QUESTION,
 } from './lib/voiceCommand';
 import { VISION_OFF_TEXT, VISION_ON_TEXT } from './lib/visionAlerts';
 import {
@@ -170,10 +177,65 @@ export default function App() {
         [routes.state],
     );
 
+    // 안내를 시작·종료할 때마다 늘린다. 지난 안내에서 늦게 온 대답은 버린다.
+    const guidanceRun = useRef(0);
+    const canAskByVoice = () =>
+        settings.voice && canListen() && visionAvailable();
+
+    /** 카메라 인식을 켜거나 끄고 알린다. */
+    const switchVision = (on: boolean) => {
+        vision.setEnabled(on);
+        announce(on ? VISION_ON_TEXT : VISION_OFF_TEXT);
+    };
+
     const startGuidance = (route: PlannedRoute) => {
         offered.current = null;
+        guidanceRun.current += 1;
         setGuided(route);
-        announce(`${routeTitle(route)}로 안내를 시작합니다.`, 'route');
+        // 켜짐 여부는 저장하지 않고 안내마다 켠 채로 시작해 묻는다.
+        vision.setEnabled(true);
+        const started = `${routeTitle(route)}로 안내를 시작합니다.`;
+        if (canAskByVoice()) {
+            void askVision(started);
+        } else {
+            announce(started, 'route');
+        }
+    };
+
+    /**
+     * 안내 시작을 알리며 카메라 인식을 켤지 묻는다.
+     * 대답이 없거나 못 알아들으면 안전을 위해 켠 채로 두고 끄는 방법을 알려 준다.
+     */
+    const askVision = async (started: string) => {
+        const run = guidanceRun.current;
+        const heard = await ask(`${started} ${VISION_QUESTION}`);
+        if (guidanceRun.current !== run) {
+            return;
+        }
+        const answer =
+            heard.status === 'heard' ? cameraAnswer(heard.text) : null;
+        if (answer) {
+            switchVision(answer === 'on');
+        } else if (listened(heard)) {
+            // 위험 알림 등이 묻는 말을 끊었으면 그 알림을 덮지 않는다.
+            announce(VISION_DEFAULT_ON_TEXT);
+        }
+    };
+
+    /** 안내 중 말하기 버튼: 한 번 듣고 명령을 따른다. */
+    const listenCommand = async () => {
+        const run = guidanceRun.current;
+        const heard = await ask(SPEAK_PROMPT);
+        if (guidanceRun.current !== run) {
+            return;
+        }
+        const command =
+            heard.status === 'heard' ? navigationCommand(heard.text) : null;
+        if (command) {
+            switchVision(command.answer === 'on');
+        } else if (listened(heard)) {
+            announce(NAVIGATION_COMMAND_HINT);
+        }
     };
 
     /** 찾은 경로를 읽고, 말로 고르거나 안내를 시작하게 한다. 못 알아들으면 한 번 더 묻는다. */
@@ -268,6 +330,7 @@ export default function App() {
     // 도착하면 읽던 도착 안내는 끊지 않고 안내를 끝낸다.
     // 진행 중인 재탐색도 끊어 끝난 안내가 다시 시작되지 않게 한다.
     const arrive = () => {
+        guidanceRun.current += 1;
         setGuided(null);
         whereAmI.reset();
         routes.reset();
@@ -293,6 +356,8 @@ export default function App() {
     });
     const shownLocation = guidance.fix ?? myLocation;
     const heading = useHeading(shownLocation?.course ?? null);
+    // 안내 중 화면 아무 곳이나 두 번 탭하면 말하기 버튼처럼 한 번 듣는다.
+    useDoubleTap(navigating && canAskByVoice(), () => void listenCommand());
 
     const pickPlace = (place: Place) => {
         setPreview(null);
@@ -316,6 +381,7 @@ export default function App() {
     };
 
     const stopGuidance = () => {
+        guidanceRun.current += 1;
         silence();
         setGuided(null);
         whereAmI.reset();
@@ -410,19 +476,16 @@ export default function App() {
                     onRepeat={(text) => announce(text)}
                     onWhereAmI={() => void tellWhereIAm()}
                     onStop={stopGuidance}
+                    onSpeak={
+                        canAskByVoice() ? () => void listenCommand() : null
+                    }
                     voice={settings.voice}
                     vision={
                         <VisionPanel
                             available={visionAvailable()}
                             frame={vision.frame}
                             enabled={vision.enabled}
-                            onToggle={() =>
-                                announce(
-                                    vision.toggle()
-                                        ? VISION_ON_TEXT
-                                        : VISION_OFF_TEXT,
-                                )
-                            }
+                            onToggle={() => switchVision(!vision.enabled)}
                         />
                     }
                 />
