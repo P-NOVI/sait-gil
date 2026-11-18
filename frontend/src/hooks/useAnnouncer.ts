@@ -6,6 +6,7 @@ import {
     SPEECH_RATES,
 } from '../lib/accessibility';
 import type { AlertLevel } from '../lib/alertArbiter';
+import { speakingTracker } from '../lib/speaking';
 import {
     canListen,
     listenOnce,
@@ -14,7 +15,7 @@ import {
     stopSpeaking,
     vibrate,
 } from '../platform';
-import { VIBRATION_PATTERNS } from '../settings';
+import { SPEECH_BUSY_MAX_MS, VIBRATION_PATTERNS } from '../settings';
 
 /**
  * ask 의 결과. heard: 알아들은 말, silent: 들었지만 대답이 없음,
@@ -44,12 +45,29 @@ export function useAnnouncer(settings: AccessibilitySettings) {
     const [listening, setListening] = useState(false);
     // 말할 때마다 늘린다. 묻고 듣는 사이에 다른 말이 끼어들면 그 대답은 버린다.
     const turn = useRef(0);
+    // 읽고 있는 말의 단계. 안내 중 알림은 이것보다 높은 단계일 때만 끊고 읽는다.
+    const [speaking] = useState(speakingTracker);
 
     const interrupt = useCallback(() => {
         turn.current += 1;
+        speaking.clear();
         stopListening();
         setListening(false);
-    }, []);
+    }, [speaking]);
+
+    /** 다 읽을 때까지 level 의 말을 읽는 중으로 둔다. 단계 없는 말은 경로 안내와 같게 본다. */
+    const say = useCallback(
+        async (text: string, level: AlertLevel = 'route') => {
+            const done = speaking.start(level);
+            const timer = setTimeout(done, SPEECH_BUSY_MAX_MS);
+            await speak(text, { rate: SPEECH_RATES[speechSpeed] }).catch(
+                () => undefined,
+            );
+            clearTimeout(timer);
+            done();
+        },
+        [speaking, speechSpeed],
+    );
 
     const announce = useCallback(
         (text: string, level?: AlertLevel) => {
@@ -64,10 +82,10 @@ export function useAnnouncer(settings: AccessibilitySettings) {
                 }
             }
             if (voice) {
-                void speak(text, { rate: SPEECH_RATES[speechSpeed] });
+                void say(text, level);
             }
         },
-        [interrupt, voice, speechSpeed, vibration],
+        [interrupt, say, voice, vibration],
     );
 
     /**
@@ -81,9 +99,7 @@ export function useAnnouncer(settings: AccessibilitySettings) {
             }
             interrupt();
             const mine = turn.current;
-            await speak(text, { rate: SPEECH_RATES[speechSpeed] }).catch(
-                () => undefined,
-            );
+            await say(text);
             if (turn.current !== mine) {
                 return { status: 'interrupted' };
             }
@@ -100,13 +116,22 @@ export function useAnnouncer(settings: AccessibilitySettings) {
                 ? { status: 'heard', text: heard }
                 : { status: 'silent' };
         },
-        [interrupt, voice, speechSpeed],
+        [interrupt, say, voice],
     );
 
+    /** 말을 모두 멈춘다. 읽으려고 기다리던 알림도 버린다. */
     const silence = useCallback(() => {
+        speaking.stop();
         interrupt();
         void stopSpeaking();
-    }, [interrupt]);
+    }, [interrupt, speaking]);
 
-    return { announce, ask, silence, listening };
+    return {
+        announce,
+        ask,
+        silence,
+        listening,
+        busyFor: speaking.busyFor,
+        whenIdle: speaking.whenIdle,
+    };
 }

@@ -44,7 +44,10 @@ export function pickAlert(
     return best;
 }
 
-/** 읽는 중인 알림을 끊고 next 를 바로 읽어야 하는지. 더 높은 단계만 끊는다. */
-export function shouldInterrupt(current: Alert | null, next: Alert): boolean {
-    return current !== null && PRIORITY[next.level] > PRIORITY[current.level];
+/** 읽는 중인 current 단계의 말을 끊고 next 단계 알림을 바로 읽어야 하는지. 더 높은 단계만 끊는다. */
+export function shouldInterrupt(
+    current: AlertLevel,
+    next: AlertLevel,
+): boolean {
+    return PRIORITY[next] > PRIORITY[current];
 }
