@@ -1,19 +1,22 @@
-// 카메라 인파 인식. 앱에 플러그인이 붙기 전에는 웹 mock 만 쓸 수 있다.
-//
-// 앱에서는 Kotlin 플러그인(CameraX + LiteRT 로 YOLO26n)이 카메라를 돌리고,
+// 카메라 인파 인식. 앱에서는 Kotlin 플러그인 SaitgilVision(CameraX + LiteRT)이 카메라를 돌리고,
 // 사람 거리·밀집도·빈 방향 같은 추론 결과만 이 어댑터로 넘긴다(영상은 기기 밖으로 보내지 않는다).
-// 모델 학습이 끝나면 startVision 을 플러그인 호출로 바꾼다. 화면은 VisionPanel 이 쓴다.
+// 웹에서는 개발용 mock 을 켰을 때만 결과를 보낸다. 화면은 VisionPanel 이 쓴다.
 
+import { type PluginListenerHandle, registerPlugin } from '@capacitor/core';
+
+import { isNativeApp } from './runtime';
 import { startMockVision } from './visionMock';
 
-/** 밀집도 4단계: 여유, 주의, 혼잡, 위험 */
-export type CrowdLevel = 'clear' | 'caution' | 'crowded' | 'danger';
+/** 밀집도 4단계. 민감도는 이 단계끼리만 비교한다. */
+const CROWD_LEVELS = ['clear', 'caution', 'crowded', 'danger'] as const;
+export type CrowdLevel = (typeof CROWD_LEVELS)[number];
 
-/** 인식한 단계. 어둡거나 가려져 사람을 셀 수 없으면 unknown(판단 불가) */
+/** 카메라 가림·신뢰도 부족은 밀집도와 별개인 판단 불가 상태다. */
 export type VisionLevel = CrowdLevel | 'unknown';
 
 /** 빈 공간을 알리는 시계 방향 (10시~2시 5방향) */
-export type ClockDirection = 10 | 11 | 12 | 1 | 2;
+const CLOCK_DIRECTIONS = [10, 11, 12, 1, 2] as const;
+export type ClockDirection = (typeof CLOCK_DIRECTIONS)[number];
 
 /** 한 번 추론한 결과 */
 export type VisionFrame = {
@@ -26,25 +29,116 @@ export type VisionFrame = {
 
 export const VISION_NOT_READY = '인파 인식은 준비 중입니다.';
 
-/** 웹에서 mock 인식을 켰는지. 플러그인 없이 알림을 확인할 때 .env 에 VITE_VISION_MOCK=true 를 둔다. */
+/** Kotlin 플러그인 SaitgilVision 의 화면 쪽 모양. alert 이벤트는 아직 받지 않는다. */
+type SaitgilVisionPlugin = {
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    addListener(
+        eventName: 'crowdState',
+        listener: (state: unknown) => void,
+    ): Promise<PluginListenerHandle>;
+};
+
+let plugin: SaitgilVisionPlugin | null = null;
+// 플러그인은 하나를 공유한다. 이전 연결의 늦은 종료가 새 연결을 끄지 않게 한다.
+let owner: symbol | null = null;
+let lifecycle: Promise<void> = Promise.resolve();
+
+/** 시작·종료가 끝난 뒤 다음 명령을 보낸다. 실패해도 다음 연결은 시도할 수 있다. */
+function inOrder(operation: () => Promise<void>): Promise<void> {
+    const pending = lifecycle.then(operation);
+    lifecycle = pending.catch(() => undefined);
+    return pending;
+}
+
+// 웹에서는 부르지 않으므로 처음 쓸 때 등록한다.
+function visionPlugin(): SaitgilVisionPlugin {
+    plugin ??= registerPlugin<SaitgilVisionPlugin>('SaitgilVision');
+    return plugin;
+}
+
+/**
+ * 플러그인이 보낸 값을 VisionFrame 으로 바꾼다.
+ * 모르는 단계는 인식 실패를 성공으로 오인하지 않도록 판단 불가로 보고, 잘못된 값은 버린다.
+ */
+function toFrame(state: unknown): VisionFrame {
+    const raw =
+        state instanceof Object ? (state as Record<string, unknown>) : {};
+    const level =
+        CROWD_LEVELS.find((known) => known === raw.level) ?? 'unknown';
+    const distance = raw.nearestPersonM;
+    const directions = Array.isArray(raw.freeDirections)
+        ? raw.freeDirections
+        : [];
+    return {
+        level,
+        nearestPersonM:
+            typeof distance === 'number' &&
+            Number.isFinite(distance) &&
+            distance >= 0
+                ? distance
+                : null,
+        // 플러그인이 보낸 넓은 순서를 유지한다. 고정된 시계 순서로 다시 정렬하지 않는다.
+        freeDirections: directions.filter(
+            (direction): direction is ClockDirection =>
+                CLOCK_DIRECTIONS.some((known) => known === direction),
+        ),
+    };
+}
+
+/** 웹에서 플러그인 없이 알림을 확인할 때만 mock 을 켠다. 앱에서는 네이티브를 우선한다. */
 function mockEnabled(): boolean {
     return import.meta.env.VITE_VISION_MOCK === 'true';
 }
 
-/** 이 기기에서 인파 인식을 쓸 수 있는지. 플러그인을 붙이기 전까지는 mock 을 켰을 때만 true */
+/** 네이티브 앱 또는 mock 을 켠 웹에서 인식 결과를 받을 수 있다. */
 export function visionAvailable(): boolean {
-    return mockEnabled();
+    return isNativeApp() || mockEnabled();
 }
 
 /**
  * 인파 인식을 시작하고 결과가 나올 때마다 onFrame 으로 알린다. 돌려준 함수를 부르면 멈춘다.
- * 플러그인이 없어 mock 을 켜지 않았으면 실패한다.
+ * 앱은 네이티브 플러그인, 웹은 명시적으로 켠 mock 을 사용한다.
  */
 export async function startVision(
     onFrame: (frame: VisionFrame) => void,
 ): Promise<() => void> {
-    if (mockEnabled()) {
-        return startMockVision(onFrame);
+    if (!isNativeApp()) {
+        if (mockEnabled()) {
+            return startMockVision(onFrame);
+        }
+        throw new Error(VISION_NOT_READY);
     }
-    throw new Error(VISION_NOT_READY);
+    const vision = visionPlugin();
+    const session = Symbol('vision');
+    let stopped = false;
+    // 첫 결과를 놓치지 않도록 구독한 뒤에 시작한다.
+    const listener = await vision.addListener('crowdState', (state) => {
+        if (!stopped) {
+            onFrame(toFrame(state));
+        }
+    });
+    try {
+        await inOrder(async () => {
+            await vision.start();
+            owner = session;
+        });
+    } catch (error) {
+        await listener.remove();
+        throw error;
+    }
+    return () => {
+        if (stopped) {
+            return;
+        }
+        stopped = true;
+        void listener.remove().catch(() => undefined);
+        void inOrder(async () => {
+            if (owner !== session) {
+                return;
+            }
+            owner = null;
+            await vision.stop();
+        }).catch(() => undefined);
+    };
 }

@@ -1,0 +1,110 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const platform = vi.hoisted(() => ({
+    startVision: vi.fn(),
+    visionAvailable: vi.fn(),
+}));
+
+vi.mock('../platform', () => platform);
+
+import type { VisionFrame } from '../platform';
+import { connectVision } from './useVision';
+
+const FRAME: VisionFrame = {
+    level: 'crowded',
+    nearestPersonM: 2.1,
+    freeDirections: [11],
+};
+
+// then/catch 로 이어진 약속이 모두 끝나도록 기다린다.
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** 시작이 언제 끝날지 테스트가 정하는 startVision */
+function pendingStart() {
+    const stopVision = vi.fn();
+    let finish: (stop: () => void) => void = () => undefined;
+    let fail: (error: Error) => void = () => undefined;
+    let onFrame: (frame: VisionFrame) => void = () => undefined;
+    platform.startVision.mockImplementation(
+        (listener: (frame: VisionFrame) => void) => {
+            onFrame = listener;
+            return new Promise<() => void>((resolve, reject) => {
+                finish = resolve;
+                fail = reject;
+            });
+        },
+    );
+    return {
+        stopVision,
+        finish: () => finish(stopVision),
+        fail: (error: Error) => fail(error),
+        /** 플러그인이 결과를 보낸 것처럼 onFrame 을 부른다. */
+        emit: (frame: VisionFrame) => onFrame(frame),
+    };
+}
+
+beforeEach(() => {
+    vi.clearAllMocks();
+});
+
+describe('connectVision', () => {
+    it('인식 결과를 onFrame 으로 넘긴다', async () => {
+        const start = pendingStart();
+        const frames: VisionFrame[] = [];
+
+        connectVision((frame) => frames.push(frame));
+        start.finish();
+        await flush();
+        start.emit(FRAME);
+
+        expect(frames).toEqual([FRAME]);
+    });
+
+    it('시작이 끝난 뒤 멈추면 인식을 멈춘다', async () => {
+        const start = pendingStart();
+
+        const disconnect = connectVision(vi.fn());
+        start.finish();
+        await flush();
+        disconnect();
+
+        expect(start.stopVision).toHaveBeenCalledTimes(1);
+    });
+
+    it('시작이 끝나기 전에 멈추면 시작이 끝나는 대로 바로 멈춘다', async () => {
+        const start = pendingStart();
+
+        const disconnect = connectVision(vi.fn());
+        disconnect();
+        expect(start.stopVision).not.toHaveBeenCalled();
+
+        start.finish();
+        await flush();
+
+        expect(start.stopVision).toHaveBeenCalledTimes(1);
+    });
+
+    it('멈춘 뒤에 온 결과는 버린다', async () => {
+        const start = pendingStart();
+        const onFrame = vi.fn();
+
+        const disconnect = connectVision(onFrame);
+        start.finish();
+        await flush();
+        disconnect();
+        start.emit(FRAME);
+
+        expect(onFrame).not.toHaveBeenCalled();
+    });
+
+    it('시작에 실패해도 오류를 던지지 않고 멈춰도 문제없다', async () => {
+        const start = pendingStart();
+
+        const disconnect = connectVision(vi.fn());
+        start.fail(new Error('시작 실패'));
+        await flush();
+
+        expect(() => disconnect()).not.toThrow();
+        expect(start.stopVision).not.toHaveBeenCalled();
+    });
+});

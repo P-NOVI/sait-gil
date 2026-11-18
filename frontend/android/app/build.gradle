@@ -1,4 +1,12 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+// capacitor.build.gradle 이 Java 21 로 맞추므로 Kotlin 도 같은 값으로 맞춘다.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
+    }
+}
 
 android {
     namespace = "com.pnovi.saitgil"

@@ -21,6 +21,36 @@ type Options = {
 };
 
 /**
+ * 인파 인식을 켜고 결과마다 onFrame 으로 알린다. 돌려준 함수를 부르면 멈춘다.
+ * 시작이 끝나기 전에 멈추면 시작이 끝나는 대로 곧바로 멈추고, 멈춘 뒤에 온 결과는 버린다.
+ * 시작에 실패해도 오류를 던지지 않는다.
+ */
+export function connectVision(
+    onFrame: (frame: VisionFrame) => void,
+): () => void {
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    startVision((frame) => {
+        if (!cancelled) {
+            onFrame(frame);
+        }
+    })
+        .then((stopVision) => {
+            if (cancelled) {
+                stopVision();
+            } else {
+                stop = stopVision;
+            }
+        })
+        // 인식이 안 돼도 길안내는 계속된다.
+        .catch(() => undefined);
+    return () => {
+        cancelled = true;
+        stop?.();
+    };
+}
+
+/**
  * 안내 중 카메라 인파 인식 결과를 받아 알림 중재로 넘기고, 화면에 보일 마지막 결과를 돌려준다.
  * 인식 결과는 1초에 몇 번씩 오므로, 읽던 말을 끊지 못한 알림은 버리고 다음 결과에서 다시 고른다.
  */
@@ -41,13 +71,7 @@ export function useVision({
             return;
         }
         const read = visionReader();
-        let stopped = false;
-        let stop: (() => void) | null = null;
-
-        startVision((next) => {
-            if (stopped) {
-                return;
-            }
+        const disconnect = connectVision((next) => {
             const current = latest.current;
             setFrame(next);
             const cue = read(next, Date.now(), current.minLevel);
@@ -56,19 +80,10 @@ export function useVision({
             } else if (cue?.kind === 'buzz') {
                 current.buzz(CAUTION_VIBRATION);
             }
-        })
-            .then((stopVision) => {
-                if (stopped) {
-                    stopVision();
-                } else {
-                    stop = stopVision;
-                }
-            })
-            .catch((error: unknown) => console.warn(error));
+        });
 
         return () => {
-            stopped = true;
-            stop?.();
+            disconnect();
             setFrame(null);
         };
     }, [active]);
