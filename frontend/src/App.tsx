@@ -14,6 +14,7 @@ import { listened, useAnnouncer } from './hooks/useAnnouncer';
 import { useGuidance } from './hooks/useGuidance';
 import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
+import { useVision } from './hooks/useVision';
 import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
 import { REROUTE_FAILED_KEY } from './lib/guidance';
@@ -279,6 +280,7 @@ export default function App() {
         onReroute: reroute,
         onArrive: arrive,
     });
+    const visionFrame = useVision(navigating);
     useEffect(() => {
         reportAlert.current = guidance.report;
     }, [guidance.report]);
@@ -405,7 +407,7 @@ export default function App() {
                     vision={
                         <VisionPanel
                             available={visionAvailable()}
-                            frame={null}
+                            frame={visionFrame}
                         />
                     }
                 />
