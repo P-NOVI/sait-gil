@@ -20,4 +20,5 @@ export {
     VISION_NOT_READY,
     visionAvailable,
     type VisionFrame,
+    type VisionLevel,
 } from './vision';

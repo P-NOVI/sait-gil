@@ -3,17 +3,42 @@ import {
     type CrowdLevel,
     VISION_NOT_READY,
     type VisionFrame,
+    type VisionLevel,
 } from '../platform';
 import { distanceLabel } from '../lib/routeApi';
+import { UNKNOWN_TEXT } from '../lib/visionAlerts';
 
-const LEVEL_LABELS: Record<CrowdLevel, string> = {
+const LEVEL_LABELS: Record<VisionLevel, string> = {
     clear: '여유',
     caution: '주의',
     crowded: '혼잡',
     danger: '위험',
+    unknown: '판단 불가',
 };
 
 const LEVELS: CrowdLevel[] = ['clear', 'caution', 'crowded', 'danger'];
+
+/** 미터에서 켜 둘 칸 수. 판단 불가는 모두 끈다. */
+function meterSteps(level: VisionLevel | null): number {
+    return level === null || level === 'unknown'
+        ? 0
+        : LEVELS.indexOf(level) + 1;
+}
+
+function statusText(frame: VisionFrame): string {
+    if (frame.level === 'unknown') {
+        return UNKNOWN_TEXT;
+    }
+    const nearest =
+        frame.nearestPersonM !== null
+            ? `가장 가까운 사람 ${distanceLabel(frame.nearestPersonM)}. `
+            : '';
+    const free =
+        frame.freeDirections.length > 0
+            ? `${frame.freeDirections.map(clockLabel).join(', ')} 방향이 비어 있습니다.`
+            : '비어 있는 방향이 없습니다.';
+    return `${nearest}${free}`;
+}
 
 function clockLabel(direction: ClockDirection): string {
     return `${direction}시`;
@@ -30,6 +55,7 @@ type VisionPanelProps = {
  */
 export default function VisionPanel({ available, frame }: VisionPanelProps) {
     const level = frame?.level ?? null;
+    const lit = meterSteps(level);
     return (
         <section
             className="vision-panel"
@@ -43,12 +69,7 @@ export default function VisionPanel({ available, frame }: VisionPanelProps) {
                 {LEVELS.map((step) => (
                     <li
                         key={step}
-                        data-on={
-                            level !== null &&
-                            LEVELS.indexOf(step) <= LEVELS.indexOf(level)
-                                ? true
-                                : undefined
-                        }
+                        data-on={LEVELS.indexOf(step) < lit ? true : undefined}
                     >
                         {LEVEL_LABELS[step]}
                     </li>
@@ -58,12 +79,7 @@ export default function VisionPanel({ available, frame }: VisionPanelProps) {
                 <p className="vision-panel__status">{VISION_NOT_READY}</p>
             ) : (
                 <p className="vision-panel__status">
-                    {LEVEL_LABELS[frame.level]}.{' '}
-                    {frame.nearestPersonM !== null &&
-                        `가장 가까운 사람 ${distanceLabel(frame.nearestPersonM)}. `}
-                    {frame.freeDirections.length > 0
-                        ? `${frame.freeDirections.map(clockLabel).join(', ')} 방향이 비어 있습니다.`
-                        : '비어 있는 방향이 없습니다.'}
+                    {LEVEL_LABELS[frame.level]}. {statusText(frame)}
                 </p>
             )}
         </section>
