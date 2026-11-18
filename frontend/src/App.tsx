@@ -29,7 +29,11 @@ import {
     routeTitle,
     sameKindRoute,
 } from './lib/routeApi';
-import { ROUTE_ANSWER_HINT, routeAnswer } from './lib/voiceCommand';
+import {
+    NOT_HEARD_TEXT,
+    ROUTE_ANSWER_HINT,
+    routeAnswer,
+} from './lib/voiceCommand';
 import {
     canListen,
     getCurrentPosition,
@@ -47,6 +51,10 @@ const SHEET_TITLES: Record<Exclude<Tab, 'search'>, string> = {
 const TRY_TEXT = '음성과 진동으로 이렇게 알려 드립니다.';
 const NO_ADDRESS_TEXT = '이곳의 주소를 찾지 못했습니다.';
 const NO_LOCATION_TEXT = '내 위치를 아직 찾지 못했습니다.';
+
+/** 안내 중 경로를 다시 찾지 못했을 때. 하던 안내는 이어 간다. */
+const keptRouteText = (message: string) =>
+    `${message} 전 경로로 계속 안내합니다.`;
 
 const requestPlaces = (
     signal: AbortSignal,
@@ -94,12 +102,15 @@ export default function App() {
     const [guided, setGuided] = useState<PlannedRoute | null>(null);
     const navigating = guided !== null;
 
-    const places = useRequest(requestPlaces);
-    const routes = useRequest(requestRoutes);
-    const whereAmI = useRequest(requestAddress);
+    // 실패하면 화면에 띄우는 문장을 음성으로도 읽는다.
+    const places = useRequest(requestPlaces, announce);
+    const routes = useRequest(requestRoutes, (message) =>
+        announce(navigating ? keptRouteText(message) : message),
+    );
+    const whereAmI = useRequest(requestAddress, announce);
 
     const settle = useCallback(
-        (pending: Promise<LocationFix>) =>
+        (pending: Promise<LocationFix>, onError?: (message: string) => void) =>
             pending
                 .then(
                     (fix) => {
@@ -108,7 +119,9 @@ export default function App() {
                         return fix;
                     },
                     (error: unknown) => {
-                        setLocationError(errorMessage(error));
+                        const message = errorMessage(error);
+                        setLocationError(message);
+                        onError?.(message);
                         return null;
                     },
                 )
@@ -124,7 +137,8 @@ export default function App() {
         // iOS 는 버튼을 누른 순간에만 나침반 권한을 물을 수 있다.
         void requestCompassPermission();
         setLocating(true);
-        return settle(getCurrentPosition());
+        // 앱을 열 때 실패는 화면에만 띄우고, 찾아 달라고 했을 때만 읽는다.
+        return settle(getCurrentPosition(), announce);
     };
 
     const found = useMemo(
@@ -159,7 +173,13 @@ export default function App() {
             heard = await ask(ROUTE_ANSWER_HINT);
             reply = heard === null ? null : routeAnswer(heard, result);
         }
-        if (!reply || offered.current !== result) {
+        if (offered.current !== result) {
+            return;
+        }
+        if (!reply) {
+            if (byVoice) {
+                announce(NOT_HEARD_TEXT);
+            }
             return;
         }
         if (reply.action === 'repeat') {
@@ -333,7 +353,7 @@ export default function App() {
                     rerouting={routes.state.status === 'loading'}
                     routeError={
                         routes.state.status === 'error'
-                            ? routes.state.message
+                            ? keptRouteText(routes.state.message)
                             : null
                     }
                     whereAmI={whereAmI.state}

@@ -61,10 +61,13 @@ export function useGuidance({
         }
         let state = NEW_GUIDANCE;
         const spokenAt = new Map<string, number>();
+        // 위치를 놓쳤다고 읽었는지. 다시 잡을 때까지는 또 읽지 않는다.
+        let lost = false;
         void keepScreenOn().catch(() => false);
 
         const stop = watchLocation(
             (fix) => {
+                lost = false;
                 const current = latest.current;
                 if (!current.route) {
                     setGuidance((previous) => ({
@@ -98,11 +101,16 @@ export function useGuidance({
                     error: null,
                 }));
             },
-            (error) =>
+            (error) => {
+                if (!lost) {
+                    lost = true;
+                    latest.current.announce(error.message);
+                }
                 setGuidance((previous) => ({
                     ...previous,
                     error: error.message,
-                })),
+                }));
+            },
         );
 
         return () => {

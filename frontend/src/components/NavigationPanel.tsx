@@ -9,7 +9,7 @@ type NavigationPanelProps = {
     route: PlannedRoute;
     guidance: Guidance;
     rerouting: boolean;
-    /** 경로를 다시 찾지 못했을 때의 이유. 전 경로로 계속 안내한다. */
+    /** 경로를 다시 찾지 못했을 때의 이유와 전 경로로 계속 안내한다는 말 */
     routeError: string | null;
     whereAmI: RequestState<string>;
     /** 지금 상황 문장을 다시 읽는다. */
@@ -90,7 +90,7 @@ export default function NavigationPanel({
             )}
             {routeError && (
                 <p className="navigation-panel__error" role="alert">
-                    {routeError} 전 경로로 계속 안내합니다.
+                    {routeError}
                 </p>
             )}
 

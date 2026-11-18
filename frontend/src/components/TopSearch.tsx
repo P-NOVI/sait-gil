@@ -11,11 +11,13 @@ import type { RequestState } from '../hooks/useRequest';
 import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
 import {
+    NOT_HEARD_TEXT,
     PLACE_ANSWER_HINT,
     type PlaceAnswer,
     placeAnswer,
 } from '../lib/voiceCommand';
 import {
+    LISTEN_FAILED_TEXT,
     NO_MORE_PLACES_TEXT,
     NO_PLACES_TEXT,
     placeQuestion,
@@ -130,8 +132,13 @@ export default function TopSearch({
             heard = await onAsk(PLACE_ANSWER_HINT);
             reply = heard === null ? null : placeAnswer(heard);
         }
-        if (reply && asked.current === about) {
+        if (asked.current !== about) {
+            return;
+        }
+        if (reply) {
             answer(reply, about);
+        } else if (voice) {
+            onAnnounce(NOT_HEARD_TEXT);
         }
     };
 
@@ -163,6 +170,7 @@ export default function TopSearch({
         setListening(false);
         if (!heard) {
             setListenFailed(true);
+            onAnnounce(LISTEN_FAILED_TEXT);
             return;
         }
         const queries = spokenQueries(heard);
@@ -250,7 +258,7 @@ export default function TopSearch({
             </p>
             {listenFailed && (
                 <p className="top-search__message" role="alert">
-                    말을 알아듣지 못했습니다. 다시 말하거나 글자로 입력하세요.
+                    {LISTEN_FAILED_TEXT}
                 </p>
             )}
             {results.status === 'error' && (

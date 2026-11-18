@@ -11,9 +11,11 @@ export type RequestState<T> =
 /**
  * 버튼·음성으로 보내는 요청 하나의 상태. 새로 보내면 이전 요청은 끊는다.
  * 불러오는 동안에도 이전 결과(previous)를 보여 줄 수 있다.
+ * 실패하면 화면에 띄울 문장을 onError 에도 넘긴다(끊은 요청은 빼고).
  */
 export function useRequest<A extends unknown[], T>(
     request: (signal: AbortSignal, ...args: A) => Promise<T>,
+    onError?: (message: string) => void,
 ): {
     state: RequestState<T>;
     run: (...args: A) => Promise<T | null>;
@@ -22,6 +24,11 @@ export function useRequest<A extends unknown[], T>(
     const [state, setState] = useState<RequestState<T>>({ status: 'idle' });
     const controller = useRef<AbortController | null>(null);
     const last = useRef<T | null>(null);
+    const latestOnError = useRef(onError);
+
+    useEffect(() => {
+        latestOnError.current = onError;
+    });
 
     useEffect(() => () => controller.current?.abort(), []);
 
@@ -40,13 +47,10 @@ export function useRequest<A extends unknown[], T>(
                 return data;
             } catch (error) {
                 if (!isAbort(error) && controller.current === current) {
-                    setState({
-                        status: 'error',
-                        message:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                    });
+                    const message =
+                        error instanceof Error ? error.message : String(error);
+                    setState({ status: 'error', message });
+                    latestOnError.current?.(message);
                 }
                 return null;
             }
