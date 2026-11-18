@@ -14,6 +14,7 @@ import { useAnnouncer } from './hooks/useAnnouncer';
 import { useGuidance } from './hooks/useGuidance';
 import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
+import { useVision } from './hooks/useVision';
 import type { LngLat } from './lib/geo';
 import {
     findAddress,
@@ -221,6 +222,7 @@ export default function App() {
         announce,
         onReroute: reroute,
     });
+    const visionFrame = useVision(navigating);
     const shownLocation = guidance.fix ?? myLocation;
     const heading = useHeading(shownLocation?.course ?? null);
 
@@ -344,7 +346,7 @@ export default function App() {
                     vision={
                         <VisionPanel
                             available={visionAvailable()}
-                            frame={null}
+                            frame={visionFrame}
                         />
                     }
                 />

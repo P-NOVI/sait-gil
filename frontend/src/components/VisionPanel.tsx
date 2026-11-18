@@ -11,6 +11,7 @@ const LEVEL_LABELS: Record<CrowdLevel, string> = {
     caution: '주의',
     crowded: '혼잡',
     danger: '위험',
+    unknown: '판단 불가',
 };
 
 const LEVELS: CrowdLevel[] = ['clear', 'caution', 'crowded', 'danger'];
@@ -56,6 +57,11 @@ export default function VisionPanel({ available, frame }: VisionPanelProps) {
             </ol>
             {!available || !frame ? (
                 <p className="vision-panel__status">{VISION_NOT_READY}</p>
+            ) : frame.level === 'unknown' ? (
+                // 판단 불가일 때 "빈 방향 없음"이라고 하면 인식한 것처럼 들린다.
+                <p className="vision-panel__status">
+                    {LEVEL_LABELS.unknown}. 주변을 인식할 수 없습니다.
+                </p>
             ) : (
                 <p className="vision-panel__status">
                     {LEVEL_LABELS[frame.level]}.{' '}
