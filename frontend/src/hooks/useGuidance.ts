@@ -13,6 +13,7 @@ import {
     markAnnounced,
     NEW_GUIDANCE,
 } from '../lib/guidance';
+import { filterFix, NEW_LOCATION_FILTER } from '../lib/locationFilter';
 import {
     allowScreenOff,
     APPROXIMATE_TEXT,
@@ -126,12 +127,21 @@ export function useGuidance({
             return;
         }
         let state = NEW_GUIDANCE;
+        let filter = NEW_LOCATION_FILTER;
         spokenAt.current = new Map();
         session.current += 1;
         void keepScreenOn().catch(() => false);
 
         const stop = watchLocation(
-            (fix) => {
+            (received) => {
+                const now = Date.now();
+                const filtered = filterFix(filter, received, now);
+                filter = filtered.state;
+                const { fix } = filtered;
+                // 튄 위치는 지도와 안내에 쓰지 않고 다음 위치를 기다린다.
+                if (!fix) {
+                    return;
+                }
                 const current = latest.current;
                 // 대략적인 위치로는 판단을 계속 보류해 말없이 멈추므로, 이유를 안내마다 한 번 읽는다.
                 // 읽는 중이면 버리고 다음 위치에서 다시 넘긴다.
@@ -160,9 +170,9 @@ export function useGuidance({
                     state,
                     fix.position,
                     fix.accuracy,
+                    now,
                 );
                 state = step.state;
-                const now = Date.now();
                 const picked = pickAlert(step.alerts, spokenAt.current, now);
                 // 읽는 중이라 미룬 알림은 표시하지 않아 다음 위치에서 다시 고른다.
                 const alert =

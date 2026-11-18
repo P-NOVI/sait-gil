@@ -78,6 +78,35 @@ describe('progressAlong', () => {
         expect(result.remainingM).toBe(0);
         expect(result.offRouteM).toBeCloseTo(5, 3);
     });
+
+    it('범위를 주면 더 가까운 구간이 있어도 범위 안에서 찾는다', () => {
+        // 두 번째 구간(200m) 옆이지만 0~60m 만 찾으면 첫 구간 60m 지점에 맞춘다.
+        const result = progressAlong(ROUTE, [126.97105, 37.5605], {
+            fromM: 0,
+            toM: 60,
+        });
+
+        expect(result.travelledM).toBeCloseTo(60, 6);
+        expect(result.offRouteM).toBeGreaterThan(50);
+    });
+
+    it('범위가 출발점 뒤에서 시작하면 출발점이 아니라 범위 시작에 맞춘다', () => {
+        const result = progressAlong(ROUTE, [126.9695, 37.56], {
+            fromM: 10,
+            toM: 50,
+        });
+
+        expect(result.travelledM).toBeCloseTo(10, 6);
+    });
+
+    it('범위 안에 경로가 없으면 전체에서 찾는다', () => {
+        const result = progressAlong(ROUTE, [126.97105, 37.5605], {
+            fromM: 400,
+            toM: 500,
+        });
+
+        expect(result.travelledM).toBeCloseTo(200, 3);
+    });
 });
 
 describe('judge', () => {

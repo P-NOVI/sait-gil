@@ -36,19 +36,38 @@ export const NEW_TRACKER: RerouteTracker = {
     reroutedAt: null,
 };
 
-/** 내 위치를 경로 선 위 가장 가까운 점에 맞춰 진행 정도를 계산한다. */
+/** 경로에서 내 위치를 찾을 누적 거리 범위(m) */
+export type SearchRange = { fromM: number; toM: number };
+
+/**
+ * 내 위치를 경로 선 위 가장 가까운 점에 맞춰 진행 정도를 계산한다.
+ * range 를 주면 그 누적 거리 범위 안에서만 찾는다. 범위 안에 경로가 없으면 전체에서 찾는다.
+ */
 export function progressAlong(
     route: RouteLine,
     position: LngLat,
+    range?: SearchRange,
 ): RouteProgress {
     const { coordinates, distances_m: distances } = route;
     const total = distances[distances.length - 1];
-    let best = {
-        snapped: coordinates[0],
-        travelledM: 0,
-        offRouteM: distanceM(position, coordinates[0]),
-    };
+    const fromM = range?.fromM ?? -Infinity;
+    const toM = range?.toM ?? Infinity;
+    let best: Omit<RouteProgress, 'remainingM'> | null =
+        fromM <= 0
+            ? {
+                  snapped: coordinates[0],
+                  travelledM: 0,
+                  offRouteM: distanceM(position, coordinates[0]),
+              }
+            : null;
     for (let i = 0; i + 1 < coordinates.length; i += 1) {
+        if (distances[i + 1] < fromM || distances[i] > toM) {
+            continue;
+        }
+        // 범위가 구간 일부만 덮으면 그 부분에서만 찾는다.
+        const span = distances[i + 1] - distances[i];
+        const tMin = span > 0 ? Math.max(0, (fromM - distances[i]) / span) : 0;
+        const tMax = span > 0 ? Math.min(1, (toM - distances[i]) / span) : 1;
         // 내 위치를 원점으로 두고 구간 AB 위 가장 가까운 점 A + t(B - A) 를 찾는다.
         const [ax, ay] = toLocal(coordinates[i], position);
         const [bx, by] = toLocal(coordinates[i + 1], position);
@@ -57,13 +76,13 @@ export function progressAlong(
         const lengthSquared = dx * dx + dy * dy;
         const t =
             lengthSquared === 0
-                ? 0
+                ? tMin
                 : Math.min(
-                      1,
-                      Math.max(0, -(ax * dx + ay * dy) / lengthSquared),
+                      tMax,
+                      Math.max(tMin, -(ax * dx + ay * dy) / lengthSquared),
                   );
         const offRouteM = Math.hypot(ax + t * dx, ay + t * dy);
-        if (offRouteM < best.offRouteM) {
+        if (!best || offRouteM < best.offRouteM) {
             const [lng1, lat1] = coordinates[i];
             const [lng2, lat2] = coordinates[i + 1];
             best = {
@@ -73,6 +92,9 @@ export function progressAlong(
                 offRouteM,
             };
         }
+    }
+    if (!best) {
+        return progressAlong(route, position);
     }
     return { ...best, remainingM: total - best.travelledM };
 }

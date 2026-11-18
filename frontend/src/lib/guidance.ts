@@ -1,6 +1,7 @@
 // 길안내 엔진의 한 걸음: 새 위치가 들어올 때마다 진행 정도, 이탈, 미리 알림을 정한다.
 // 무엇을 먼저 읽을지는 알림 중재(alertArbiter)가 정한다.
 
+import { NAVIGATION } from '../settings';
 import type { Alert } from './alertArbiter';
 import type { LngLat } from './geo';
 import { ARRIVED_END_TEXT, eventText, REROUTE_TEXT } from './guidanceText';
@@ -12,6 +13,7 @@ import {
     type RerouteTracker,
     type RouteLine,
     type RouteProgress,
+    type SearchRange,
     trackOffRoute,
 } from './navigation';
 import { dueEvents, eventKey, type RouteEvent } from './routeEvents';
@@ -29,12 +31,33 @@ export type GuidanceState = {
     tracker: RerouteTracker;
     /** 이미 읽은 알림 key. 경로를 다시 찾아도 유지한다. */
     announced: ReadonlySet<string>;
+    /** 직전 위치의 진행 정도. 다음 위치는 이 근처 경로에서 찾는다. */
+    last: { route: GuidedRoute; travelledM: number; atMs: number } | null;
 };
 
 export const NEW_GUIDANCE: GuidanceState = {
     tracker: NEW_TRACKER,
     announced: new Set(),
+    last: null,
 };
+
+/**
+ * 직전 진행 위치에서 그동안 걸어서 갈 수 있는 앞뒤 범위.
+ * 처음이거나 경로를 다시 찾았으면 범위 없이 경로 전체에서 찾는다.
+ */
+function reachable(
+    route: GuidedRoute,
+    last: GuidanceState['last'],
+    accuracy: number,
+    nowMs: number,
+): SearchRange | undefined {
+    if (!last || last.route !== route) {
+        return undefined;
+    }
+    const elapsedS = Math.max(0, nowMs - last.atMs) / 1000;
+    const reachM = NAVIGATION.maxWalkSpeedMps * elapsedS + accuracy;
+    return { fromM: last.travelledM - reachM, toM: last.travelledM + reachM };
+}
 
 export type GuidanceStep = {
     /** 이 위치를 반영한 상태. 다음 위치에 넘긴다. */
@@ -52,8 +75,13 @@ export function guidanceStep(
     state: GuidanceState,
     position: LngLat,
     accuracy: number,
+    nowMs: number,
 ): GuidanceStep {
-    const progress = progressAlong(route, position);
+    const progress = progressAlong(
+        route,
+        position,
+        reachable(route, state.last, accuracy, nowMs),
+    );
     const judgement = judge(progress, accuracy);
     const { tracker, reroute } = trackOffRoute(
         state.tracker,
@@ -85,7 +113,11 @@ export function guidanceStep(
         }
     }
     return {
-        state: { ...state, tracker },
+        state: {
+            ...state,
+            tracker,
+            last: { route, travelledM: progress.travelledM, atMs: nowMs },
+        },
         progress,
         judgement,
         reroute,

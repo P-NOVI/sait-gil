@@ -15,9 +15,26 @@ export const NAVIGATION = {
     offRouteFixes: 2,
     // 다시 찾은 곳에서 이만큼 움직이기 전에는 또 찾지 않는다.
     rerouteMinMoveM: 30,
+    // 사람이 걸어서 낼 수 있는 가장 빠른 속력(m/s). 직전 진행 위치에서
+    // (이 속력 × 지난 시간 + 위치 오차)만큼 앞뒤 경로에서만 내 위치를 찾는다.
+    // 나란히 붙은 다른 구간(길 건너 반대편 인도 등)으로 건너뛰지 않게 한다.
+    maxWalkSpeedMps: 3,
 } as const;
 
 export type NavigationSettings = typeof NAVIGATION;
+
+// 안내 중 받은 GPS 위치 거르기
+export const LOCATION_FILTER = {
+    // 마지막 위치에서 (이 속력 × 지난 시간 + 새 위치 오차)보다 멀면 튄 위치로 보고 버린다(m/s).
+    maxSpeedMps: NAVIGATION.maxWalkSpeedMps,
+    // 튄 위치가 이 횟수만큼 연달아 오면 실제로 옮겨 간 것으로 받아들인다.
+    jumpConfirmFixes: 3,
+    // 멈춘 곳에서 이 거리(오차가 더 작으면 오차) 안에서만 흔들리면 멈춰 있는 것으로 본다(m).
+    // 크면 걷기 시작해도 늦게 따라가고, 작으면 멈춰 있어도 움직이는 것으로 나온다.
+    stillRadiusM: 5,
+} as const;
+
+export type LocationFilterSettings = typeof LOCATION_FILTER;
 
 // 내 위치 마커의 방향(나침반 + GPS 보정)
 export const HEADING = {
