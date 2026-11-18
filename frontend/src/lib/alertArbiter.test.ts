@@ -31,6 +31,14 @@ describe('pickAlert', () => {
         );
     });
 
+    it('알림에 쿨다운이 따로 있으면 그것을 쓴다', () => {
+        const lost: Alert = { ...TURN, key: 'lost', cooldownMs: 30_000 };
+        const spokenAt = new Map([['lost', 0]]);
+
+        expect(pickAlert([lost], spokenAt, 20_000, COOLDOWN)).toBeNull();
+        expect(pickAlert([lost], spokenAt, 30_000, COOLDOWN)).toBe(lost);
+    });
+
     it('읽을 것이 없으면 null', () => {
         expect(pickAlert([], new Map(), 0, COOLDOWN)).toBeNull();
     });
@@ -38,10 +46,10 @@ describe('pickAlert', () => {
 
 describe('shouldInterrupt', () => {
     it('더 높은 단계만 읽던 알림을 끊는다', () => {
-        expect(shouldInterrupt(CROWD, DANGER)).toBe(true);
-        expect(shouldInterrupt(TURN, DANGER)).toBe(true);
-        expect(shouldInterrupt(TURN, CROSSWALK)).toBe(false);
-        expect(shouldInterrupt(DANGER, TURN)).toBe(false);
-        expect(shouldInterrupt(null, DANGER)).toBe(false);
+        expect(shouldInterrupt('crowd', 'danger')).toBe(true);
+        expect(shouldInterrupt('crowd', 'route')).toBe(true);
+        expect(shouldInterrupt('route', 'danger')).toBe(true);
+        expect(shouldInterrupt('route', 'route')).toBe(false);
+        expect(shouldInterrupt('danger', 'route')).toBe(false);
     });
 });

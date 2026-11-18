@@ -10,6 +10,8 @@ export type Alert = {
     key: string;
     level: AlertLevel;
     text: string;
+    /** 이 알림만 따로 쓰는 쿨다운(ms). 없으면 단계별 쿨다운 */
+    cooldownMs?: number;
 };
 
 const PRIORITY: Record<AlertLevel, number> = {
@@ -31,7 +33,8 @@ export function pickAlert(
     let best: Alert | null = null;
     for (const alert of pending) {
         const last = spokenAt.get(alert.key);
-        if (last !== undefined && nowMs - last < cooldownMs[alert.level]) {
+        const wait = alert.cooldownMs ?? cooldownMs[alert.level];
+        if (last !== undefined && nowMs - last < wait) {
             continue;
         }
         if (!best || PRIORITY[alert.level] > PRIORITY[best.level]) {
@@ -41,7 +44,10 @@ export function pickAlert(
     return best;
 }
 
-/** 읽는 중인 알림을 끊고 next 를 바로 읽어야 하는지. 더 높은 단계만 끊는다. */
-export function shouldInterrupt(current: Alert | null, next: Alert): boolean {
-    return current !== null && PRIORITY[next.level] > PRIORITY[current.level];
+/** 읽는 중인 current 단계의 말을 끊고 next 단계 알림을 바로 읽어야 하는지. 더 높은 단계만 끊는다. */
+export function shouldInterrupt(
+    current: AlertLevel,
+    next: AlertLevel,
+): boolean {
+    return PRIORITY[next] > PRIORITY[current];
 }
