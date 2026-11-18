@@ -14,6 +14,7 @@ vi.mock('@capacitor/core', () => ({
 vi.mock('../platform', async () => await import('./vision'));
 
 import { connectVision } from '../hooks/useVision';
+import { freeDirectionText, visionReader } from '../lib/visionAlerts';
 
 import {
     startVision,
@@ -26,9 +27,14 @@ const remove = vi.fn();
 let emit: (state: unknown) => void = () => undefined;
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-afterEach(flush);
+afterEach(async () => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    await flush();
+});
 
 beforeEach(() => {
+    vi.stubEnv('VITE_VISION_MOCK', 'false');
     native.value = false;
     vi.clearAllMocks();
     plugin.start.mockResolvedValue(undefined);
@@ -52,6 +58,58 @@ describe('visionAvailable', () => {
 });
 
 describe('startVision', () => {
+    it('웹 mock 을 켜면 네이티브 호출 없이 결과를 보내고 종료 뒤에는 멈춘다', async () => {
+        vi.useFakeTimers();
+        vi.stubEnv('VITE_VISION_MOCK', 'true');
+        const onFrame = vi.fn();
+
+        expect(visionAvailable()).toBe(true);
+        const stop = await startVision(onFrame);
+        vi.advanceTimersByTime(500);
+        expect(onFrame).toHaveBeenCalledWith({
+            level: 'clear',
+            nearestPersonM: null,
+            freeDirections: [11, 12, 1],
+        });
+        expect(plugin.addListener).not.toHaveBeenCalled();
+        expect(plugin.start).not.toHaveBeenCalled();
+
+        stop();
+        vi.advanceTimersByTime(6_000);
+        expect(onFrame).toHaveBeenCalledTimes(1);
+    });
+
+    it('앱에서는 mock 설정이 켜져 있어도 네이티브 플러그인을 쓴다', async () => {
+        native.value = true;
+        vi.stubEnv('VITE_VISION_MOCK', 'true');
+        const stop = await startVision(vi.fn());
+
+        expect(plugin.start).toHaveBeenCalledTimes(1);
+        expect(plugin.addListener).toHaveBeenCalledTimes(1);
+        stop();
+    });
+
+    it('네이티브 빈 방향의 넓은 순서가 실제 혼잡 알림까지 이어진다', async () => {
+        native.value = true;
+        const read = visionReader();
+        const texts: string[] = [];
+        const disconnect = connectVision((frame) => {
+            const cue = read(frame, Date.now(), 'crowded');
+            if (cue?.kind === 'alert') texts.push(cue.alert.text);
+        });
+        await flush();
+        for (let i = 0; i < 3; i += 1) {
+            emit({
+                level: 'crowded',
+                nearestPersonM: 2,
+                freeDirections: [2, 12, 10],
+            });
+        }
+
+        expect(texts).toEqual([freeDirectionText(2)]);
+        disconnect();
+    });
+
     it('웹에서는 플러그인을 부르지 않고 준비 중으로 실패한다', async () => {
         await expect(startVision(vi.fn())).rejects.toThrow(VISION_NOT_READY);
 

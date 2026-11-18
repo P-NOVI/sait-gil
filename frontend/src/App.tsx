@@ -15,6 +15,7 @@ import { useGuidance } from './hooks/useGuidance';
 import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
 import { useVision } from './hooks/useVision';
+import { CROWD_ALERT_FROM } from './lib/accessibility';
 import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
 import { REROUTE_FAILED_KEY } from './lib/guidance';
@@ -80,7 +81,7 @@ function errorMessage(error: unknown): string {
 
 export default function App() {
     const [settings, updateSettings] = useAccessibility();
-    const { announce, ask, silence, listening, busyFor, whenIdle } =
+    const { announce, ask, buzz, silence, listening, busyFor, whenIdle } =
         useAnnouncer(settings);
 
     const [tab, setTab] = useState<Tab>('search');
@@ -280,10 +281,15 @@ export default function App() {
         onReroute: reroute,
         onArrive: arrive,
     });
-    const visionFrame = useVision(navigating);
     useEffect(() => {
         reportAlert.current = guidance.report;
     }, [guidance.report]);
+    const visionFrame = useVision({
+        active: navigating,
+        minLevel: CROWD_ALERT_FROM[settings.crowdSensitivity],
+        report: guidance.report,
+        buzz,
+    });
     const shownLocation = guidance.fix ?? myLocation;
     const heading = useHeading(shownLocation?.course ?? null);
 

@@ -1,6 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { startVision, visionAvailable, type VisionFrame } from '../platform';
+import type { Alert } from '../lib/alertArbiter';
+import { visionReader } from '../lib/visionAlerts';
+import {
+    type CrowdLevel,
+    startVision,
+    visionAvailable,
+    type VisionFrame,
+} from '../platform';
+import { CAUTION_VIBRATION } from '../settings';
+import type { WhenBusy } from './useGuidance';
+
+type Options = {
+    /** 안내 중일 때만 카메라 인식을 켠다. */
+    active: boolean;
+    /** 이 단계부터 인파를 알린다(혼잡 민감도). 위험과 판단 불가는 늘 알린다. */
+    minLevel: CrowdLevel;
+    report: (alert: Alert, whenBusy?: WhenBusy) => void;
+    buzz: (pattern: readonly number[]) => void;
+};
 
 /**
  * 인파 인식을 켜고 결과마다 onFrame 으로 알린다. 돌려준 함수를 부르면 멈춘다.
@@ -33,17 +51,37 @@ export function connectVision(
 }
 
 /**
- * active 인 동안 카메라 인파 인식을 켜고 마지막 결과를 돌려준다. 꺼지면 인식을 멈추고 결과를 지운다.
- * 인식을 쓸 수 없거나 시작에 실패하면 결과가 null 이라 화면은 "준비 중"으로 남는다.
+ * 안내 중 카메라 인파 인식 결과를 받아 알림 중재로 넘기고, 화면에 보일 마지막 결과를 돌려준다.
+ * 인식 결과는 1초에 몇 번씩 오므로, 읽던 말을 끊지 못한 알림은 버리고 다음 결과에서 다시 고른다.
  */
-export function useVision(active: boolean): VisionFrame | null {
+export function useVision({
+    active,
+    minLevel,
+    report,
+    buzz,
+}: Options): VisionFrame | null {
     const [frame, setFrame] = useState<VisionFrame | null>(null);
+    const latest = useRef({ minLevel, report, buzz });
+    useEffect(() => {
+        latest.current = { minLevel, report, buzz };
+    });
 
     useEffect(() => {
         if (!active || !visionAvailable()) {
             return;
         }
-        const disconnect = connectVision(setFrame);
+        const read = visionReader();
+        const disconnect = connectVision((next) => {
+            const current = latest.current;
+            setFrame(next);
+            const cue = read(next, Date.now(), current.minLevel);
+            if (cue?.kind === 'alert') {
+                current.report(cue.alert, 'drop');
+            } else if (cue?.kind === 'buzz') {
+                current.buzz(CAUTION_VIBRATION);
+            }
+        });
+
         return () => {
             disconnect();
             setFrame(null);

@@ -1,10 +1,11 @@
 // 카메라 인파 인식. 앱에서는 Kotlin 플러그인 SaitgilVision(CameraX + LiteRT)이 카메라를 돌리고,
 // 사람 거리·밀집도·빈 방향 같은 추론 결과만 이 어댑터로 넘긴다(영상은 기기 밖으로 보내지 않는다).
-// 웹(PWA)에는 플러그인이 없어 인식을 쓸 수 없다. 화면은 VisionPanel 이 쓴다.
+// 웹에서는 개발용 mock 을 켰을 때만 결과를 보낸다. 화면은 VisionPanel 이 쓴다.
 
 import { type PluginListenerHandle, registerPlugin } from '@capacitor/core';
 
 import { isNativeApp } from './runtime';
+import { startMockVision } from './visionMock';
 
 /** 밀집도 4단계. 민감도는 이 단계끼리만 비교한다. */
 const CROWD_LEVELS = ['clear', 'caution', 'crowded', 'danger'] as const;
@@ -85,19 +86,27 @@ function toFrame(state: unknown): VisionFrame {
     };
 }
 
-/** 이 기기에서 인파 인식을 쓸 수 있는지. 앱에서만 true */
+/** 웹에서 플러그인 없이 알림을 확인할 때만 mock 을 켠다. 앱에서는 네이티브를 우선한다. */
+function mockEnabled(): boolean {
+    return import.meta.env.VITE_VISION_MOCK === 'true';
+}
+
+/** 네이티브 앱 또는 mock 을 켠 웹에서 인식 결과를 받을 수 있다. */
 export function visionAvailable(): boolean {
-    return isNativeApp();
+    return isNativeApp() || mockEnabled();
 }
 
 /**
  * 인파 인식을 시작하고 결과가 나올 때마다 onFrame 으로 알린다. 돌려준 함수를 부르면 멈춘다.
- * 웹에서는 플러그인이 없어 실패한다.
+ * 앱은 네이티브 플러그인, 웹은 명시적으로 켠 mock 을 사용한다.
  */
 export async function startVision(
     onFrame: (frame: VisionFrame) => void,
 ): Promise<() => void> {
     if (!isNativeApp()) {
+        if (mockEnabled()) {
+            return startMockVision(onFrame);
+        }
         throw new Error(VISION_NOT_READY);
     }
     const vision = visionPlugin();
