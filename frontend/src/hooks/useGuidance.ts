@@ -46,9 +46,14 @@ type Options = {
 };
 
 export type GuidanceControl = Guidance & {
-    /** 안내 중 생긴 알림(오류 등)을 알림 중재의 쿨다운을 거쳐 읽는다. */
-    report: (alert: Alert) => void;
+    /**
+     * 안내 중 생긴 알림(오류·인파 등)을 알림 중재의 쿨다운을 거쳐 읽는다.
+     * 읽던 말을 끊지 못하면 wait 는 끝날 때까지 기다리고, drop 은 버린다(곧 다시 알릴 때).
+     */
+    report: (alert: Alert, whenBusy?: WhenBusy) => void;
 };
+
+export type WhenBusy = 'wait' | 'drop';
 
 const IDLE: Guidance = { fix: null, step: null, lastAlert: null, error: null };
 
@@ -91,7 +96,7 @@ export function useGuidance({
     // 안내를 시작하고 끝낼 때마다 늘린다. 기다리던 알림은 안내가 바뀌면 버린다.
     const session = useRef(0);
 
-    const report = useCallback((alert: Alert) => {
+    const report = useCallback((alert: Alert, whenBusy: WhenBusy = 'wait') => {
         const mine = session.current;
         const tell = () => {
             if (session.current !== mine) {
@@ -103,7 +108,9 @@ export function useGuidance({
                 return;
             }
             if (current.busyFor(alert.level)) {
-                void current.whenIdle().then(tell);
+                if (whenBusy === 'wait') {
+                    void current.whenIdle().then(tell);
+                }
                 return;
             }
             spokenAt.current.set(alert.key, now);

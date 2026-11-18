@@ -69,23 +69,28 @@ export function useAnnouncer(settings: AccessibilitySettings) {
         [speaking, speechSpeed],
     );
 
+    /** 말 없이 진동만 한다. 진동 세기 설정을 따른다. */
+    const buzz = useCallback(
+        (pattern: readonly number[]) => {
+            const scaled = scaledPattern(pattern, vibration);
+            if (scaled.length > 0) {
+                void vibrate(scaled);
+            }
+        },
+        [vibration],
+    );
+
     const announce = useCallback(
         (text: string, level?: AlertLevel) => {
             interrupt();
             if (level) {
-                const pattern = scaledPattern(
-                    VIBRATION_PATTERNS[level],
-                    vibration,
-                );
-                if (pattern.length > 0) {
-                    void vibrate(pattern);
-                }
+                buzz(VIBRATION_PATTERNS[level]);
             }
             if (voice) {
                 void say(text, level);
             }
         },
-        [interrupt, say, voice, vibration],
+        [buzz, interrupt, say, voice],
     );
 
     /**
@@ -129,6 +134,7 @@ export function useAnnouncer(settings: AccessibilitySettings) {
     return {
         announce,
         ask,
+        buzz,
         silence,
         listening,
         busyFor: speaking.busyFor,

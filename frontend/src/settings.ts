@@ -61,6 +61,23 @@ export const LOCATION_LOST_COOLDOWN_MS = 30_000;
 // 한 문장을 읽는 중으로 보는 가장 긴 시간. 끝 이벤트를 놓쳐도 이보다 오래 알림을 미루지 않는다.
 export const SPEECH_BUSY_MAX_MS = 15_000;
 
+// 카메라 인파 인식 알림
+export const VISION = {
+    // 같은 단계·같은 빈 방향이 이만큼 연달아 나와야 믿는다. 한 프레임 튀는 것은 넘긴다.
+    confirmFrames: 3,
+    // 위험은 빨리 알려야 해서 이만큼만 확인한다.
+    dangerFrames: 2,
+    // 위험이 이만큼 이어지면 멈추라는 말 대신 가장자리로 비키라고 한다(ms).
+    sustainedDangerMs: 5_000,
+    // 가장자리로 비키라는 말을 다시 하기 전에 기다리는 시간(ms)
+    moveAsideCooldownMs: 20_000,
+} as const;
+
+export type VisionSettings = typeof VISION;
+
+// 인파가 주의 단계가 됐을 때 말 없이 주는 짧은 진동(ms)
+export const CAUTION_VIBRATION: readonly number[] = [150];
+
 // 알림 종류별 진동 패턴 [진동, 멈춤, 진동, …](ms). 접근성 설정의 진동 세기만큼 늘이고 줄인다.
 export const VIBRATION_PATTERNS: Readonly<Record<AlertLevel, number[]>> = {
     danger: [400, 100, 400, 100, 400],

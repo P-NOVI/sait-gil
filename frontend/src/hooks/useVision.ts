@@ -1,0 +1,92 @@
+import { useEffect, useRef, useState } from 'react';
+
+import type { Alert } from '../lib/alertArbiter';
+import { visionReader } from '../lib/visionAlerts';
+import {
+    type CrowdLevel,
+    startVision,
+    visionAvailable,
+    type VisionFrame,
+} from '../platform';
+import { CAUTION_VIBRATION } from '../settings';
+import type { WhenBusy } from './useGuidance';
+
+type Options = {
+    /** 안내 중일 때만 카메라 인식을 켠다. */
+    active: boolean;
+    /** 이 단계부터 인파를 알린다(혼잡 민감도). 위험과 판단 불가는 늘 알린다. */
+    minLevel: CrowdLevel;
+    report: (alert: Alert, whenBusy?: WhenBusy) => void;
+    buzz: (pattern: readonly number[]) => void;
+};
+
+/**
+ * 인파 인식을 켜고 결과마다 onFrame 으로 알린다. 돌려준 함수를 부르면 멈춘다.
+ * 시작이 끝나기 전에 멈추면 시작이 끝나는 대로 곧바로 멈추고, 멈춘 뒤에 온 결과는 버린다.
+ * 시작에 실패해도 오류를 던지지 않는다.
+ */
+export function connectVision(
+    onFrame: (frame: VisionFrame) => void,
+): () => void {
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    startVision((frame) => {
+        if (!cancelled) {
+            onFrame(frame);
+        }
+    })
+        .then((stopVision) => {
+            if (cancelled) {
+                stopVision();
+            } else {
+                stop = stopVision;
+            }
+        })
+        // 인식이 안 돼도 길안내는 계속된다.
+        .catch(() => undefined);
+    return () => {
+        cancelled = true;
+        stop?.();
+    };
+}
+
+/**
+ * 안내 중 카메라 인파 인식 결과를 받아 알림 중재로 넘기고, 화면에 보일 마지막 결과를 돌려준다.
+ * 인식 결과는 1초에 몇 번씩 오므로, 읽던 말을 끊지 못한 알림은 버리고 다음 결과에서 다시 고른다.
+ */
+export function useVision({
+    active,
+    minLevel,
+    report,
+    buzz,
+}: Options): VisionFrame | null {
+    const [frame, setFrame] = useState<VisionFrame | null>(null);
+    const latest = useRef({ minLevel, report, buzz });
+    useEffect(() => {
+        latest.current = { minLevel, report, buzz };
+    });
+
+    useEffect(() => {
+        if (!active || !visionAvailable()) {
+            return;
+        }
+        const read = visionReader();
+        const disconnect = connectVision((next) => {
+            const current = latest.current;
+            setFrame(next);
+            const cue = read(next, Date.now(), current.minLevel);
+            if (cue?.kind === 'alert') {
+                current.report(cue.alert, 'drop');
+            } else if (cue?.kind === 'buzz') {
+                current.buzz(CAUTION_VIBRATION);
+            }
+        });
+
+        return () => {
+            disconnect();
+            setFrame(null);
+        };
+    }, [active]);
+
+    return frame;
+}
