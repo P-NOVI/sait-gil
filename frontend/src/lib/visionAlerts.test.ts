@@ -8,6 +8,8 @@ import type {
 } from '../platform';
 import { VISION } from '../settings';
 import {
+    approachAlert,
+    approachText,
     BLOCKED_TEXT,
     CROWDED_TEXT,
     DANGER_TEXT,
@@ -15,6 +17,7 @@ import {
     MOVE_ASIDE_TEXT,
     UNKNOWN_TEXT,
     type VisionCue,
+    VISION_KEYS,
     visionReader,
 } from './visionAlerts';
 
@@ -174,5 +177,29 @@ describe('visionReader', () => {
 
     it('여유는 알리지 않는다', () => {
         expect(feed(times(VISION.confirmFrames, frame('clear')))).toBeNull();
+    });
+});
+
+describe('approachAlert', () => {
+    it('거리와 가장 넓은 빈 방향을 위험 등급으로 알린다', () => {
+        expect(
+            approachAlert({ distanceM: 2.4, freeDirections: [1, 11] }),
+        ).toEqual({
+            key: VISION_KEYS.approach,
+            level: 'danger',
+            text: '2미터 앞에 사람이 가까워집니다. 1시 방향이 비어 있습니다.',
+        });
+    });
+
+    it('빈 방향이 없으면 멈추라고 한다', () => {
+        expect(approachText({ distanceM: 2.6, freeDirections: [] })).toBe(
+            '3미터 앞에 사람이 가까워집니다. 잠시 멈추세요.',
+        );
+    });
+
+    it('1미터보다 가까워도 1미터로 읽는다', () => {
+        expect(approachText({ distanceM: 0.3, freeDirections: [12] })).toBe(
+            '1미터 앞에 사람이 가까워집니다. 12시 방향이 비어 있습니다.',
+        );
     });
 });

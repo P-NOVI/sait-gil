@@ -4,6 +4,7 @@
 import type {
     ClockDirection,
     CrowdLevel,
+    VisionApproach,
     VisionFrame,
     VisionLevel,
 } from '../platform';
@@ -15,13 +16,40 @@ export const MOVE_ASIDE_TEXT = '멈추고 길 가장자리로 비켜 서세요.'
 export const CROWDED_TEXT = '앞이 붐빕니다. 속도를 줄이세요.';
 export const BLOCKED_TEXT = '앞이 붐빕니다. 잠시 멈춰 기다리세요.';
 export const UNKNOWN_TEXT = '주변을 인식할 수 없습니다.';
+export const VISION_ON_TEXT = '카메라 인식을 켰습니다.';
+export const VISION_OFF_TEXT = '카메라 인식을 껐습니다.';
+export const VISION_OFF_STATUS = '카메라 인식이 꺼져 있습니다.';
 
 export function freeDirectionText(direction: ClockDirection): string {
     return `앞이 붐빕니다. ${direction}시 방향이 비어 있습니다.`;
 }
 
+/**
+ * 정면 사람이 빠르게 가까워질 때 읽을 말. 앞사람이 멈췄는지 마주 오는지는 카메라로 가릴 수 없어 거리로 말한다.
+ * 가까운 거리라 길안내처럼 10미터 단위로 반올림하지 않고 1미터 단위로 읽는다.
+ */
+export function approachText(approach: VisionApproach): string {
+    const meters = Math.max(1, Math.round(approach.distanceM));
+    const next = approach.freeDirections[0];
+    const advice =
+        next === undefined
+            ? '잠시 멈추세요.'
+            : `${next}시 방향이 비어 있습니다.`;
+    return `${meters}미터 앞에 사람이 가까워집니다. ${advice}`;
+}
+
+/** 정면 접근 알림. 위험 등급이라 읽던 길안내를 끊고 읽는다. */
+export function approachAlert(approach: VisionApproach): Alert {
+    return {
+        key: VISION_KEYS.approach,
+        level: 'danger',
+        text: approachText(approach),
+    };
+}
+
 export const VISION_KEYS = {
     danger: 'vision-danger',
+    approach: 'vision-approach',
     moveAside: 'vision-move-aside',
     crowded: 'vision-crowded',
     // 모두 막혀 멈추라는 말은 혼잡 알림을 읽은 직후라도 읽도록 따로 둔다.

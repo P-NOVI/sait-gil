@@ -59,10 +59,22 @@ enum class AlertKind(val wire: String) {
     GATE("gate"),
 }
 
-/** 바로 알려야 하는 일(정면 접근, 신호등 변화, 개찰구 위치). 음성·진동은 화면의 알림 중재가 정한다. */
-data class VisionAlert(val kind: AlertKind, val message: String) {
+/**
+ * 바로 알려야 하는 일(정면 접근, 신호등 변화, 개찰구 위치). 음성·진동은 화면의 알림 중재가 정한다.
+ * 정면 접근은 화면이 읽을 문장을 만들도록 거리와 빈 방향을 함께 보낸다.
+ */
+data class VisionAlert(
+    val kind: AlertKind,
+    val message: String,
+    /** 알릴 대상까지 거리(m). 없으면 null */
+    val distanceM: Double? = null,
+    /** 지나갈 만한 빈 방향(시계 방향 10~2시). 넓은 순 */
+    val freeDirections: List<Int> = emptyList(),
+) {
     fun toJs(): JSObject = JSObject().apply {
         put("kind", kind.wire)
         put("message", message)
+        put("distanceM", distanceM ?: JSONObject.NULL)
+        put("freeDirections", JSArray().apply { freeDirections.forEach { put(it) } })
     }
 }

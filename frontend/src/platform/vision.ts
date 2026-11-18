@@ -27,14 +27,22 @@ export type VisionFrame = {
     freeDirections: ClockDirection[];
 };
 
+/** 정면 사람이 빠르게 가까워짐(앞사람 멈춤, 마주 오는 사람) */
+export type VisionApproach = {
+    /** 그 사람까지 거리(m) */
+    distanceM: number;
+    /** 지나갈 만한 빈 방향. 넓은 순 */
+    freeDirections: ClockDirection[];
+};
+
 export const VISION_NOT_READY = '인파 인식은 준비 중입니다.';
 
-/** Kotlin 플러그인 SaitgilVision 의 화면 쪽 모양. alert 이벤트는 아직 받지 않는다. */
+/** Kotlin 플러그인 SaitgilVision 의 화면 쪽 모양. alert 는 정면 접근(danger)만 받는다. */
 type SaitgilVisionPlugin = {
     start(): Promise<void>;
     stop(): Promise<void>;
     addListener(
-        eventName: 'crowdState',
+        eventName: 'crowdState' | 'alert',
         listener: (state: unknown) => void,
     ): Promise<PluginListenerHandle>;
 };
@@ -62,28 +70,42 @@ function visionPlugin(): SaitgilVisionPlugin {
  * 모르는 단계는 인식 실패를 성공으로 오인하지 않도록 판단 불가로 보고, 잘못된 값은 버린다.
  */
 function toFrame(state: unknown): VisionFrame {
-    const raw =
-        state instanceof Object ? (state as Record<string, unknown>) : {};
+    const raw = asRecord(state);
     const level =
         CROWD_LEVELS.find((known) => known === raw.level) ?? 'unknown';
-    const distance = raw.nearestPersonM;
-    const directions = Array.isArray(raw.freeDirections)
-        ? raw.freeDirections
-        : [];
     return {
         level,
-        nearestPersonM:
-            typeof distance === 'number' &&
-            Number.isFinite(distance) &&
-            distance >= 0
-                ? distance
-                : null,
-        // 플러그인이 보낸 넓은 순서를 유지한다. 고정된 시계 순서로 다시 정렬하지 않는다.
-        freeDirections: directions.filter(
-            (direction): direction is ClockDirection =>
-                CLOCK_DIRECTIONS.some((known) => known === direction),
-        ),
+        nearestPersonM: toDistance(raw.nearestPersonM),
+        freeDirections: toDirections(raw.freeDirections),
     };
+}
+
+/** 플러그인 alert 를 정면 접근으로 바꾼다. 정면 접근이 아니거나 거리가 잘못됐으면 null */
+export function toApproach(alert: unknown): VisionApproach | null {
+    const raw = asRecord(alert);
+    const distanceM = toDistance(raw.distanceM);
+    if (raw.kind !== 'danger' || distanceM === null) {
+        return null;
+    }
+    return { distanceM, freeDirections: toDirections(raw.freeDirections) };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value instanceof Object ? (value as Record<string, unknown>) : {};
+}
+
+function toDistance(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0
+        ? value
+        : null;
+}
+
+// 플러그인이 보낸 넓은 순서를 유지한다. 고정된 시계 순서로 다시 정렬하지 않는다.
+function toDirections(value: unknown): ClockDirection[] {
+    return (Array.isArray(value) ? value : []).filter(
+        (direction): direction is ClockDirection =>
+            CLOCK_DIRECTIONS.some((known) => known === direction),
+    );
 }
 
 /** 웹에서 플러그인 없이 알림을 확인할 때만 mock 을 켠다. 앱에서는 네이티브를 우선한다. */
@@ -97,15 +119,16 @@ export function visionAvailable(): boolean {
 }
 
 /**
- * 인파 인식을 시작하고 결과가 나올 때마다 onFrame 으로 알린다. 돌려준 함수를 부르면 멈춘다.
- * 앱은 네이티브 플러그인, 웹은 명시적으로 켠 mock 을 사용한다.
+ * 인파 인식을 시작하고 결과가 나올 때마다 onFrame 으로, 정면 접근은 onApproach 로 알린다.
+ * 돌려준 함수를 부르면 멈춘다. 앱은 네이티브 플러그인, 웹은 명시적으로 켠 mock 을 사용한다.
  */
 export async function startVision(
     onFrame: (frame: VisionFrame) => void,
+    onApproach: (approach: VisionApproach) => void = () => undefined,
 ): Promise<() => void> {
     if (!isNativeApp()) {
         if (mockEnabled()) {
-            return startMockVision(onFrame);
+            return startMockVision(onFrame, onApproach);
         }
         throw new Error(VISION_NOT_READY);
     }
@@ -113,18 +136,28 @@ export async function startVision(
     const session = Symbol('vision');
     let stopped = false;
     // 첫 결과를 놓치지 않도록 구독한 뒤에 시작한다.
-    const listener = await vision.addListener('crowdState', (state) => {
-        if (!stopped) {
-            onFrame(toFrame(state));
-        }
-    });
+    const listeners = await Promise.all([
+        vision.addListener('crowdState', (state) => {
+            if (!stopped) {
+                onFrame(toFrame(state));
+            }
+        }),
+        vision.addListener('alert', (alert) => {
+            const approach = toApproach(alert);
+            if (!stopped && approach !== null) {
+                onApproach(approach);
+            }
+        }),
+    ]);
+    const removeListeners = () =>
+        Promise.all(listeners.map((listener) => listener.remove()));
     try {
         await inOrder(async () => {
             await vision.start();
             owner = session;
         });
     } catch (error) {
-        await listener.remove();
+        await removeListeners();
         throw error;
     }
     return () => {
@@ -132,7 +165,7 @@ export async function startVision(
             return;
         }
         stopped = true;
-        void listener.remove().catch(() => undefined);
+        void removeListeners().catch(() => undefined);
         void inOrder(async () => {
             if (owner !== session) {
                 return;

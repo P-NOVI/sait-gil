@@ -39,6 +39,7 @@ import {
     routeAnswerHint,
     routeQuestion,
 } from './lib/voiceCommand';
+import { VISION_OFF_TEXT, VISION_ON_TEXT } from './lib/visionAlerts';
 import {
     canListen,
     getCurrentPosition,
@@ -284,7 +285,7 @@ export default function App() {
     useEffect(() => {
         reportAlert.current = guidance.report;
     }, [guidance.report]);
-    const visionFrame = useVision({
+    const vision = useVision({
         active: navigating,
         minLevel: CROWD_ALERT_FROM[settings.crowdSensitivity],
         report: guidance.report,
@@ -413,7 +414,15 @@ export default function App() {
                     vision={
                         <VisionPanel
                             available={visionAvailable()}
-                            frame={visionFrame}
+                            frame={vision.frame}
+                            enabled={vision.enabled}
+                            onToggle={() =>
+                                announce(
+                                    vision.toggle()
+                                        ? VISION_ON_TEXT
+                                        : VISION_OFF_TEXT,
+                                )
+                            }
                         />
                     }
                 />

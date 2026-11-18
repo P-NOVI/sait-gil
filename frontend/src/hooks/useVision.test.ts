@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const platform = vi.hoisted(() => ({
     startVision: vi.fn(),
     visionAvailable: vi.fn(),
+    readStored: vi.fn(),
+    writeStored: vi.fn(),
 }));
 
 vi.mock('../platform', () => platform);
 
-import type { VisionFrame } from '../platform';
-import { connectVision } from './useVision';
+import type { VisionApproach, VisionFrame } from '../platform';
+import { connectVision, readVisionEnabled } from './useVision';
 
 const FRAME: VisionFrame = {
     level: 'crowded',
@@ -25,9 +27,14 @@ function pendingStart() {
     let finish: (stop: () => void) => void = () => undefined;
     let fail: (error: Error) => void = () => undefined;
     let onFrame: (frame: VisionFrame) => void = () => undefined;
+    let onApproach: (approach: VisionApproach) => void = () => undefined;
     platform.startVision.mockImplementation(
-        (listener: (frame: VisionFrame) => void) => {
+        (
+            listener: (frame: VisionFrame) => void,
+            approachListener: (approach: VisionApproach) => void,
+        ) => {
             onFrame = listener;
+            onApproach = approachListener;
             return new Promise<() => void>((resolve, reject) => {
                 finish = resolve;
                 fail = reject;
@@ -40,8 +47,12 @@ function pendingStart() {
         fail: (error: Error) => fail(error),
         /** 플러그인이 결과를 보낸 것처럼 onFrame 을 부른다. */
         emit: (frame: VisionFrame) => onFrame(frame),
+        /** 플러그인이 정면 접근을 보낸 것처럼 onApproach 를 부른다. */
+        approach: (approach: VisionApproach) => onApproach(approach),
     };
 }
+
+const APPROACH: VisionApproach = { distanceM: 2.4, freeDirections: [1] };
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -58,6 +69,21 @@ describe('connectVision', () => {
         start.emit(FRAME);
 
         expect(frames).toEqual([FRAME]);
+    });
+
+    it('정면 접근을 onApproach 로 넘기고 멈춘 뒤에는 버린다', async () => {
+        const start = pendingStart();
+        const onApproach = vi.fn();
+
+        const disconnect = connectVision(vi.fn(), onApproach);
+        start.finish();
+        await flush();
+        start.approach(APPROACH);
+        disconnect();
+        start.approach(APPROACH);
+
+        expect(onApproach).toHaveBeenCalledTimes(1);
+        expect(onApproach).toHaveBeenCalledWith(APPROACH);
     });
 
     it('시작이 끝난 뒤 멈추면 인식을 멈춘다', async () => {
@@ -106,5 +132,18 @@ describe('connectVision', () => {
 
         expect(() => disconnect()).not.toThrow();
         expect(start.stopVision).not.toHaveBeenCalled();
+    });
+});
+
+describe('readVisionEnabled', () => {
+    it('저장된 값이 없으면 켜고, 끈 값을 저장했으면 끈다', () => {
+        platform.readStored.mockReturnValue(null);
+        expect(readVisionEnabled()).toBe(true);
+
+        platform.readStored.mockReturnValue(false);
+        expect(readVisionEnabled()).toBe(false);
+
+        platform.readStored.mockReturnValue(true);
+        expect(readVisionEnabled()).toBe(true);
     });
 });
