@@ -8,7 +8,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 
 /**
  * 카메라 인파 인식을 화면(React)에 이어 주는 플러그인.
- * 지금은 뼈대라 카메라·모델 없이 명령만 받고, 확인용 가짜 값을 crowdState 로 보낸다.
+ * 지금은 뼈대라 카메라·모델 없이 명령만 받고, 이벤트는 아직 보내지 않는다.
  * 영상은 이 플러그인 밖으로 나가지 않고, 추론 결과만 이벤트(crowdState, alert)로 화면에 넘긴다.
  */
 @CapacitorPlugin(name = "SaitgilVision")
@@ -19,9 +19,6 @@ class SaitgilVisionPlugin : Plugin() {
     private var mode = VisionMode.CROWD
     private var sensitivity = CrowdSensitivity.NORMAL
 
-    // 확인용, 머지 전 제거
-    private val fake = FakeVisionTicker(::emitCrowdState, ::emitAlert)
-
     @PluginMethod
     fun start(call: PluginCall) {
         val requested = call.getString("sensitivity")
@@ -30,14 +27,12 @@ class SaitgilVisionPlugin : Plugin() {
                 ?: return call.reject("지원하지 않는 민감도입니다: $requested")
         }
         running = true
-        fake.start() // 확인용, 머지 전 제거
         call.resolve()
     }
 
     @PluginMethod
     fun stop(call: PluginCall) {
         running = false
-        fake.stop() // 확인용, 머지 전 제거
         call.resolve()
     }
 
@@ -51,7 +46,6 @@ class SaitgilVisionPlugin : Plugin() {
 
     override fun handleOnDestroy() {
         running = false
-        fake.stop() // 확인용, 머지 전 제거
         super.handleOnDestroy()
     }
 
