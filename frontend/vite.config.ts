@@ -17,7 +17,8 @@ export default defineConfig(({ mode }) => {
     };
     return {
         plugins: [react()],
-        // 개발 주소를 5173 으로 고정한다(백엔드 기본 CORS 허용 주소). 이미 쓰이면 다른 포트로 넘어가지 않고 실패한다.
+        // 개발 주소를 5173 으로 고정한다. 이미 쓰이면 다른 포트로 넘어가지 않고 실패한다.
+        // /api 는 위 proxy 로 같은 주소에서 부르므로 백엔드 CORS 설정이 필요 없다.
         server: { port: 5173, strictPort: true, proxy },
         preview: { proxy },
     };

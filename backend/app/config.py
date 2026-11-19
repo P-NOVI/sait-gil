@@ -79,9 +79,10 @@ class Settings(BaseSettings):
     collector_district_days: int = 7
 
     frontend_url: str = "http://localhost:5173"
-    # Android WebView 기본 Origin, iOS Capacitor Origin, 로컬 웹 개발 주소.
+    # Android WebView 기본 Origin, iOS Capacitor Origin.
+    # 웹은 개발(Vite 프록시)·배포(Render rewrite) 모두 /api 를
+    # 같은 주소로 넘겨 받아 CORS 가 필요 없다.
     allowed_origins: list[str] = [
-        "http://localhost:5173",
         "https://localhost",
         "capacitor://localhost",
     ]
