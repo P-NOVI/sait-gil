@@ -1,7 +1,7 @@
 package com.pnovi.saitgil.vision
 
 // 사람 밖의 클래스 박스로 가까운 장애물과 보행 신호등 상태를 판단한다.
-// 거리는 재지 않고, 박스 아래 끝 위치로 가까운지만 본다. 읽을 문장은 화면이 만든다.
+// 차·이륜차는 박스 높이로 거리를 재고, 그 밖은 박스 아래 끝 위치로 가까운지만 본다. 읽을 문장은 화면이 만든다.
 // Android 클래스를 쓰지 않아 가짜 박스로 JVM 단위 테스트를 할 수 있다.
 
 import kotlin.math.abs
@@ -86,7 +86,7 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val seen = OBSTACLE_CLASSES.mapNotNull { kind ->
             // 같은 클래스가 여럿이면 가장 가까운(아래 끝이 가장 아래인) 것을 본다.
             frame.objects
-                .filter { it.kind == kind && isNearAhead(it) }
+                .filter { it.kind == kind && isNearAhead(it, frame) }
                 .maxByOrNull { it.bottom }
                 ?.let { ObstacleSighting(kind, labels[aheadSector(it)]) }
         }
@@ -104,10 +104,25 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         return ObjectAnalysis(followSignal(frame), alerts, seen)
     }
 
-    /** 박스 아래 끝이 가까운 바닥에 닿고, 앞쪽 칸에 걸쳐 있는지 */
-    private fun isNearAhead(box: ObjectBox): Boolean =
-        box.bottom >= config.obstacleNearBottom &&
-            (sectorOf(box.left)..sectorOf(box.right)).any { it in AHEAD_SECTORS }
+    /** 가깝고 앞쪽 칸에 걸쳐 있는지 */
+    private fun isNearAhead(box: ObjectBox, frame: DetectionFrame): Boolean =
+        isNear(box, frame) && (sectorOf(box.left)..sectorOf(box.right)).any { it in AHEAD_SECTORS }
+
+    /**
+     * 차·이륜차는 박스 높이로 잰 거리가 정한 거리 안인지, 그 밖은 박스 아래 끝이 가까운 바닥에 닿는지.
+     * 차·이륜차 박스 아래가 영상 끝에 닿아 잘렸으면 바퀴가 안 보일 만큼 가까운 것으로 본다.
+     */
+    private fun isNear(box: ObjectBox, frame: DetectionFrame): Boolean {
+        val (heightM, nearM) = when (box.kind) {
+            DetectedClass.CAR -> config.carHeightM to config.carNearM
+            DetectedClass.TWO_WHEELER -> config.twoWheelerHeightM to config.twoWheelerNearM
+            else -> return box.bottom >= config.obstacleNearBottom
+        }
+        if (box.bottom >= 1 - config.clippedEdge) return true
+        val heightPx = box.height * frame.imageHeightPx
+        if (heightPx <= 0.0) return false
+        return focalLengthPx(frame, config) * heightM / heightPx <= nearM
+    }
 
     /**
      * 읽을 방향의 칸. 박스가 걸친 앞쪽 칸 중 박스 가운데에 가장 가까운 칸이다.
