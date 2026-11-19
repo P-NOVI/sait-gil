@@ -132,25 +132,17 @@ class CrowdAnalyzerTest {
     }
 
     @Test
-    fun portraitHalfZoomCameraNamesOnly11To1() {
-        // 세로로 건 0.5배 카메라는 좌우 약 ±44° 라 양 끝 칸(약 ±38°)도 11시·1시다.
-        assertEquals(listOf(11, 11, 12, 1, 1), clockLabels(frame(0), config))
-    }
-
-    @Test
-    fun widerCameraNames10And2() {
-        // 좌우 ±60° 를 넘게 보는 카메라라면 양 끝 칸이 10시·2시다.
-        val wide = DetectionFrame(0, emptyList(), widthPx, heightPx, focalLengthPx = 100.0)
-
-        assertEquals(listOf(10, 11, 12, 1, 2), clockLabels(wide, config))
+    fun portraitMainCameraNamesMiddleThree12() {
+        // 세로로 건 1배 기본 렌즈는 좌우 약 ±26° 라 양 끝 칸(약 ±22°)은 11시·1시, 가운데 세 칸(±11° 안)은 12시다.
+        assertEquals(listOf(11, 12, 12, 12, 1), clockLabels(frame(0), config))
     }
 
     @Test
     fun sharedNameIsFreeOnlyWhenAllItsSectorsAre() {
-        val labels = listOf(11, 11, 12, 1, 1)
+        val labels = listOf(11, 12, 12, 12, 1)
 
-        // 오른쪽 안쪽 칸(1시)이 막히면 오른쪽 바깥 칸이 비어도 1시가 비었다고 하지 않는다.
-        assertEquals(listOf(11, 12), freeDirections(setOf(3), labels))
+        // 12시 세 칸 중 오른쪽 칸이 막히면 나머지 두 칸이 비어도 12시가 비었다고 하지 않는다.
+        assertEquals(listOf(11, 1), freeDirections(setOf(3), labels))
         assertEquals(listOf(12, 11, 1), freeDirections(emptySet(), labels))
     }
 
@@ -182,8 +174,8 @@ class CrowdAnalyzerTest {
             ),
         )
         assertEquals(CrowdLevel.CROWDED, crowded.frame.level)
-        // 왼쪽 두 칸(11시)과 오른쪽 안쪽 칸(1시)이 막혀 비어 있는 방향은 12시뿐이다.
-        assertEquals(listOf(12), crowded.frame.freeDirections)
+        // 왼쪽 바깥 칸(11시)과 12시 세 칸 중 두 칸이 막혀 비어 있는 방향은 1시뿐이다.
+        assertEquals(listOf(1), crowded.frame.freeDirections)
         assertEquals(3.0, crowded.frame.nearestPersonM!!, 1e-6)
     }
 
@@ -252,10 +244,10 @@ class CrowdAnalyzerTest {
 
     @Test
     fun approachAlertOnlyNamesSteadilyFreeDirections() {
-        // 1시 칸을 막던 사람이 경고 직전 한 프레임만 사라진다. 그 1시는 아직 믿을 만한 빈 방향이 아니다.
+        // 1시 칸(오른쪽 바깥 칸)을 막던 사람이 경고 직전 한 프레임만 사라진다. 그 1시는 아직 믿을 만한 빈 방향이 아니다.
         val analyzer = CrowdAnalyzer(config)
         val results = List(12) { 3.6 - it * 0.12 }.mapIndexed { index, distance ->
-            val side = if (index in 3..5) arrayOf(person(3, 3.0)) else emptyArray()
+            val side = if (index in 3..5) arrayOf(person(4, 3.0)) else emptyArray()
             analyzer.analyze(frame(index * 100L, person(2, distance), *side))
         }
 
