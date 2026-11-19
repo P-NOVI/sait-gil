@@ -305,15 +305,15 @@ describe('obstacleAlert', () => {
         );
     });
 
-    it('차·이륜차는 조심하라고 위험 등급으로 알린다', () => {
+    it('차·이륜차는 짧게 조심하라고 위험 등급으로 알린다', () => {
         expect(obstacleAlert({ kind: 'car', direction: 1 })).toEqual({
             key: `${VISION_KEYS.obstacle}-car`,
             level: 'danger',
-            text: '1시 방향에 차가 있습니다. 조심하세요.',
+            text: '1시 차 조심.',
             cooldownMs: 0,
         });
         expect(obstacleText({ kind: 'two_wheeler', direction: 11 })).toBe(
-            '11시 방향에 이륜차가 있습니다. 조심하세요.',
+            '11시 이륜차 조심.',
         );
     });
 

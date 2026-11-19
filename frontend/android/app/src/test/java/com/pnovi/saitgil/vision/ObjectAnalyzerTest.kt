@@ -27,6 +27,19 @@ class ObjectAnalyzerTest {
     private fun frame(timeMs: Long, vararg objects: ObjectBox) =
         DetectionFrame(timeMs, emptyList(), widthPx, heightPx, objects = objects.toList())
 
+    // 노트8 후면 카메라(초점거리 4.3mm, 센서 긴 변 5.645mm)의 세운 영상 초점거리(px)
+    private val note8FocalPx = 4.3 / 5.645 * heightPx
+
+    /** 실제 높이 heightM 인 물체가 distanceM 앞에 있을 때의 박스. 칸(0~4) 가운데에, 아래 끝을 bottom 에 둔다 */
+    private fun boxAt(kind: DetectedClass, heightM: Double, distanceM: Double, bottom: Double = 0.6): ObjectBox {
+        val height = note8FocalPx * heightM / distanceM / heightPx
+        val centerX = (2 + 0.5) / CLOCK_SECTORS.size
+        return ObjectBox(kind, centerX - 0.05, bottom - height, 0.1, height, score = 0.9)
+    }
+
+    private fun note8Frame(vararg objects: ObjectBox) =
+        DetectionFrame(0, emptyList(), widthPx, heightPx, focalLengthPx = note8FocalPx, objects = objects.toList())
+
     /** 100ms 간격 프레임들을 차례로 판단한다. 프레임마다 보일 박스를 준다(없으면 빈 프레임) */
     private fun run(
         analyzer: ObjectAnalyzer,
@@ -189,6 +202,51 @@ class ObjectAnalyzerTest {
         assertTrue(results[0].alerts.none { it.objectClass == DetectedClass.POLE })
         assertTrue(results[1].seen.isEmpty())
         assertEquals(listOf(ObstacleSighting(DetectedClass.POLE, labels[1])), results[2].seen)
+    }
+
+    @Test
+    fun vehiclesAreNearByDistanceFromBoxHeightNotBoxBottom() {
+        // 박스 아래 끝(0.6)은 obstacleNearBottom(0.7) 보다 위라 바닥 기준으로는 먼 차·이륜차
+        val car = boxAt(DetectedClass.CAR, config.carHeightM, config.carNearM - 1)
+        val twoWheeler = boxAt(DetectedClass.TWO_WHEELER, config.twoWheelerHeightM, config.twoWheelerNearM - 1)
+
+        val result = ObjectAnalyzer(config).analyze(note8Frame(car, twoWheeler))
+
+        assertEquals(setOf(DetectedClass.CAR, DetectedClass.TWO_WHEELER), result.alerts.map { it.objectClass }.toSet())
+        assertEquals(setOf(DetectedClass.CAR, DetectedClass.TWO_WHEELER), result.seen.map { it.kind }.toSet())
+    }
+
+    @Test
+    fun vehiclesFartherThanNearDistanceAreIgnoredEvenAtBottom() {
+        val car = boxAt(DetectedClass.CAR, config.carHeightM, config.carNearM + 5, bottom = 0.9)
+        val twoWheeler =
+            boxAt(DetectedClass.TWO_WHEELER, config.twoWheelerHeightM, config.twoWheelerNearM + 5, bottom = 0.9)
+
+        val result = ObjectAnalyzer(config).analyze(note8Frame(car, twoWheeler))
+
+        assertTrue(result.seen.isEmpty())
+        assertTrue(result.alerts.isEmpty())
+    }
+
+    @Test
+    fun vehicleCutOffAtBottomIsNear() {
+        // 바퀴가 영상 아래로 잘려 박스 높이로는 멀게 나오는 차
+        val car = ObjectBox(DetectedClass.CAR, 0.45, 0.95, 0.1, 0.05, score = 0.9)
+
+        val result = ObjectAnalyzer(config).analyze(note8Frame(car))
+
+        assertEquals(listOf(DetectedClass.CAR), result.alerts.map { it.objectClass })
+    }
+
+    @Test
+    fun otherObstaclesStillUseBoxBottom() {
+        // 높이로 재면 가깝지만 아래 끝이 높은 기둥과, 작지만 아래 끝이 가까운 바닥 장애물
+        val pole = boxAt(DetectedClass.POLE, 1.0, 2.0, bottom = 0.6)
+        val low = boxAt(DetectedClass.OBSTACLE, 0.3, 20.0, bottom = 0.9)
+
+        val result = ObjectAnalyzer(config).analyze(note8Frame(pole, low))
+
+        assertEquals(listOf(DetectedClass.OBSTACLE), result.seen.map { it.kind })
     }
 
     @Test

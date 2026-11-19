@@ -76,11 +76,15 @@ export function obstacleName(kind: ObstacleKind): string {
     return OBSTACLE_NAMES[kind][0];
 }
 
-/** 가까운 장애물을 알릴 말. 거리는 재지 않아 방향만 말한다. */
+/**
+ * 가까운 장애물을 알릴 말. 거리는 말하지 않고 방향만 말한다.
+ * 차·이륜차는 빨리 다가와 다 읽기 전에 지나가지 않도록 짧게 말한다.
+ */
 export function obstacleText({ kind, direction }: VisionObstacle): string {
     const [name, particle] = OBSTACLE_NAMES[kind];
-    const found = `${direction}시 방향에 ${name}${particle} 있습니다.`;
-    return MOVING_OBSTACLES.has(kind) ? `${found} 조심하세요.` : found;
+    return MOVING_OBSTACLES.has(kind)
+        ? `${direction}시 ${name} 조심.`
+        : `${direction}시 방향에 ${name}${particle} 있습니다.`;
 }
 
 /**

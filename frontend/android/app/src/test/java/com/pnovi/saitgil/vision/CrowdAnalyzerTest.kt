@@ -54,6 +54,33 @@ class CrowdAnalyzerTest {
     }
 
     @Test
+    fun focalPerLongSideComesFromLensAndSensorSize() {
+        // 노트8 후면 카메라: 초점거리 4.3mm, 센서 5.645×4.234mm
+        val perLongSide = focalPerLongSide(4.3f, 5.645f, 4.234f)
+
+        assertEquals(4.3 / 5.645, perLongSide!!, 1e-6)
+        assertEquals(perLongSide, focalPerLongSide(4.3f, 4.234f, 5.645f)!!, 1e-6)
+    }
+
+    @Test
+    fun focalPerLongSideIsNullWhenCameraInfoIsMissingOrWrong() {
+        assertNull(focalPerLongSide(null, 5.6f, 4.2f))
+        assertNull(focalPerLongSide(4.3f, null, 4.2f))
+        assertNull(focalPerLongSide(0f, 5.6f, 4.2f))
+        assertNull(focalPerLongSide(4.3f, 0f, 0f))
+    }
+
+    @Test
+    fun cameraFocalLengthReplacesDefaultFieldOfView() {
+        val frame = frame(0, person(2, 2.5))
+
+        val withFocal = frame.withFocalPerLongSide(4.3 / 5.645)
+
+        assertEquals(4.3 / 5.645 * heightPx, focalLengthPx(withFocal, config), 1e-6)
+        assertEquals(frame, frame.withFocalPerLongSide(null))
+    }
+
+    @Test
     fun focalLengthComesFromLongSideWhicheverWayUp() {
         val upright = DetectionFrame(0, emptyList(), widthPx, heightPx)
         val sideways = DetectionFrame(0, emptyList(), heightPx, widthPx)

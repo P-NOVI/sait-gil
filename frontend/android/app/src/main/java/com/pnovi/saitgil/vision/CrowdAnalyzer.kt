@@ -83,6 +83,21 @@ fun focalLengthPx(frame: DetectionFrame, config: VisionConfig): Double =
         ?: (max(frame.imageWidthPx, frame.imageHeightPx) / 2.0) /
         tan(Math.toRadians(config.defaultLongSideFovDeg / 2))
 
+/**
+ * 렌즈 초점거리(mm)를 센서 긴 변(mm)으로 나눈 값. 영상 긴 변(px)을 곱하면 초점거리(px)다.
+ * 분석 영상(4:3)이 같은 비율의 센서 전체를 줄인 것이라고 본다. 값이 없거나 잘못됐으면 null 이다.
+ */
+fun focalPerLongSide(focalMm: Float?, sensorWidthMm: Float?, sensorHeightMm: Float?): Double? {
+    if (focalMm == null || sensorWidthMm == null || sensorHeightMm == null) return null
+    val longSideMm = max(sensorWidthMm, sensorHeightMm)
+    if (focalMm <= 0f || longSideMm <= 0f) return null
+    return focalMm.toDouble() / longSideMm
+}
+
+/** 카메라에서 읽은 초점거리를 프레임에 넣는다. 못 읽었으면(null) 기본 화각을 쓰도록 그대로 둔다 */
+fun DetectionFrame.withFocalPerLongSide(perLongSide: Double?): DetectionFrame =
+    if (perLongSide == null) this else copy(focalLengthPx = perLongSide * max(imageWidthPx, imageHeightPx))
+
 /** 박스 위나 아래가 영상 끝에 닿아 잘렸는지 */
 fun isClippedVertically(box: PersonBox, config: VisionConfig): Boolean =
     box.top <= config.clippedEdge || box.bottom >= 1 - config.clippedEdge

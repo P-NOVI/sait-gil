@@ -1,8 +1,13 @@
 package com.pnovi.saitgil.vision
 
 import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
 import android.util.Log
 import android.util.Size
+import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -35,6 +40,10 @@ class CameraSession(
     private var useCases: List<UseCase> = emptyList()
     private var frames = 0L
 
+    // 렌즈 초점거리 ÷ 센서 긴 변. 카메라를 켤 때(메인 스레드) 읽고 분석 스레드에서 쓴다. 못 읽으면 null
+    @Volatile
+    private var focalPerLongSide: Double? = null
+
     fun start(onStarted: () -> Unit, onFailed: (Exception) -> Unit) {
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
@@ -44,7 +53,12 @@ class CameraSession(
                     useCases = listOfNotNull(buildAnalysis(), previewView?.let(::buildPreview))
                 }
                 if (useCases.any { !cameraProvider.isBound(it) }) {
-                    cameraProvider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, *useCases.toTypedArray())
+                    val camera = cameraProvider.bindToLifecycle(
+                        owner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        *useCases.toTypedArray(),
+                    )
+                    focalPerLongSide = readFocalPerLongSide(camera.cameraInfo)
                 }
                 provider = cameraProvider
                 onStarted()
@@ -99,8 +113,19 @@ class CameraSession(
                 Log.w(TAG, "프레임을 분석하지 못했습니다", error)
                 null
             }
-            frame?.let(onFrame)
+            frame?.withFocalPerLongSide(focalPerLongSide)?.let(onFrame)
         }
+    }
+
+    /** 거리 계산에 쓸 실제 초점거리를 카메라 정보에서 읽는다. 기기마다 화각이 달라 기본 화각으로 재면 거리가 틀린다 */
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun readFocalPerLongSide(info: CameraInfo): Double? {
+        val camera2 = Camera2CameraInfo.from(info)
+        val focalMm = camera2.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.firstOrNull()
+        val sensor = camera2.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+        val perLongSide = focalPerLongSide(focalMm, sensor?.width, sensor?.height)
+        Log.i(TAG, "카메라 초점거리 ${focalMm}mm, 센서 ${sensor}mm → 긴 변 대비 $perLongSide")
+        return perLongSide
     }
 
     companion object {
