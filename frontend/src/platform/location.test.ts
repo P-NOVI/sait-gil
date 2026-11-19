@@ -14,7 +14,12 @@ vi.mock('@capacitor/core', () => ({
 }));
 vi.mock('@capacitor/geolocation', () => ({ Geolocation: plugin }));
 
-import { getCurrentPosition, LocationError, watchLocation } from './location';
+import {
+    getCurrentPosition,
+    isLocationDenied,
+    LocationError,
+    watchLocation,
+} from './location';
 
 const COORDS = { longitude: 126.97, latitude: 37.56, accuracy: 12 };
 const FIX = { position: [126.97, 37.56], accuracy: 12 };
@@ -103,16 +108,32 @@ describe('getCurrentPosition (웹)', () => {
     it('권한이 없으면 다시 묻지 않고 권한 안내를 던진다', async () => {
         const { fake, geolocation } = webGeolocation({ code: 1 });
 
-        await expect(getCurrentPosition(geolocation)).rejects.toThrow(
-            '위치 권한',
+        const error = await getCurrentPosition(geolocation).catch(
+            (e: unknown) => e,
         );
+
+        expect((error as Error).message).toContain('위치 권한');
+        expect(isLocationDenied(error)).toBe(true);
         expect(fake.getCurrentPosition).toHaveBeenCalledTimes(1);
     });
 
     it('위치 기능이 없으면 지원하지 않는다고 알린다', async () => {
-        await expect(getCurrentPosition(undefined)).rejects.toBeInstanceOf(
-            LocationError,
+        const error = await getCurrentPosition(undefined).catch(
+            (e: unknown) => e,
         );
+
+        expect(error).toBeInstanceOf(LocationError);
+        expect(isLocationDenied(error)).toBe(false);
+    });
+
+    it('권한이 아닌 이유로 못 찾으면 권한 오류로 보지 않는다', async () => {
+        const { geolocation } = webGeolocation({ code: 2 }, { code: 2 });
+
+        const error = await getCurrentPosition(geolocation).catch(
+            (e: unknown) => e,
+        );
+
+        expect(isLocationDenied(error)).toBe(false);
     });
 });
 
@@ -139,7 +160,10 @@ describe('getCurrentPosition (앱)', () => {
         native.value = true;
         plugin.requestPermissions.mockResolvedValue({ location: 'denied' });
 
-        await expect(getCurrentPosition()).rejects.toThrow('위치 권한');
+        const error = await getCurrentPosition().catch((e: unknown) => e);
+
+        expect((error as Error).message).toContain('위치 권한');
+        expect(isLocationDenied(error)).toBe(true);
         expect(plugin.getCurrentPosition).not.toHaveBeenCalled();
     });
 

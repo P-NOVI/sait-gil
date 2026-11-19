@@ -4,6 +4,7 @@ import type { PlannedRoute, RouteKind } from './routeApi';
 import {
     cameraAnswer,
     navigationCommand,
+    permissionAnswer,
     placeAnswer,
     ROUTE_ANSWER_HINT,
     ROUTE_QUESTION,
@@ -150,6 +151,26 @@ describe('cameraAnswer', () => {
 
     it('상관없는 말은 알아듣지 못한 것으로 본다', () => {
         expect(cameraAnswer('오늘 날씨 어때')).toBeNull();
+    });
+});
+
+describe('permissionAnswer', () => {
+    it.each(['응', '네', '켜 줘', '켜요', '허용', '허용해 줘', '좋아'])(
+        '"%s" 는 권한을 켠다',
+        (heard) => {
+            expect(permissionAnswer(heard)).toBe('on');
+        },
+    );
+
+    it.each(['아니요', '싫어', '허용 안 해', '허용하지 마', '안 할래'])(
+        '"%s" 는 켜지 않는다',
+        (heard) => {
+            expect(permissionAnswer(heard)).toBe('off');
+        },
+    );
+
+    it('상관없는 말은 알아듣지 못한 것으로 본다', () => {
+        expect(permissionAnswer('지금 몇 시야')).toBeNull();
     });
 });
 

@@ -32,10 +32,19 @@ export type LocationFix = {
 };
 
 export class LocationError extends Error {
-    constructor(message: string) {
+    /** 위치 권한이 꺼져 있어 실패했는지. 권한을 다시 묻거나 설정을 열어 켤 수 있다. */
+    readonly denied: boolean;
+
+    constructor(message: string, denied = false) {
         super(message);
         this.name = 'LocationError';
+        this.denied = denied;
     }
+}
+
+/** 위치 권한이 꺼져 있어 실패한 오류인지 */
+export function isLocationDenied(error: unknown): boolean {
+    return error instanceof LocationError && error.denied;
 }
 
 const UNSUPPORTED = '이 기기는 위치 찾기를 지원하지 않습니다.';
@@ -84,7 +93,9 @@ function isPermissionDenied(error: unknown): boolean {
 }
 
 function toLocationError(error: unknown): LocationError {
-    return new LocationError(isPermissionDenied(error) ? DENIED : FAILED);
+    return isPermissionDenied(error)
+        ? new LocationError(DENIED, true)
+        : new LocationError(FAILED);
 }
 
 function locateWeb(
@@ -104,7 +115,7 @@ function locateWeb(
 async function ensureNativePermission(): Promise<boolean> {
     const { location, coarseLocation } = await Geolocation.requestPermissions();
     if (location !== 'granted' && coarseLocation !== 'granted') {
-        throw new LocationError(DENIED);
+        throw new LocationError(DENIED, true);
     }
     return location === 'granted';
 }

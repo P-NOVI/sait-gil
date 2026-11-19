@@ -46,6 +46,18 @@ export const SPEAK_PROMPT = '말씀하세요.';
 /** 안내 중 명령을 못 알아들었을 때 */
 export const NAVIGATION_COMMAND_HINT = '카메라 꺼, 또는 카메라 켜라고 하세요.';
 
+/** 위치 권한이 꺼져 있을 때 켤지 묻는 말 */
+export const LOCATION_PERMISSION_QUESTION =
+    '위치 권한이 꺼져 있어 내 위치를 찾을 수 없습니다. 위치 권한을 켤까요? 켜 줘, 또는 응이라고 말하세요.';
+/** 위치 권한을 켜지 않았을 때. 나중에 켜는 방법을 알려 준다. */
+export const LOCATION_PERMISSION_LATER_TEXT =
+    '위치 권한을 켜지 않았습니다. 켜려면 화면 오른쪽 위의 내 위치 찾기 버튼을 누르세요.';
+/** Android 가 권한을 더 묻지 않아 설정 화면을 열기 전에 읽는 말 */
+export const OPEN_SETTINGS_TEXT =
+    '설정 화면을 엽니다. 권한에서 위치를 허용으로 바꾼 뒤 뒤로 가기로 돌아오세요.';
+/** 권한을 켜고 위치를 찾았을 때 */
+export const LOCATION_FOUND_TEXT = '내 위치를 찾았습니다.';
+
 /** 카메라 인식을 켤지에 대한 대답. on: 켬, off: 끔 */
 export type CameraAnswer = 'on' | 'off';
 
@@ -66,6 +78,8 @@ const REPEAT_WORDS = /다시|한번더|뭐라고/;
 const CAMERA_OFF_WORDS = /꺼|끄|끌|끈|그만|지마|안켜|안킬|필요없/;
 const CAMERA_ON_WORDS = /켜|켤|킬|키자|틀어/;
 const CAMERA_WORDS = /카메라|인식/;
+const ALLOW_WORDS = /허용/;
+const DONT_ALLOW_WORDS = /안해|안할|안함|허용안/;
 // "2번", "두 번째", "둘째"
 const NUMBERED = /(\d+)번/;
 const ORDINAL = /(첫|두|둘|세|셋)(?:번)?째/;
@@ -116,6 +130,18 @@ export function cameraAnswer(heard: string): CameraAnswer | null {
         return 'on';
     }
     return null;
+}
+
+/**
+ * "위치 권한을 켤까요?"에 대한 대답. 카메라와 같은 말("응", "켜 줘", "아니")에 "허용"을 더 받는다.
+ * "허용 안 해" 처럼 허용하지 않는 말을 먼저 본다.
+ */
+export function permissionAnswer(heard: string): CameraAnswer | null {
+    const said = compact(heard);
+    if (DONT_ALLOW_WORDS.test(said)) {
+        return 'off';
+    }
+    return cameraAnswer(heard) ?? (ALLOW_WORDS.test(said) ? 'on' : null);
 }
 
 /**
