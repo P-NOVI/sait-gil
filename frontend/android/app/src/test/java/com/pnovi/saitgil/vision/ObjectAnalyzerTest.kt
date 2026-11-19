@@ -96,16 +96,13 @@ class ObjectAnalyzerTest {
 
     @Test
     fun obstacleCenteredInSideSectorIsReadInTheFrontSectorItReaches() {
-        // 화각이 넓어 양 끝 칸이 10시·2시인 카메라. 가운데는 10시 칸이지만 11시 칸까지 걸친 차
+        // 가운데는 왼쪽 끝 칸(11시)이지만 앞쪽 칸(12시)까지 걸친 차
         val car = ObjectBox(DetectedClass.CAR, 0.0, 0.6, 0.3, 0.3, score = 0.9)
-        fun wideCamera(timeMs: Long) =
-            DetectionFrame(timeMs, emptyList(), widthPx, heightPx, focalLengthPx = 150.0, objects = listOf(car))
-        assertEquals(listOf(10, 11, 12, 1, 2), clockLabels(wideCamera(0), config))
-        val analyzer = ObjectAnalyzer(config)
+        assertEquals(listOf(11, 12, 12, 12, 1), clockLabels(frame(0), config))
 
-        val result = analyzer.analyze(wideCamera(0))
+        val result = ObjectAnalyzer(config).analyze(frame(0, car))
 
-        assertEquals(11, result.alerts.single().direction)
+        assertEquals(12, result.alerts.single().direction)
     }
 
     @Test

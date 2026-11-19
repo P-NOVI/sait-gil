@@ -58,7 +58,7 @@ private const val DEGREES_PER_HOUR = 30.0
 
 /**
  * 칸마다 실제 시계 방향 이름. 칸 가운데의 각도를 재어 가장 가까운 시각으로 부른다.
- * 세로로 건 0.5배 카메라는 좌우 약 ±44°만 보여, 양 끝 칸도 10시·2시가 아니라 11시·1시가 된다.
+ * 세로로 건 1배 기본 렌즈는 좌우 약 ±26°만 보여, 양 끝 칸은 11시·1시, 가운데 세 칸은 모두 12시가 된다.
  */
 fun clockLabels(frame: DetectionFrame, config: VisionConfig): List<Int> {
     val focalPx = focalLengthPx(frame, config)
