@@ -111,7 +111,11 @@ export function judge(
     if (progress.offRouteM > Math.max(settings.offRouteM, accuracy)) {
         return 'off_route';
     }
-    return progress.remainingM <= settings.arrivalM ? 'arrived' : 'on_route';
+    const arrivalM = Math.min(
+        Math.max(accuracy, settings.arrivalM),
+        settings.arrivalMaxM,
+    );
+    return progress.remainingM <= arrivalM ? 'arrived' : 'on_route';
 }
 
 /** 새 위치의 판단을 반영하고, 지금 경로를 다시 찾아야 하는지 알려 준다. */

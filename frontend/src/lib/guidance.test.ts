@@ -93,6 +93,26 @@ describe('guidanceStep', () => {
         );
     });
 
+    it('도착하기 전 목적지 알림 거리에서는 목적지를 먼저 알린다', () => {
+        const destination: RouteEvent = {
+            kind: 'destination',
+            distance_m: 500,
+            position: north(500),
+            direction: null,
+        };
+        const route: GuidedRoute = { ...ROUTE, events: [destination] };
+
+        const near = guidanceStep(route, NEW_GUIDANCE, north(481), 5, 0);
+        const arrived = guidanceStep(route, near.state, north(493), 5, 10_000);
+
+        expect(near.judgement).toBe('on_route');
+        expect(near.alerts.map((alert) => alert.key)).toEqual([
+            eventKey(destination),
+        ]);
+        expect(near.alerts[0].text).toContain('목적지');
+        expect(arrived.judgement).toBe('arrived');
+    });
+
     it('위치 오차가 크면 아무것도 알리지 않는다', () => {
         const step = guidanceStep(ROUTE, NEW_GUIDANCE, north(185), 80, 0);
 

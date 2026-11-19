@@ -7,8 +7,10 @@ import type { EventKind } from './lib/routeEvents';
 export const NAVIGATION = {
     // 경로 선에서 이보다 멀면 벗어난 것으로 본다. 위치 오차가 더 크면 오차만큼 봐준다.
     offRouteM: 25,
-    // 경로 끝까지 이만큼 남으면 도착
-    arrivalM: 20,
+    // 경로 끝(건물 입구)까지 이만큼 남으면 도착. 이보다 먼 20m 앞은 미리 알림이 알린다.
+    arrivalM: 8,
+    // 위치 오차가 크면 오차만큼 도착 거리를 넓혀 안내가 끝나지 않는 것을 막는다. 넓히는 상한.
+    arrivalMaxM: 15,
     // 오차가 이보다 큰 위치로는 이탈·도착을 판단하지 않는다 (실내, Wi-Fi 기반 위치 등).
     maxAccuracyM: 50,
     // 이 횟수만큼 연달아 벗어나야 경로를 다시 찾는다. 위치가 한 번 튀는 것은 넘긴다.
