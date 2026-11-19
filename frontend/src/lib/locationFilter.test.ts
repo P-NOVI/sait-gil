@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { LocationFix } from '../platform';
+import { LOCATION_FILTER } from '../settings';
 import type { LngLat } from './geo';
 import { filterFix, NEW_LOCATION_FILTER } from './locationFilter';
 
@@ -68,22 +69,29 @@ describe('filterFix', () => {
         const back = filterFix(jumped.state, at(2), 2_000);
 
         expect(jumped.fix).toBeNull();
-        expect(jumped.state.jumps).toBe(1);
+        expect(jumped.state.jumpSince).toBe(1_000);
         expect(back.fix).not.toBeNull();
-        expect(back.state.jumps).toBe(0);
+        expect(back.state.jumpSince).toBeNull();
     });
 
-    it('튄 위치가 연달아 오면 실제로 옮겨 간 것으로 받아들인다', () => {
+    it('튄 위치가 정한 시간 동안 이어서 오면 실제로 옮겨 간 것으로 받아들인다', () => {
         let state = filterFix(NEW_LOCATION_FILTER, at(0), 0).state;
-        const results = [1_000, 2_000, 3_000].map((nowMs) => {
-            const result = filterFix(state, at(40), nowMs);
+        const times = [
+            1_000,
+            2_000,
+            3_000,
+            1_000 + LOCATION_FILTER.jumpConfirmMs,
+        ];
+        const results = times.map((nowMs) => {
+            const result = filterFix(state, at(100), nowMs);
             state = result.state;
             return result.fix;
         });
 
-        expect(results.slice(0, 2)).toEqual([null, null]);
-        expect(results[2]?.position).toEqual(north(40));
-        expect(state.anchor?.position).toEqual(north(40));
+        // 위치를 1초마다 받아도 세 번 만에 받아들이지 않는다.
+        expect(results.slice(0, 3)).toEqual([null, null, null]);
+        expect(results[3]?.position).toEqual(north(100));
+        expect(state.anchor?.position).toEqual(north(100));
     });
 
     it('오래 못 받았으면 그동안 걸어갈 수 있는 거리까지 받는다', () => {

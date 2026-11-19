@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { NAVIGATION } from '../settings';
 import { distanceM, type LngLat } from './geo';
 import {
     judge,
@@ -123,40 +124,71 @@ describe('judge', () => {
 
 describe('trackOffRoute', () => {
     const here: LngLat = [126.97, 37.56];
+    const { offRouteMs } = NAVIGATION;
 
-    it('연달아 두 번 벗어나면 다시 찾는다', () => {
-        const first = trackOffRoute(NEW_TRACKER, 'off_route', here);
-        const second = trackOffRoute(first.tracker, 'off_route', here);
+    it('벗어난 채로 정한 시간이 지나야 다시 찾는다', () => {
+        const first = trackOffRoute(NEW_TRACKER, 'off_route', here, 0);
+        const soon = trackOffRoute(
+            first.tracker,
+            'off_route',
+            here,
+            offRouteMs - 1,
+        );
+        const later = trackOffRoute(
+            soon.tracker,
+            'off_route',
+            here,
+            offRouteMs,
+        );
 
         expect(first.reroute).toBe(false);
-        expect(second.reroute).toBe(true);
-        expect(second.tracker).toEqual({ offRouteFixes: 0, reroutedAt: here });
+        expect(soon.reroute).toBe(false);
+        expect(later.reroute).toBe(true);
+        expect(later.tracker).toEqual({
+            offRouteSince: null,
+            reroutedAt: here,
+        });
     });
 
-    it('사이에 경로로 돌아오면 다시 센다', () => {
-        let tracker = trackOffRoute(NEW_TRACKER, 'off_route', here).tracker;
-        tracker = trackOffRoute(tracker, 'on_route', here).tracker;
-        const result = trackOffRoute(tracker, 'off_route', here);
+    it('위치를 자주 받아도 횟수만으로는 다시 찾지 않는다', () => {
+        let tracker = NEW_TRACKER;
+        const reroutes = [0, 1_000, 2_000, 3_000].map((nowMs) => {
+            const result = trackOffRoute(tracker, 'off_route', here, nowMs);
+            tracker = result.tracker;
+            return result.reroute;
+        });
+
+        expect(reroutes).toEqual([false, false, false, false]);
+    });
+
+    it('사이에 경로로 돌아오면 처음부터 다시 잰다', () => {
+        let tracker = trackOffRoute(NEW_TRACKER, 'off_route', here, 0).tracker;
+        tracker = trackOffRoute(tracker, 'on_route', here, 1_000).tracker;
+        const result = trackOffRoute(tracker, 'off_route', here, offRouteMs);
 
         expect(result.reroute).toBe(false);
-        expect(result.tracker.offRouteFixes).toBe(1);
+        expect(result.tracker.offRouteSince).toBe(offRouteMs);
     });
 
-    it('오차가 큰 위치는 세지도, 다시 세게 하지도 않는다', () => {
-        let tracker = trackOffRoute(NEW_TRACKER, 'off_route', here).tracker;
-        tracker = trackOffRoute(tracker, 'uncertain', here).tracker;
+    it('오차가 큰 위치는 처음부터 다시 재게 하지 않는다', () => {
+        let tracker = trackOffRoute(NEW_TRACKER, 'off_route', here, 0).tracker;
+        tracker = trackOffRoute(tracker, 'uncertain', here, 1_000).tracker;
 
-        expect(trackOffRoute(tracker, 'off_route', here).reroute).toBe(true);
+        expect(
+            trackOffRoute(tracker, 'off_route', here, offRouteMs).reroute,
+        ).toBe(true);
     });
 
     it('다시 찾은 곳에서 충분히 움직이기 전에는 또 찾지 않는다', () => {
-        const tracker = { offRouteFixes: 1, reroutedAt: here };
+        const tracker = { offRouteSince: 0, reroutedAt: here };
 
         expect(
-            trackOffRoute(tracker, 'off_route', north(here, 10)).reroute,
+            trackOffRoute(tracker, 'off_route', north(here, 10), offRouteMs)
+                .reroute,
         ).toBe(false);
         expect(
-            trackOffRoute(tracker, 'off_route', north(here, 40)).reroute,
+            trackOffRoute(tracker, 'off_route', north(here, 40), offRouteMs)
+                .reroute,
         ).toBe(true);
     });
 });

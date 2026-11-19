@@ -11,8 +11,9 @@ export const NAVIGATION = {
     arrivalM: 20,
     // 오차가 이보다 큰 위치로는 이탈·도착을 판단하지 않는다 (실내, Wi-Fi 기반 위치 등).
     maxAccuracyM: 50,
-    // 이 횟수만큼 연달아 벗어나야 경로를 다시 찾는다. 위치가 한 번 튀는 것은 넘긴다.
-    offRouteFixes: 2,
+    // 이 시간(ms) 동안 이어서 벗어나야 경로를 다시 찾는다. 건물에 반사돼 잠깐 옆 길로 잡히는 것은 넘긴다.
+    // 위치를 받는 간격과 상관없이 같게 횟수가 아닌 시간으로 잰다.
+    offRouteMs: 8_000,
     // 다시 찾은 곳에서 이만큼 움직이기 전에는 또 찾지 않는다.
     rerouteMinMoveM: 30,
     // 사람이 걸어서 낼 수 있는 가장 빠른 속력(m/s). 직전 진행 위치에서
@@ -31,8 +32,9 @@ export const LOCATION_WATCH_INTERVAL_MS = 1_000;
 export const LOCATION_FILTER = {
     // 마지막 위치에서 (이 속력 × 지난 시간 + 새 위치 오차)보다 멀면 튄 위치로 보고 버린다(m/s).
     maxSpeedMps: NAVIGATION.maxWalkSpeedMps,
-    // 튄 위치가 이 횟수만큼 연달아 오면 실제로 옮겨 간 것으로 받아들인다.
-    jumpConfirmFixes: 3,
+    // 튄 위치가 이 시간(ms) 동안 이어서 오면 실제로 옮겨 간 것으로 받아들인다.
+    // 위치를 받는 간격과 상관없이 같게 횟수가 아닌 시간으로 잰다.
+    jumpConfirmMs: 10_000,
     // 멈춘 곳에서 이 거리(오차가 더 작으면 오차) 안에서만 흔들리면 멈춰 있는 것으로 본다(m).
     // 크면 걷기 시작해도 늦게 따라가고, 작으면 멈춰 있어도 움직이는 것으로 나온다.
     stillRadiusM: 5,

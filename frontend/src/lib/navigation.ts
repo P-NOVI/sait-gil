@@ -25,14 +25,14 @@ export type RouteProgress = {
 export type Judgement = 'on_route' | 'off_route' | 'arrived' | 'uncertain';
 
 export type RerouteTracker = {
-    /** 연달아 경로를 벗어난 위치 수 */
-    offRouteFixes: number;
+    /** 경로를 이어서 벗어나기 시작한 때. 벗어나지 않았으면 null */
+    offRouteSince: number | null;
     /** 마지막으로 경로를 다시 찾은 곳 */
     reroutedAt: LngLat | null;
 };
 
 export const NEW_TRACKER: RerouteTracker = {
-    offRouteFixes: 0,
+    offRouteSince: null,
     reroutedAt: null,
 };
 
@@ -119,21 +119,26 @@ export function trackOffRoute(
     tracker: RerouteTracker,
     judgement: Judgement,
     position: LngLat,
+    nowMs: number,
     settings: NavigationSettings = NAVIGATION,
 ): { tracker: RerouteTracker; reroute: boolean } {
     if (judgement === 'uncertain') {
         return { tracker, reroute: false };
     }
-    const offRouteFixes =
-        judgement === 'off_route' ? tracker.offRouteFixes + 1 : 0;
+    const offRouteSince =
+        judgement === 'off_route' ? (tracker.offRouteSince ?? nowMs) : null;
     const movedAway =
         !tracker.reroutedAt ||
         distanceM(tracker.reroutedAt, position) >= settings.rerouteMinMoveM;
-    if (offRouteFixes >= settings.offRouteFixes && movedAway) {
+    if (
+        offRouteSince !== null &&
+        nowMs - offRouteSince >= settings.offRouteMs &&
+        movedAway
+    ) {
         return {
-            tracker: { offRouteFixes: 0, reroutedAt: position },
+            tracker: { offRouteSince: null, reroutedAt: position },
             reroute: true,
         };
     }
-    return { tracker: { ...tracker, offRouteFixes }, reroute: false };
+    return { tracker: { ...tracker, offRouteSince }, reroute: false };
 }
