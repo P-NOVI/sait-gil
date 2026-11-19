@@ -182,8 +182,12 @@ export default function App() {
     const canAskByVoice = () =>
         settings.voice && canListen() && visionAvailable();
 
+    // 사용자가 카메라 인식을 켜거나 끌 때마다 늘린다. 안내 시작 때 묻는 사이 직접 고른 것을 알아챈다.
+    const visionChoice = useRef(0);
+
     /** 카메라 인식을 켜거나 끄고 알린다. */
     const switchVision = (on: boolean) => {
+        visionChoice.current += 1;
         vision.setEnabled(on);
         announce(on ? VISION_ON_TEXT : VISION_OFF_TEXT);
     };
@@ -192,31 +196,38 @@ export default function App() {
         offered.current = null;
         guidanceRun.current += 1;
         setGuided(route);
-        // 켜짐 여부는 저장하지 않고 안내마다 켠 채로 시작해 묻는다.
-        vision.setEnabled(true);
         const started = `${routeTitle(route)}로 안내를 시작합니다.`;
         if (canAskByVoice()) {
+            // 켜짐 여부는 저장하지 않고 안내마다 묻는다. 끄려는 사람에게 권한 창·실패 안내가
+            // 뜨지 않도록 대답을 듣기 전에는 카메라를 켜지 않는다.
+            vision.setEnabled(false);
             void askVision(started);
         } else {
+            vision.setEnabled(true);
             announce(started, 'route');
         }
     };
 
     /**
      * 안내 시작을 알리며 카메라 인식을 켤지 묻는다.
-     * 대답이 없거나 못 알아들으면 안전을 위해 켠 채로 두고 끄는 방법을 알려 준다.
+     * 대답이 없거나 못 알아들으면 안전을 위해 켜고 끄는 방법을 알려 준다.
      */
     const askVision = async (started: string) => {
         const run = guidanceRun.current;
+        const choice = visionChoice.current;
         const heard = await ask(`${started} ${VISION_QUESTION}`);
-        if (guidanceRun.current !== run) {
+        // 안내가 바뀌었거나, 묻는 사이 사용자가 버튼·말로 직접 고른 것은 덮지 않는다.
+        if (guidanceRun.current !== run || visionChoice.current !== choice) {
             return;
         }
         const answer =
             heard.status === 'heard' ? cameraAnswer(heard.text) : null;
         if (answer) {
             switchVision(answer === 'on');
-        } else if (listened(heard)) {
+            return;
+        }
+        vision.setEnabled(true);
+        if (listened(heard)) {
             // 위험 알림 등이 묻는 말을 끊었으면 그 알림을 덮지 않는다.
             announce(VISION_DEFAULT_ON_TEXT);
         }
@@ -485,6 +496,7 @@ export default function App() {
                             available={visionAvailable()}
                             frame={vision.frame}
                             enabled={vision.enabled}
+                            failure={vision.failure}
                             onToggle={() => switchVision(!vision.enabled)}
                         />
                     }

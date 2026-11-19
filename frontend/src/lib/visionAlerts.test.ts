@@ -17,7 +17,10 @@ import {
     MOVE_ASIDE_TEXT,
     UNKNOWN_TEXT,
     type VisionCue,
+    VISION_DENIED_TEXT,
+    VISION_FAILED_TEXT,
     VISION_KEYS,
+    visionFailureAlert,
     visionReader,
 } from './visionAlerts';
 
@@ -187,19 +190,34 @@ describe('approachAlert', () => {
         ).toEqual({
             key: VISION_KEYS.approach,
             level: 'danger',
-            text: '2미터 앞에 사람이 가까워집니다. 1시 방향이 비어 있습니다.',
+            text: '2미터 앞 사람과 가까워집니다. 1시 방향이 비었습니다.',
         });
     });
 
     it('빈 방향이 없으면 멈추라고 한다', () => {
         expect(approachText({ distanceM: 2.6, freeDirections: [] })).toBe(
-            '3미터 앞에 사람이 가까워집니다. 잠시 멈추세요.',
+            '3미터 앞 사람과 가까워집니다. 잠시 멈추세요.',
         );
     });
 
     it('1미터보다 가까워도 1미터로 읽는다', () => {
         expect(approachText({ distanceM: 0.3, freeDirections: [12] })).toBe(
-            '1미터 앞에 사람이 가까워집니다. 12시 방향이 비어 있습니다.',
+            '1미터 앞 사람과 가까워집니다. 12시 방향이 비었습니다.',
         );
+    });
+});
+
+describe('visionFailureAlert', () => {
+    it('권한 거부는 설정에서 허용하라고 알린다', () => {
+        expect(visionFailureAlert('denied')).toEqual({
+            key: VISION_KEYS.failure,
+            level: 'route',
+            text: VISION_DENIED_TEXT,
+            cooldownMs: 0,
+        });
+    });
+
+    it('그 밖의 실패는 카메라를 켜지 못했다고 알린다', () => {
+        expect(visionFailureAlert('failed').text).toBe(VISION_FAILED_TEXT);
     });
 });

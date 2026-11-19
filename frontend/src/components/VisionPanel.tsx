@@ -2,11 +2,16 @@ import {
     type ClockDirection,
     type CrowdLevel,
     VISION_NOT_READY,
+    type VisionFailure,
     type VisionFrame,
     type VisionLevel,
 } from '../platform';
 import { distanceLabel } from '../lib/routeApi';
-import { UNKNOWN_TEXT, VISION_OFF_STATUS } from '../lib/visionAlerts';
+import {
+    UNKNOWN_TEXT,
+    VISION_OFF_STATUS,
+    visionFailureText,
+} from '../lib/visionAlerts';
 
 const LEVEL_LABELS: Record<VisionLevel, string> = {
     clear: '여유',
@@ -49,6 +54,8 @@ type VisionPanelProps = {
     frame: VisionFrame | null;
     /** 사용자가 카메라 인식을 켜 두었는지 */
     enabled: boolean;
+    /** 카메라를 켜지 못한 이유. 없으면 null */
+    failure: VisionFailure | null;
     onToggle: () => void;
 };
 
@@ -56,6 +63,7 @@ type VisionPanelProps = {
 function panelStatus(
     available: boolean,
     enabled: boolean,
+    failure: VisionFailure | null,
     frame: VisionFrame | null,
 ): string {
     if (!available) {
@@ -63,6 +71,9 @@ function panelStatus(
     }
     if (!enabled) {
         return VISION_OFF_STATUS;
+    }
+    if (failure) {
+        return visionFailureText(failure);
     }
     return frame
         ? `${LEVEL_LABELS[frame.level]}. ${statusText(frame)}`
@@ -78,6 +89,7 @@ export default function VisionPanel({
     available,
     frame,
     enabled,
+    failure,
     onToggle,
 }: VisionPanelProps) {
     const level = enabled ? (frame?.level ?? null) : null;
@@ -102,7 +114,7 @@ export default function VisionPanel({
                 ))}
             </ol>
             <p className="vision-panel__status">
-                {panelStatus(available, enabled, frame)}
+                {panelStatus(available, enabled, failure, frame)}
             </p>
             {available && (
                 <button

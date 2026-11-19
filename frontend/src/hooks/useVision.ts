@@ -1,12 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useReducer,
+    useRef,
+    useState,
+} from 'react';
 
 import type { Alert } from '../lib/alertArbiter';
-import { approachAlert, visionReader } from '../lib/visionAlerts';
+import {
+    approachAlert,
+    visionFailureAlert,
+    visionReader,
+} from '../lib/visionAlerts';
+import { INITIAL_VISION_CONTROL, visionControl } from '../lib/visionControl';
 import {
     type CrowdLevel,
     startVision,
     visionAvailable,
     type VisionApproach,
+    type VisionFailure,
+    visionFailure,
     type VisionFrame,
 } from '../platform';
 import { CAUTION_VIBRATION } from '../settings';
@@ -24,11 +38,12 @@ type Options = {
 /**
  * 인파 인식을 켜고 결과마다 onFrame 으로 알린다. 돌려준 함수를 부르면 멈춘다.
  * 시작이 끝나기 전에 멈추면 시작이 끝나는 대로 곧바로 멈추고, 멈춘 뒤에 온 결과는 버린다.
- * 시작에 실패해도 오류를 던지지 않는다.
+ * 시작에 실패하면 오류를 던지지 않고 onFailure 로 알린다. 이미 멈췄으면 알리지 않는다.
  */
 export function connectVision(
     onFrame: (frame: VisionFrame) => void,
     onApproach: (approach: VisionApproach) => void = () => undefined,
+    onFailure: (failure: VisionFailure) => void = () => undefined,
 ): () => void {
     let cancelled = false;
     let stop: (() => void) | null = null;
@@ -51,8 +66,12 @@ export function connectVision(
                 stop = stopVision;
             }
         })
-        // 인식이 안 돼도 길안내는 계속된다.
-        .catch(() => undefined);
+        // 인식이 안 돼도 길안내는 계속된다. 사용자가 인식되는 줄 알고 걷지 않게 실패만 알린다.
+        .catch((error: unknown) => {
+            if (!cancelled) {
+                onFailure(visionFailure(error));
+            }
+        });
     return () => {
         cancelled = true;
         stop?.();
@@ -64,7 +83,12 @@ export type VisionState = {
     frame: VisionFrame | null;
     /** 카메라 인식을 켜 두었는지 */
     enabled: boolean;
-    /** 카메라 인식을 켜거나 끈다. 안내를 시작할 때 묻고, 안내 중에는 버튼이나 말로 바꾼다. */
+    /** 카메라를 켜지 못한 이유. 켜져 있거나 다시 켜는 중이면 null */
+    failure: VisionFailure | null;
+    /**
+     * 카메라 인식을 켜거나 끈다. 안내를 시작할 때 묻고, 안내 중에는 버튼이나 말로 바꾼다.
+     * 켜지 못한 상태에서 다시 켜면 카메라를 다시 켜 본다.
+     */
     setEnabled: (enabled: boolean) => void;
 };
 
@@ -80,7 +104,11 @@ export function useVision({
     buzz,
 }: Options): VisionState {
     const [frame, setFrame] = useState<VisionFrame | null>(null);
-    const [enabled, setEnabled] = useState(true);
+    // 켜짐·실패·다시 켜 본 횟수. attempt 가 바뀌면 카메라를 다시 켠다.
+    const [{ enabled, failure, attempt }, dispatch] = useReducer(
+        visionControl,
+        INITIAL_VISION_CONTROL,
+    );
     const latest = useRef({ minLevel, report, buzz });
     useEffect(() => {
         latest.current = { minLevel, report, buzz };
@@ -105,13 +133,27 @@ export function useVision({
             },
             (approach) =>
                 latest.current.report(approachAlert(approach), 'drop'),
+            (reason) => {
+                dispatch({ type: 'failed', failure: reason });
+                // 읽던 말이 끝난 뒤에라도 꼭 읽는다.
+                latest.current.report(visionFailureAlert(reason), 'wait');
+            },
         );
 
         return () => {
             disconnect();
             setFrame(null);
+            dispatch({ type: 'stopped' });
         };
-    }, [running]);
+    }, [running, attempt]);
 
-    return useMemo(() => ({ frame, enabled, setEnabled }), [frame, enabled]);
+    const setEnabled = useCallback(
+        (on: boolean) => dispatch({ type: 'set', enabled: on }),
+        [],
+    );
+
+    return useMemo(
+        () => ({ frame, enabled, failure, setEnabled }),
+        [frame, enabled, failure, setEnabled],
+    );
 }

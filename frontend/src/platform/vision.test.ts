@@ -21,6 +21,7 @@ import {
     VISION_NOT_READY,
     type VisionFrame,
     visionAvailable,
+    visionFailure,
 } from './vision';
 
 const remove = vi.fn();
@@ -308,5 +309,41 @@ describe('startVision', () => {
         await expect(startVision(vi.fn())).rejects.toThrow('시작 실패');
 
         expect(remove).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('visionFailure', () => {
+    it('권한 거부 코드는 denied, 그 밖의 오류는 failed 로 본다', () => {
+        expect(
+            visionFailure(
+                Object.assign(new Error('권한 없음'), {
+                    code: 'CAMERA_DENIED',
+                }),
+            ),
+        ).toBe('denied');
+        expect(
+            visionFailure(
+                Object.assign(new Error('카메라 실패'), {
+                    code: 'CAMERA_FAILED',
+                }),
+            ),
+        ).toBe('failed');
+        expect(visionFailure(new Error('Plugin not implemented'))).toBe(
+            'failed',
+        );
+        expect(visionFailure('이상한 값')).toBe('failed');
+    });
+
+    it('앱에서 권한을 거부하면 connectVision 이 denied 를 알린다', async () => {
+        native.value = true;
+        plugin.start.mockRejectedValue(
+            Object.assign(new Error('권한 없음'), { code: 'CAMERA_DENIED' }),
+        );
+        const onFailure = vi.fn();
+
+        connectVision(vi.fn(), vi.fn(), onFailure);
+        await flush();
+
+        expect(onFailure).toHaveBeenCalledWith('denied');
     });
 });

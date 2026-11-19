@@ -37,16 +37,14 @@ export const NOT_HEARD_TEXT =
     '대답을 알아듣지 못했습니다. 화면의 버튼을 눌러 고르세요.';
 
 /** 안내를 시작할 때 카메라 인식을 켤지 묻는 말 */
-export const VISION_QUESTION =
-    '카메라 인식을 켤까요? 켜 줘, 또는 꺼 줘라고 말하세요.';
+export const VISION_QUESTION = '카메라를 켤까요?';
 /** 대답이 없거나 못 알아들었을 때. 안전을 위해 켜고 끄는 방법을 알려 준다. */
 export const VISION_DEFAULT_ON_TEXT =
-    '카메라 인식을 켭니다. 끄려면 화면을 두 번 누르고 카메라 꺼라고 말하세요.';
+    '카메라를 켭니다. 끄려면 두 번 누르고 카메라 꺼라고 하세요.';
 /** 안내 중 말하기 버튼을 누르거나 화면을 두 번 눌렀을 때 묻는 말 */
 export const SPEAK_PROMPT = '말씀하세요.';
 /** 안내 중 명령을 못 알아들었을 때 */
-export const NAVIGATION_COMMAND_HINT =
-    '알아듣지 못했습니다. 카메라 꺼, 또는 카메라 켜라고 말하세요.';
+export const NAVIGATION_COMMAND_HINT = '카메라 꺼, 또는 카메라 켜라고 하세요.';
 
 /** 카메라 인식을 켤지에 대한 대답. on: 켬, off: 끔 */
 export type CameraAnswer = 'on' | 'off';
