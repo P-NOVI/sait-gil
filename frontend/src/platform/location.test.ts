@@ -14,6 +14,7 @@ vi.mock('@capacitor/core', () => ({
 }));
 vi.mock('@capacitor/geolocation', () => ({ Geolocation: plugin }));
 
+import { LOCATION_WATCH_INTERVAL_MS } from '../settings';
 import {
     getCurrentPosition,
     isLocationDenied,
@@ -228,6 +229,25 @@ describe('watchLocation (앱)', () => {
         stop();
         expect(onFix).toHaveBeenCalledWith({ ...FIX, approximate: true });
         expect(plugin.clearWatch).toHaveBeenCalledWith({ id: 'watch' });
+    });
+
+    it('위치를 1초 간격으로 받도록 요청한다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValue({ location: 'granted' });
+        plugin.watchPosition.mockResolvedValue('watch');
+
+        const stop = watchLocation(vi.fn(), vi.fn());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        stop();
+
+        expect(plugin.watchPosition).toHaveBeenCalledWith(
+            expect.objectContaining({
+                enableHighAccuracy: true,
+                interval: LOCATION_WATCH_INTERVAL_MS,
+                minimumUpdateInterval: LOCATION_WATCH_INTERVAL_MS,
+            }),
+            expect.any(Function),
+        );
     });
 
     it('정확한 위치를 허용하면 대략적인 위치로 표시하지 않는다', async () => {

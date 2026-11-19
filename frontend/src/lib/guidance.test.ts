@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { NAVIGATION } from '../settings';
 import type { LngLat } from './geo';
 import {
     ARRIVED_KEY,
@@ -66,13 +67,21 @@ describe('guidanceStep', () => {
         ]);
     });
 
-    it('연달아 벗어나면 다시 찾고, 이벤트는 내지 않는다', () => {
+    it('벗어난 채로 정한 시간이 지나면 다시 찾고, 이벤트는 내지 않는다', () => {
         const away = east(north(185), 60);
         const first = guidanceStep(ROUTE, NEW_GUIDANCE, away, 5, 0);
-        const second = guidanceStep(ROUTE, first.state, away, 5, 1_000);
+        const soon = guidanceStep(ROUTE, first.state, away, 5, 1_000);
+        const second = guidanceStep(
+            ROUTE,
+            soon.state,
+            away,
+            5,
+            NAVIGATION.offRouteMs,
+        );
 
         expect(first.reroute).toBe(false);
         expect(first.alerts).toEqual([]);
+        expect(soon.reroute).toBe(false);
         expect(second.reroute).toBe(true);
         expect(second.alerts.map((alert) => alert.key)).toEqual([REROUTE_KEY]);
         expect(markAnnounced(second.state, second.alerts[0])).toBe(

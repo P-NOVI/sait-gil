@@ -87,6 +87,7 @@ export function guidanceStep(
         state.tracker,
         judgement,
         position,
+        nowMs,
     );
     const alerts: Alert[] = [];
     if (judgement === 'arrived' && !state.announced.has(ARRIVED_KEY)) {

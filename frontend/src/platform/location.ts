@@ -1,10 +1,15 @@
 // 현재 위치. 웹은 navigator.geolocation, 앱은 Capacitor Geolocation 플러그인을 쓴다.
 // 좌표는 저장하지 않고 요청한 곳에만 돌려준다. 배리어프리 lib/geolocation.ts 에서 가져왔다.
 
-import { Geolocation, type Position } from '@capacitor/geolocation';
+import {
+    Geolocation,
+    type Position,
+    type PositionOptions as NativePositionOptions,
+} from '@capacitor/geolocation';
 
 import type { LngLat } from '../lib/geo';
 import type { Course } from '../lib/heading';
+import { LOCATION_WATCH_INTERVAL_MS } from '../settings';
 import { isNativeApp } from './runtime';
 
 // 정확한 위치(GPS)를 먼저 기다리고, 실패하면 Wi-Fi·기지국 기반 위치로 다시 묻는다.
@@ -16,6 +21,12 @@ const COARSE: PositionOptions = {
 };
 // 안내 중에는 GPS 위치를 계속 받는다. 다음 위치가 늦어도 오류로 끊지 않는다.
 const WATCH: PositionOptions = { enableHighAccuracy: true, maximumAge: 0 };
+// 앱(Android)은 간격을 주지 않으면 timeout(10초)마다, 빨라도 5초마다 위치를 준다. 웹은 이 값을 무시한다.
+const NATIVE_WATCH: NativePositionOptions = {
+    ...WATCH,
+    interval: LOCATION_WATCH_INTERVAL_MS,
+    minimumUpdateInterval: LOCATION_WATCH_INTERVAL_MS,
+};
 
 // GeolocationPositionError 코드
 const PERMISSION_DENIED = 1;
@@ -195,7 +206,7 @@ function watchNative(
     const startWatch = async () => {
         const allowPrecise = precise;
         const watchId = await Geolocation.watchPosition(
-            { ...WATCH, enableHighAccuracy: allowPrecise },
+            { ...NATIVE_WATCH, enableHighAccuracy: allowPrecise },
             (position, error) => {
                 if (position) {
                     onFix(toNativeFix(position.coords, allowPrecise));
