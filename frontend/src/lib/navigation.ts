@@ -25,14 +25,17 @@ export type RouteProgress = {
 export type Judgement = 'on_route' | 'off_route' | 'arrived' | 'uncertain';
 
 export type RerouteTracker = {
-    /** 경로를 이어서 벗어나기 시작한 때. 벗어나지 않았으면 null */
+    /** 경로를 벗어나기 시작한 때. 판단하지 못한 동안만큼 늦춰 둔다. 벗어나지 않았으면 null */
     offRouteSince: number | null;
+    /** 벗어난 중에 오차가 큰 위치를 받기 시작한 때. 그런 위치가 아니면 null */
+    pausedAt: number | null;
     /** 마지막으로 경로를 다시 찾은 곳 */
     reroutedAt: LngLat | null;
 };
 
 export const NEW_TRACKER: RerouteTracker = {
     offRouteSince: null,
+    pausedAt: null,
     reroutedAt: null,
 };
 
@@ -114,7 +117,20 @@ export function judge(
     return progress.remainingM <= settings.arrivalM ? 'arrived' : 'on_route';
 }
 
-/** 새 위치의 판단을 반영하고, 지금 경로를 다시 찾아야 하는지 알려 준다. */
+/** 벗어난 시간을 잴 시작 시각. 판단하지 못하고 멈춰 있던 동안만큼 늦춘다. */
+function offRouteStart(tracker: RerouteTracker, nowMs: number): number {
+    if (tracker.offRouteSince === null) {
+        return nowMs;
+    }
+    const pausedMs = tracker.pausedAt === null ? 0 : nowMs - tracker.pausedAt;
+    return tracker.offRouteSince + pausedMs;
+}
+
+/**
+ * 새 위치의 판단을 반영하고, 지금 경로를 다시 찾아야 하는지 알려 준다.
+ * 경로로 돌아오면 처음부터 다시 잰다. 오차가 큰 위치(uncertain)를 받는 동안은 시계를 멈춰,
+ * 판단하지 못한 시간은 빼고 그 전까지 벗어나 있던 시간은 남긴다.
+ */
 export function trackOffRoute(
     tracker: RerouteTracker,
     judgement: Judgement,
@@ -123,10 +139,12 @@ export function trackOffRoute(
     settings: NavigationSettings = NAVIGATION,
 ): { tracker: RerouteTracker; reroute: boolean } {
     if (judgement === 'uncertain') {
-        return { tracker, reroute: false };
+        const pausedAt =
+            tracker.offRouteSince === null ? null : (tracker.pausedAt ?? nowMs);
+        return { tracker: { ...tracker, pausedAt }, reroute: false };
     }
     const offRouteSince =
-        judgement === 'off_route' ? (tracker.offRouteSince ?? nowMs) : null;
+        judgement === 'off_route' ? offRouteStart(tracker, nowMs) : null;
     const movedAway =
         !tracker.reroutedAt ||
         distanceM(tracker.reroutedAt, position) >= settings.rerouteMinMoveM;
@@ -136,9 +154,16 @@ export function trackOffRoute(
         movedAway
     ) {
         return {
-            tracker: { offRouteSince: null, reroutedAt: position },
+            tracker: {
+                offRouteSince: null,
+                pausedAt: null,
+                reroutedAt: position,
+            },
             reroute: true,
         };
     }
-    return { tracker: { ...tracker, offRouteSince }, reroute: false };
+    return {
+        tracker: { ...tracker, offRouteSince, pausedAt: null },
+        reroute: false,
+    };
 }

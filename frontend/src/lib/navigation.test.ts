@@ -146,6 +146,7 @@ describe('trackOffRoute', () => {
         expect(later.reroute).toBe(true);
         expect(later.tracker).toEqual({
             offRouteSince: null,
+            pausedAt: null,
             reroutedAt: here,
         });
     });
@@ -170,17 +171,44 @@ describe('trackOffRoute', () => {
         expect(result.tracker.offRouteSince).toBe(offRouteMs);
     });
 
-    it('오차가 큰 위치는 처음부터 다시 재게 하지 않는다', () => {
+    it('오차가 큰 위치를 받은 동안은 빼고, 그 전에 벗어나 있던 시간은 남긴다', () => {
         let tracker = trackOffRoute(NEW_TRACKER, 'off_route', here, 0).tracker;
-        tracker = trackOffRoute(tracker, 'uncertain', here, 1_000).tracker;
+        tracker = trackOffRoute(tracker, 'uncertain', here, 5_000).tracker;
+        tracker = trackOffRoute(tracker, 'uncertain', here, 20_000).tracker;
+        // 5초 벗어나 있다가 실내 등에서 30초 동안 판단하지 못했다.
+        const back = trackOffRoute(tracker, 'off_route', here, 35_000);
+        const soon = trackOffRoute(
+            back.tracker,
+            'off_route',
+            here,
+            30_000 + offRouteMs - 1,
+        );
+        const later = trackOffRoute(
+            soon.tracker,
+            'off_route',
+            here,
+            30_000 + offRouteMs,
+        );
 
-        expect(
-            trackOffRoute(tracker, 'off_route', here, offRouteMs).reroute,
-        ).toBe(true);
+        expect(tracker.offRouteSince).toBe(0);
+        expect(tracker.pausedAt).toBe(5_000);
+        expect(back.reroute).toBe(false);
+        expect(back.tracker.offRouteSince).toBe(30_000);
+        expect(soon.reroute).toBe(false);
+        expect(later.reroute).toBe(true);
+    });
+
+    it('벗어나지 않은 중에 받은 오차가 큰 위치는 시계를 멈추지 않는다', () => {
+        let tracker = trackOffRoute(NEW_TRACKER, 'on_route', here, 0).tracker;
+        tracker = trackOffRoute(tracker, 'uncertain', here, 1_000).tracker;
+        const result = trackOffRoute(tracker, 'off_route', here, 5_000);
+
+        expect(tracker.pausedAt).toBeNull();
+        expect(result.tracker.offRouteSince).toBe(5_000);
     });
 
     it('다시 찾은 곳에서 충분히 움직이기 전에는 또 찾지 않는다', () => {
-        const tracker = { offRouteSince: 0, reroutedAt: here };
+        const tracker = { offRouteSince: 0, pausedAt: null, reroutedAt: here };
 
         expect(
             trackOffRoute(tracker, 'off_route', north(here, 10), offRouteMs)

@@ -15,13 +15,18 @@ export type LocationFilterState = {
         weight: number;
         atMs: number;
     } | null;
-    /** 튄 위치를 이어서 버리기 시작한 때. 튄 위치가 없으면 null */
-    jumpSince: number | null;
+    /** 이어서 버린 튄 위치. 튄 위치가 없으면 null */
+    jump: {
+        /** 버리기 시작한 때 */
+        sinceMs: number;
+        /** 버린 횟수 */
+        fixes: number;
+    } | null;
 };
 
 export const NEW_LOCATION_FILTER: LocationFilterState = {
     anchor: null,
-    jumpSince: null,
+    jump: null,
 };
 
 type Filtered = {
@@ -46,7 +51,7 @@ function moveTo(fix: LocationFix, nowMs: number): Filtered {
                 weight: weightOf(fix.accuracy),
                 atMs: nowMs,
             },
-            jumpSince: null,
+            jump: null,
         },
         fix,
     };
@@ -54,7 +59,7 @@ function moveTo(fix: LocationFix, nowMs: number): Filtered {
 
 /**
  * 새 위치를 거른다.
- * - 마지막 위치에서 걸어서 갈 수 없을 만큼 멀면 버린다. 한동안 이어서 오면 실제로 옮겨 간 것으로 받아들인다.
+ * - 마지막 위치에서 걸어서 갈 수 없을 만큼 멀면 버린다. 한동안 여러 번 이어서 오면 실제로 옮겨 간 것으로 받아들인다.
  * - 멈춘 곳 가까이에서만 흔들리면 멈춘 것으로 보고, 평균 위치를 쓰고 GPS 진행 방향은 버린다.
  */
 export function filterFix(
@@ -70,10 +75,14 @@ export function filterFix(
     const elapsedS = Math.max(0, nowMs - anchor.atMs) / 1000;
     const reachM = settings.maxSpeedMps * elapsedS + fix.accuracy;
     if (distanceM(anchor.position, fix.position) > reachM) {
-        const jumpSince = state.jumpSince ?? nowMs;
-        return nowMs - jumpSince >= settings.jumpConfirmMs
+        const jump = {
+            sinceMs: state.jump?.sinceMs ?? nowMs,
+            fixes: (state.jump?.fixes ?? 0) + 1,
+        };
+        return nowMs - jump.sinceMs >= settings.jumpConfirmMs &&
+            jump.fixes >= settings.jumpConfirmFixes
             ? moveTo(fix, nowMs)
-            : { state: { ...state, jumpSince }, fix: null };
+            : { state: { ...state, jump }, fix: null };
     }
     const stillRadiusM = Math.min(settings.stillRadiusM, fix.accuracy);
     if (distanceM(anchor.origin, fix.position) > stillRadiusM) {
@@ -91,7 +100,7 @@ export function filterFix(
     return {
         state: {
             anchor: { ...anchor, position, weight: total, atMs: nowMs },
-            jumpSince: null,
+            jump: null,
         },
         fix: still,
     };
