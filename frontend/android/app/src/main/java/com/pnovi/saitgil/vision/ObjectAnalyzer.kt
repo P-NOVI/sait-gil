@@ -29,6 +29,12 @@ val OBSTACLE_CLASSES: Set<DetectedClass> = setOf(
     DetectedClass.STAIRS,
 )
 
+/** 빨리 지나가 여러 프레임 연달아 잡히기 어려운 장애물. fastObstacleConfirmFrames 만큼만 보이면 알린다 */
+private val FAST_OBSTACLE_CLASSES: Set<DetectedClass> = setOf(
+    DetectedClass.TWO_WHEELER,
+    DetectedClass.CAR,
+)
+
 // 걷는 길 앞으로 보는 칸(11~1시). 양 끝 칸(10시·2시)에만 걸친 장애물은 알리지 않는다.
 private val AHEAD_SECTORS: Set<Int> =
     CLOCK_SECTORS.indices.filter { CLOCK_SECTORS[it] in setOf(11, 12, 1) }.toSet()
@@ -39,8 +45,19 @@ private val SIGNAL_STATES: Map<DetectedClass, SignalState> = mapOf(
     DetectedClass.PED_SIGNAL_OTHER to SignalState.OTHER,
 )
 
-/** 프레임 하나를 판단한 결과. alerts 는 이번 프레임에 알릴 장애물(클래스마다 하나)이다 */
-data class ObjectAnalysis(val signal: SignalState?, val alerts: List<VisionAlert>)
+/** 이번 프레임에 앞쪽 가까이 보인 장애물 하나. direction 은 시계 방향(10~2시)이다 */
+data class ObstacleSighting(val kind: DetectedClass, val direction: Int)
+
+/**
+ * 프레임 하나를 판단한 결과.
+ * seen 은 이번 프레임에 보인 장애물(클래스마다 하나)로, 확인 없이 화면에 바로 보여 준다.
+ * alerts 는 여러 프레임 확인을 거쳐 이번 프레임에 알릴 장애물이다.
+ */
+data class ObjectAnalysis(
+    val signal: SignalState?,
+    val alerts: List<VisionAlert>,
+    val seen: List<ObstacleSighting> = emptyList(),
+)
 
 /** 클래스 하나의 가까운 장애물을 지켜본 기록 */
 private class ObstacleTrack {
@@ -62,26 +79,25 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
 
     fun analyze(frame: DetectionFrame): ObjectAnalysis {
         val labels = clockLabels(frame, config)
-        val alerts = OBSTACLE_CLASSES.mapNotNull { kind ->
-            // 같은 클래스가 여럿이면 가장 가까운(아래 끝이 가장 아래인) 것을 알린다.
-            val nearest = frame.objects
+        val seen = OBSTACLE_CLASSES.mapNotNull { kind ->
+            // 같은 클래스가 여럿이면 가장 가까운(아래 끝이 가장 아래인) 것을 본다.
+            frame.objects
                 .filter { it.kind == kind && isNearAhead(it) }
                 .maxByOrNull { it.bottom }
-            when {
-                nearest == null -> {
-                    miss(kind)
-                    null
-                }
-                seenAndDue(kind, frame.timeMs) -> VisionAlert(
-                    kind = AlertKind.OBSTACLE,
-                    message = kind.wire,
-                    objectClass = kind,
-                    direction = labels[aheadSector(nearest)],
-                )
-                else -> null
-            }
+                ?.let { ObstacleSighting(kind, labels[aheadSector(it)]) }
         }
-        return ObjectAnalysis(followSignal(frame), alerts)
+        OBSTACLE_CLASSES.filter { kind -> seen.none { it.kind == kind } }.forEach(::miss)
+        val alerts = seen
+            .filter { seenAndDue(it.kind, frame.timeMs) }
+            .map {
+                VisionAlert(
+                    kind = AlertKind.OBSTACLE,
+                    message = it.kind.wire,
+                    objectClass = it.kind,
+                    direction = it.direction,
+                )
+            }
+        return ObjectAnalysis(followSignal(frame), alerts, seen)
     }
 
     /** 박스 아래 끝이 가까운 바닥에 닿고, 앞쪽 칸에 걸쳐 있는지 */
@@ -119,7 +135,9 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val track = tracks.getOrPut(kind, ::ObstacleTrack)
         track.seenFrames += 1
         track.missedFrames = 0
-        if (track.seenFrames < config.obstacleConfirmFrames) return false
+        val confirmFrames =
+            if (kind in FAST_OBSTACLE_CLASSES) config.fastObstacleConfirmFrames else config.obstacleConfirmFrames
+        if (track.seenFrames < confirmFrames) return false
         val alertedAt = track.alertedAtMs
         if (alertedAt != null && nowMs - alertedAt < config.obstacleRepeatMs) return false
         track.alertedAtMs = nowMs

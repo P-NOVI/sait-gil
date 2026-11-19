@@ -31,6 +31,8 @@ export type VisionFrame = {
     freeDirections: ClockDirection[];
     /** 몇 프레임 연달아 같았던 보행 신호등 상태. 안 보이면 null */
     signal: PedSignal | null;
+    /** 이 프레임에 앞쪽 가까이 보인 장애물. 여러 프레임 확인을 거치지 않아 화면에만 쓴다 */
+    obstacles: VisionObstacle[];
 };
 
 /** 걷는 길 앞에 있으면 알리는 장애물. 플러그인(DetectedClass)의 wire 값과 같아야 한다 */
@@ -112,6 +114,12 @@ function toFrame(state: unknown): VisionFrame {
         nearestPersonM: toDistance(raw.nearestPersonM),
         freeDirections: toDirections(raw.freeDirections),
         signal: PED_SIGNALS.find((known) => known === raw.signal) ?? null,
+        obstacles: (Array.isArray(raw.obstacles) ? raw.obstacles : [])
+            .map((seen) => {
+                const { kind, direction } = asRecord(seen);
+                return toSighting(kind, direction);
+            })
+            .filter((seen) => seen !== null),
     };
 }
 
@@ -128,12 +136,19 @@ export function toApproach(alert: unknown): VisionApproach | null {
 /** 플러그인 alert 를 장애물로 바꾼다. 장애물이 아니거나 클래스·방향이 잘못됐으면 null */
 export function toObstacle(alert: unknown): VisionObstacle | null {
     const raw = asRecord(alert);
-    const kind = OBSTACLE_KINDS.find((known) => known === raw.objectClass);
-    const [direction] = toDirections([raw.direction]);
-    if (raw.kind !== 'obstacle' || !kind || direction === undefined) {
-        return null;
-    }
-    return { kind, direction };
+    return raw.kind === 'obstacle'
+        ? toSighting(raw.objectClass, raw.direction)
+        : null;
+}
+
+/** 장애물 클래스·방향을 VisionObstacle 로 바꾼다. 하나라도 잘못됐으면 null */
+function toSighting(
+    objectClass: unknown,
+    clock: unknown,
+): VisionObstacle | null {
+    const kind = OBSTACLE_KINDS.find((known) => known === objectClass);
+    const [direction] = toDirections([clock]);
+    return kind && direction !== undefined ? { kind, direction } : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

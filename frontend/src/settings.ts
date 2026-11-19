@@ -94,8 +94,8 @@ export const SPEECH_BUSY_MAX_MS = 15_000;
 export const VISION = {
     // 같은 단계·같은 빈 방향이 이만큼 연달아 나와야 믿는다. 한 프레임 튀는 것은 넘긴다.
     confirmFrames: 3,
-    // 위험은 빨리 알려야 해서 이만큼만 확인한다.
-    dangerFrames: 2,
+    // 위험(정면 1m 안 사람)은 이만큼만 보여도 알린다. 늦으면 이미 부딪힌 뒤라 한 프레임 잘못 잡힌 것도 알린다.
+    dangerFrames: 1,
     // 위험이 이만큼 이어지면 멈추라는 말 대신 가장자리로 비키라고 한다(ms).
     sustainedDangerMs: 5_000,
     // 가장자리로 비키라는 말을 다시 하기 전에 기다리는 시간(ms)

@@ -145,8 +145,11 @@ describe('trackOffRoute', () => {
         );
 
         expect(first.reroute).toBe(false);
+        expect(first.offRoute).toBe(false);
         expect(soon.reroute).toBe(false);
+        expect(soon.offRoute).toBe(false);
         expect(later.reroute).toBe(true);
+        expect(later.offRoute).toBe(true);
         expect(later.tracker).toEqual({
             offRouteSince: null,
             pausedAt: null,
@@ -210,16 +213,41 @@ describe('trackOffRoute', () => {
         expect(result.tracker.offRouteSince).toBe(5_000);
     });
 
-    it('다시 찾은 곳에서 충분히 움직이기 전에는 또 찾지 않는다', () => {
+    it('다시 찾은 곳에서 충분히 움직이기 전에는 또 찾지 않지만 이탈은 확정한다', () => {
         const tracker = { offRouteSince: 0, pausedAt: null, reroutedAt: here };
+        const near = trackOffRoute(
+            tracker,
+            'off_route',
+            north(here, 10),
+            offRouteMs,
+        );
 
-        expect(
-            trackOffRoute(tracker, 'off_route', north(here, 10), offRouteMs)
-                .reroute,
-        ).toBe(false);
+        expect(near.reroute).toBe(false);
+        expect(near.offRoute).toBe(true);
         expect(
             trackOffRoute(tracker, 'off_route', north(here, 40), offRouteMs)
                 .reroute,
         ).toBe(true);
+    });
+
+    it('판단하지 못하는 동안에는 멈춘 때의 이탈 확정 여부를 그대로 둔다', () => {
+        const confirmed = {
+            offRouteSince: 0,
+            pausedAt: null,
+            reroutedAt: here,
+        };
+        // 1초 벗어나 있다가 판단하지 못하기 시작했다.
+        const early = { ...confirmed, pausedAt: 1_000 };
+        const later = offRouteMs + 60_000;
+
+        expect(
+            trackOffRoute(confirmed, 'uncertain', here, offRouteMs).offRoute,
+        ).toBe(true);
+        expect(trackOffRoute(early, 'uncertain', here, later).offRoute).toBe(
+            false,
+        );
+        expect(
+            trackOffRoute(NEW_TRACKER, 'uncertain', here, later).offRoute,
+        ).toBe(false);
     });
 });

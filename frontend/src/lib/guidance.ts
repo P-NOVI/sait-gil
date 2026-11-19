@@ -1,6 +1,7 @@
 // 길안내 엔진의 한 걸음: 새 위치가 들어올 때마다 진행 정도, 이탈, 미리 알림을 정한다.
 // 무엇을 먼저 읽을지는 알림 중재(alertArbiter)가 정한다.
 
+import type { LocationFix } from '../platform';
 import { NAVIGATION } from '../settings';
 import type { Alert } from './alertArbiter';
 import type { LngLat } from './geo';
@@ -63,7 +64,13 @@ export type GuidanceStep = {
     /** 이 위치를 반영한 상태. 다음 위치에 넘긴다. */
     state: GuidanceState;
     progress: RouteProgress;
+    /** 이 위치 하나로 본 판단. 한 번 튄 위치로도 off_route 가 나온다. */
     judgement: Judgement;
+    /**
+     * 경로 이탈이 확정됐는지(trackOffRoute). 그 전에는 위치가 잠깐 튄 것으로 보고
+     * 경로를 따라가는 것으로 보여 준다.
+     */
+    offRoute: boolean;
     /** 지금 경로를 다시 찾아야 하는지 */
     reroute: boolean;
     /** 알림 중재로 보낼 알림. 읽은 뒤 markAnnounced 로 표시한다. */
@@ -83,7 +90,7 @@ export function guidanceStep(
         reachable(route, state.last, accuracy, nowMs),
     );
     const judgement = judge(progress, accuracy);
-    const { tracker, reroute } = trackOffRoute(
+    const { tracker, reroute, offRoute } = trackOffRoute(
         state.tracker,
         judgement,
         position,
@@ -121,9 +128,25 @@ export function guidanceStep(
         },
         progress,
         judgement,
+        offRoute,
         reroute,
         alerts,
     };
+}
+
+/**
+ * 화면에 그릴 내 위치. 이탈이 확정되기 전에는 경로 선 위(progress.snapped)에 붙여
+ * GPS 가 옆으로 튀어도 흔들리지 않게 한다. 이탈이 확정됐거나 경로를 다시 찾는 중이면 실제 위치를 쓴다.
+ */
+export function shownFix(
+    fix: LocationFix,
+    step: GuidanceStep | null,
+    rerouting: boolean,
+): LocationFix {
+    if (!step || step.offRoute || rerouting) {
+        return fix;
+    }
+    return { ...fix, position: step.progress.snapped };
 }
 
 /** 읽은 알림을 표시한다. 이벤트·도착 알림은 다시 읽지 않는다. */

@@ -71,6 +71,11 @@ const MOVING_OBSTACLES: ReadonlySet<ObstacleKind> = new Set([
     'car',
 ]);
 
+/** 장애물 이름(차, 기둥 등) */
+export function obstacleName(kind: ObstacleKind): string {
+    return OBSTACLE_NAMES[kind][0];
+}
+
 /** 가까운 장애물을 알릴 말. 거리는 재지 않아 방향만 말한다. */
 export function obstacleText({ kind, direction }: VisionObstacle): string {
     const [name, particle] = OBSTACLE_NAMES[kind];

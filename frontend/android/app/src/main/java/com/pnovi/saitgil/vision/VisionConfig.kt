@@ -52,10 +52,36 @@ data class VisionConfig(
     val obstacleNearBottom: Double = 0.7,
     /** 장애물은 이 프레임 수만큼 연달아 보여야 알린다. 한두 프레임 잘못 잡힌 것을 거른다 */
     val obstacleConfirmFrames: Int = 3,
+    /**
+     * 차·이륜차는 이 프레임 수만큼만 보이면 알린다. 빨라서 여러 프레임 연달아 잡히기 전에 지나간다.
+     * 한 프레임 잘못 잡힌 것도 알리지만, 부딪히면 크게 다쳐 놓치지 않는 쪽을 고른다. 실기기에서 맞출 초안 값이다.
+     */
+    val fastObstacleConfirmFrames: Int = 1,
     /** 이 프레임 수보다 오래 안 보인 장애물은 지나간 것으로 보고, 다시 보이면 새로 알린다 */
     val obstacleMaxMissedFrames: Int = 5,
     /** 같은 장애물이 계속 보이면 이 시간(ms)마다 다시 알린다 */
     val obstacleRepeatMs: Long = 10_000,
     /** 신호등 상태는 이 프레임 수만큼 연달아 같아야 바꾼다. 한 프레임 튀는 색을 막는다 */
     val signalConfirmFrames: Int = 3,
+)
+
+/**
+ * 모델(YOLO26n LiteRT) 추론과 후처리 기준값. 학습 노트북에서 내보낸 모델의 입출력에 맞춘다.
+ * 점수 컷·NMS 기준은 Ultralytics 예측 기본값에서 시작해 실기기에서 맞춘다.
+ */
+data class DetectorConfig(
+    /** assets 안 모델 파일 경로. 가중치는 커밋하지 않으므로 앱 빌드 전에 복사한다(ml/README.md) */
+    val modelAsset: String = "models/sidewalk_yolo26n.tflite",
+    /** 모델 입력 한 변(px). 내보낼 때 쓴 imgsz 와 같아야 한다 */
+    val inputSize: Int = 640,
+    /** 이 점수보다 낮은 박스는 버린다 */
+    val minScore: Float = 0.25f,
+    /** 같은 클래스 박스가 이만큼 이상 겹치면(IoU) 점수가 낮은 쪽을 버린다 */
+    val nmsIou: Float = 0.7f,
+    /** 한 프레임에 남길 박스 수 상한 */
+    val maxDetections: Int = 100,
+    /** CPU 추론 스레드 수 */
+    val threads: Int = 4,
+    /** 레터박스 여백 밝기(0~255). 학습 때 Ultralytics 가 채우는 회색과 같다 */
+    val padGray: Int = 114,
 )

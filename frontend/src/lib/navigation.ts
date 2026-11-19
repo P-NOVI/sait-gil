@@ -130,8 +130,19 @@ function offRouteStart(tracker: RerouteTracker, nowMs: number): number {
     return tracker.offRouteSince + pausedMs;
 }
 
+export type OffRouteCheck = {
+    tracker: RerouteTracker;
+    /** 지금 경로를 다시 찾아야 하는지 */
+    reroute: boolean;
+    /**
+     * 이탈이 확정됐는지. 벗어난 채로 offRouteMs 가 지났다. 다시 찾은 곳 근처라
+     * 경로를 또 찾지 않을 때도 true 다.
+     */
+    offRoute: boolean;
+};
+
 /**
- * 새 위치의 판단을 반영하고, 지금 경로를 다시 찾아야 하는지 알려 준다.
+ * 새 위치의 판단을 반영하고, 이탈이 확정됐는지와 지금 경로를 다시 찾아야 하는지 알려 준다.
  * 경로로 돌아오면 처음부터 다시 잰다. 오차가 큰 위치(uncertain)를 받는 동안은 시계를 멈춰,
  * 판단하지 못한 시간은 빼고 그 전까지 벗어나 있던 시간은 남긴다.
  */
@@ -141,22 +152,26 @@ export function trackOffRoute(
     position: LngLat,
     nowMs: number,
     settings: NavigationSettings = NAVIGATION,
-): { tracker: RerouteTracker; reroute: boolean } {
+): OffRouteCheck {
     if (judgement === 'uncertain') {
-        const pausedAt =
-            tracker.offRouteSince === null ? null : (tracker.pausedAt ?? nowMs);
-        return { tracker: { ...tracker, pausedAt }, reroute: false };
+        if (tracker.offRouteSince === null) {
+            return { tracker, reroute: false, offRoute: false };
+        }
+        const pausedAt = tracker.pausedAt ?? nowMs;
+        return {
+            tracker: { ...tracker, pausedAt },
+            reroute: false,
+            offRoute: pausedAt - tracker.offRouteSince >= settings.offRouteMs,
+        };
     }
     const offRouteSince =
         judgement === 'off_route' ? offRouteStart(tracker, nowMs) : null;
+    const offRoute =
+        offRouteSince !== null && nowMs - offRouteSince >= settings.offRouteMs;
     const movedAway =
         !tracker.reroutedAt ||
         distanceM(tracker.reroutedAt, position) >= settings.rerouteMinMoveM;
-    if (
-        offRouteSince !== null &&
-        nowMs - offRouteSince >= settings.offRouteMs &&
-        movedAway
-    ) {
+    if (offRoute && movedAway) {
         return {
             tracker: {
                 offRouteSince: null,
@@ -164,10 +179,12 @@ export function trackOffRoute(
                 reroutedAt: position,
             },
             reroute: true,
+            offRoute,
         };
     }
     return {
         tracker: { ...tracker, offRouteSince, pausedAt: null },
         reroute: false,
+        offRoute,
     };
 }

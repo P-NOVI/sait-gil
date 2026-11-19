@@ -33,7 +33,13 @@ function frame(
     level: VisionLevel,
     freeDirections: ClockDirection[] = [12],
 ): VisionFrame {
-    return { level, nearestPersonM: null, freeDirections, signal: null };
+    return {
+        level,
+        nearestPersonM: null,
+        freeDirections,
+        signal: null,
+        obstacles: [],
+    };
 }
 
 /** frames 를 1초 간격으로 넣고 마지막 결과를 돌려준다. */
@@ -118,6 +124,12 @@ describe('visionReader', () => {
             kind: 'alert',
             alert: { level: 'danger', text: DANGER_TEXT },
         });
+    });
+
+    it('위험은 한 프레임만 보여도 바로 알린다', () => {
+        const cue = feed([frame('clear'), frame('crowded'), frame('danger')]);
+
+        expect(text(cue)).toBe(DANGER_TEXT);
     });
 
     it('위험이 이어지면 가장자리로 비키라고 한다', () => {

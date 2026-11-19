@@ -75,6 +75,7 @@ describe('startVision', () => {
             nearestPersonM: null,
             freeDirections: [11, 12, 1],
             signal: null,
+            obstacles: [],
         });
         expect(plugin.addListener).not.toHaveBeenCalled();
         expect(plugin.start).not.toHaveBeenCalled();
@@ -186,6 +187,7 @@ describe('startVision', () => {
                 nearestPersonM: 2.1,
                 freeDirections: [11],
                 signal: null,
+                obstacles: [],
             },
         ]);
     });
@@ -203,6 +205,7 @@ describe('startVision', () => {
                 nearestPersonM: null,
                 freeDirections: [],
                 signal: null,
+                obstacles: [],
             },
         ]);
     });
@@ -225,12 +228,14 @@ describe('startVision', () => {
                 nearestPersonM: null,
                 freeDirections: [12],
                 signal: null,
+                obstacles: [],
             },
             {
                 level: 'unknown',
                 nearestPersonM: null,
                 freeDirections: [],
                 signal: null,
+                obstacles: [],
             },
         ]);
     });
@@ -248,6 +253,34 @@ describe('startVision', () => {
             'red',
             'other',
             null,
+        ]);
+        stop();
+    });
+
+    it('프레임에 보인 장애물을 넘기고 클래스나 방향이 잘못된 것은 뺀다', async () => {
+        native.value = true;
+        const frames: VisionFrame[] = [];
+        const stop = await startVision((frame) => frames.push(frame));
+
+        emit({
+            level: 'clear',
+            freeDirections: [],
+            obstacles: [
+                { kind: 'car', direction: 12 },
+                { kind: 'person', direction: 11 },
+                { kind: 'pole', direction: 3 },
+                '이상한 값',
+                { kind: 'pole', direction: 1 },
+            ],
+        });
+        emit({ level: 'clear', freeDirections: [], obstacles: 'car' });
+
+        expect(frames.map((frame) => frame.obstacles)).toEqual([
+            [
+                { kind: 'car', direction: 12 },
+                { kind: 'pole', direction: 1 },
+            ],
+            [],
         ]);
         stop();
     });
@@ -315,6 +348,7 @@ describe('startVision', () => {
             nearestPersonM: null,
             freeDirections: [2, 12, 10],
             signal: null,
+            obstacles: [],
         });
         stop();
     });

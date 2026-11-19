@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { LocationFix } from '../platform';
 import { NAVIGATION } from '../settings';
-import type { LngLat } from './geo';
+import { distanceM, type LngLat } from './geo';
 import {
     ARRIVED_KEY,
     type GuidedRoute,
@@ -9,6 +10,7 @@ import {
     markAnnounced,
     NEW_GUIDANCE,
     REROUTE_KEY,
+    shownFix,
 } from './guidance';
 import { eventKey, type RouteEvent } from './routeEvents';
 
@@ -80,13 +82,35 @@ describe('guidanceStep', () => {
         );
 
         expect(first.reroute).toBe(false);
+        expect(first.offRoute).toBe(false);
         expect(first.alerts).toEqual([]);
         expect(soon.reroute).toBe(false);
+        expect(soon.offRoute).toBe(false);
         expect(second.reroute).toBe(true);
+        expect(second.offRoute).toBe(true);
         expect(second.alerts.map((alert) => alert.key)).toEqual([REROUTE_KEY]);
         expect(markAnnounced(second.state, second.alerts[0])).toBe(
             second.state,
         );
+    });
+
+    it('다시 찾은 곳 근처라 또 찾지 않아도 벗어난 채로 정한 시간이 지나면 이탈로 본다', () => {
+        const away = east(north(185), 60);
+        const state = {
+            ...NEW_GUIDANCE,
+            tracker: { ...NEW_GUIDANCE.tracker, reroutedAt: away },
+        };
+        const first = guidanceStep(ROUTE, state, away, 5, 0);
+        const later = guidanceStep(
+            ROUTE,
+            first.state,
+            away,
+            5,
+            NAVIGATION.offRouteMs,
+        );
+
+        expect(later.reroute).toBe(false);
+        expect(later.offRoute).toBe(true);
     });
 
     it('도착은 한 번만 알린다', () => {
@@ -138,6 +162,41 @@ describe('guidanceStep', () => {
 
         expect(same.progress.travelledM).toBeCloseTo(193, 1);
         expect(fresh.progress.travelledM).toBeCloseTo(400, 1);
+    });
+});
+
+describe('shownFix', () => {
+    const fixAt = (position: LngLat): LocationFix => ({
+        position,
+        accuracy: 10,
+    });
+
+    it('이탈이 확정되기 전에는 옆으로 튄 위치를 경로 선 위에 붙인다', () => {
+        const jumped = fixAt(east(north(185), 30));
+        const step = guidanceStep(ROUTE, NEW_GUIDANCE, jumped.position, 10, 0);
+
+        const shown = shownFix(jumped, step, false);
+
+        expect(step.judgement).toBe('off_route');
+        expect(step.offRoute).toBe(false);
+        expect(distanceM(shown.position, north(185))).toBeLessThan(0.5);
+        expect(shown.accuracy).toBe(jumped.accuracy);
+    });
+
+    it('이탈이 확정됐거나 경로를 다시 찾는 중이면 실제 위치를 쓴다', () => {
+        const away = fixAt(east(north(185), 60));
+        const first = guidanceStep(ROUTE, NEW_GUIDANCE, away.position, 10, 0);
+        const confirmed = guidanceStep(
+            ROUTE,
+            first.state,
+            away.position,
+            10,
+            NAVIGATION.offRouteMs,
+        );
+
+        expect(shownFix(away, confirmed, false)).toBe(away);
+        expect(shownFix(away, first, true)).toBe(away);
+        expect(shownFix(away, null, false)).toBe(away);
     });
 });
 

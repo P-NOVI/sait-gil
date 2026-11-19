@@ -19,7 +19,7 @@ import { useVision } from './hooks/useVision';
 import { CROWD_ALERT_FROM } from './lib/accessibility';
 import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
-import { REROUTE_FAILED_KEY } from './lib/guidance';
+import { REROUTE_FAILED_KEY, shownFix } from './lib/guidance';
 import {
     findAddress,
     type Place,
@@ -452,7 +452,8 @@ export default function App() {
     useEffect(() => {
         reportAlert.current = guidance.report;
     }, [guidance.report]);
-    const shownLocation = guidance.fix ?? myLocation;
+    // 서 있는지는 경로 선에 붙이기 전의 GPS 위치(속력)로 본다.
+    const gpsLocation = guidance.fix ?? myLocation;
     const atCrosswalk =
         guided !== null &&
         guidance.step !== null &&
@@ -464,12 +465,20 @@ export default function App() {
         // 횡단보도 근처에서 서 있으면 신호를 기다리는 중이다. 멈춰 있으면 속력(course)이 오지 않는다.
         waiting:
             atCrosswalk &&
-            shownLocation !== null &&
-            (shownLocation.course === undefined ||
-                shownLocation.course.speed < VISION.waitingSpeedMps),
+            gpsLocation !== null &&
+            (gpsLocation.course === undefined ||
+                gpsLocation.course.speed < VISION.waitingSpeedMps),
         report: guidance.report,
         buzz,
     });
+    const rerouting = routes.state.status === 'loading';
+    // 안내 중 지도에 그릴 내 위치. 이탈이 확정되기 전에는 경로 선 위에 붙인다.
+    // 새 객체를 매번 만들면 지도가 마커를 다시 그리므로 위치가 바뀔 때만 만든다.
+    const guidedFix = useMemo(
+        () => guidance.fix && shownFix(guidance.fix, guidance.step, rerouting),
+        [guidance.fix, guidance.step, rerouting],
+    );
+    const shownLocation = guidedFix ?? myLocation;
     const heading = useHeading(shownLocation?.course ?? null);
     // 안내 중 화면 아무 곳이나 두 번 탭하면 말하기 버튼처럼 한 번 듣는다.
     useDoubleTap(navigating && canAskByVoice(), () => void listenCommand());
@@ -574,14 +583,14 @@ export default function App() {
                 preview={preview?.position ?? null}
                 myLocation={shownLocation}
                 heading={heading}
-                follow={guidance.fix?.position ?? null}
+                follow={guidedFix?.position ?? null}
                 onPathClick={guided ? undefined : setChosen}
             />
             {guided ? (
                 <NavigationPanel
                     route={guided}
                     guidance={guidance}
-                    rerouting={routes.state.status === 'loading'}
+                    rerouting={rerouting}
                     routeError={
                         routes.state.status === 'error'
                             ? keptRouteText(routes.state.message)
