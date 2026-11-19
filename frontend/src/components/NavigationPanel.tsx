@@ -36,13 +36,16 @@ function situation(
     if (!step) {
         return error ?? '내 위치를 찾는 중입니다.';
     }
+    if (step.offRoute) {
+        return '경로를 벗어났습니다.';
+    }
     switch (step.judgement) {
         case 'arrived':
             return ARRIVED_TEXT;
-        case 'off_route':
-            return '경로를 벗어났습니다.';
         case 'uncertain':
             return '위치가 정확하지 않아 잠시 기다립니다.';
+        // 이탈이 확정되기 전에는 위치가 잠깐 튄 것으로 보고 경로 안내를 그대로 둔다.
+        case 'off_route':
         case 'on_route':
             return (
                 upcomingText(route.events, step.progress.travelledM) ??
