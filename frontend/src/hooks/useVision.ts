@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useReducer,
+    useRef,
+    useState,
+} from 'react';
 
 import type { Alert } from '../lib/alertArbiter';
 import {
@@ -6,6 +13,7 @@ import {
     visionFailureAlert,
     visionReader,
 } from '../lib/visionAlerts';
+import { INITIAL_VISION_CONTROL, visionControl } from '../lib/visionControl';
 import {
     type CrowdLevel,
     startVision,
@@ -96,13 +104,14 @@ export function useVision({
     buzz,
 }: Options): VisionState {
     const [frame, setFrame] = useState<VisionFrame | null>(null);
-    const [enabled, setEnabledState] = useState(true);
-    const [failure, setFailure] = useState<VisionFailure | null>(null);
-    // 켜지 못한 뒤 다시 켜 달라고 할 때마다 늘려 카메라를 다시 켜 본다.
-    const [attempt, setAttempt] = useState(0);
-    const latest = useRef({ minLevel, report, buzz, failure });
+    // 켜짐·실패·다시 켜 본 횟수. attempt 가 바뀌면 카메라를 다시 켠다.
+    const [{ enabled, failure, attempt }, dispatch] = useReducer(
+        visionControl,
+        INITIAL_VISION_CONTROL,
+    );
+    const latest = useRef({ minLevel, report, buzz });
     useEffect(() => {
-        latest.current = { minLevel, report, buzz, failure };
+        latest.current = { minLevel, report, buzz };
     });
     const running = active && enabled;
 
@@ -125,7 +134,7 @@ export function useVision({
             (approach) =>
                 latest.current.report(approachAlert(approach), 'drop'),
             (reason) => {
-                setFailure(reason);
+                dispatch({ type: 'failed', failure: reason });
                 // 읽던 말이 끝난 뒤에라도 꼭 읽는다.
                 latest.current.report(visionFailureAlert(reason), 'wait');
             },
@@ -134,16 +143,14 @@ export function useVision({
         return () => {
             disconnect();
             setFrame(null);
-            setFailure(null);
+            dispatch({ type: 'stopped' });
         };
     }, [running, attempt]);
 
-    const setEnabled = useCallback((on: boolean) => {
-        if (on && latest.current.failure !== null) {
-            setAttempt((count) => count + 1);
-        }
-        setEnabledState(on);
-    }, []);
+    const setEnabled = useCallback(
+        (on: boolean) => dispatch({ type: 'set', enabled: on }),
+        [],
+    );
 
     return useMemo(
         () => ({ frame, enabled, failure, setEnabled }),

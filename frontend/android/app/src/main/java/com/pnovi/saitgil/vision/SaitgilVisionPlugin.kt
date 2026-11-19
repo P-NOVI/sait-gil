@@ -127,9 +127,10 @@ class SaitgilVisionPlugin : Plugin() {
     companion object {
         const val CAMERA = "camera"
         private const val TAG = "SaitgilVision"
-        private const val CAMERA_DENIED =
-            "카메라 권한이 꺼져 있어 주변 인파를 알릴 수 없습니다. 설정에서 사잇길의 카메라 권한을 허용하세요."
-        private const val CAMERA_FAILED = "카메라를 켜지 못해 주변 인파를 알릴 수 없습니다."
+        // 실패 설명. 로그·디버깅용이며 사용자에게 읽지 않는다.
+        // 사용자에게 읽는 문장은 화면(visionAlerts.ts)이 아래 코드를 보고 정한다.
+        private const val CAMERA_DENIED = "카메라 권한 거부"
+        private const val CAMERA_FAILED = "카메라 시작 실패"
 
         // 화면(vision.ts)이 실패 종류를 가려 안내 문장을 고르는 코드. 화면 쪽 값과 같아야 한다.
         private const val CAMERA_DENIED_CODE = "CAMERA_DENIED"
