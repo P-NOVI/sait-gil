@@ -7,7 +7,7 @@ import {
     useState,
 } from 'react';
 
-import type { Alert } from '../lib/alertArbiter';
+import type { Alert, WhenBusy } from '../lib/alertArbiter';
 import {
     approachAlert,
     obstacleAlert,
@@ -26,8 +26,7 @@ import {
     type VisionFrame,
     type VisionObstacle,
 } from '../platform';
-import { CAUTION_VIBRATION } from '../settings';
-import type { WhenBusy } from './useGuidance';
+import { CAUTION_VIBRATION, VISION } from '../settings';
 
 type Options = {
     /** 안내 중일 때만 카메라 인식을 켠다. */
@@ -157,9 +156,11 @@ export function useVision({
                 // 읽던 말이 끝난 뒤에라도 꼭 읽는다.
                 latest.current.report(visionFailureAlert(reason), 'wait');
             },
-            // 플러그인이 같은 장애물을 한참 뒤에야 다시 보내므로 버리지 않고 기다렸다 읽는다.
+            // 늦게 읽으면 이미 지나쳤거나 부딪힌 뒤라, 읽던 말이 곧 끝날 때만 기다렸다 읽는다.
             (obstacle) =>
-                latest.current.report(obstacleAlert(obstacle), 'wait'),
+                latest.current.report(obstacleAlert(obstacle), {
+                    maxWaitMs: VISION.obstacleMaxWaitMs,
+                }),
         );
 
         return () => {

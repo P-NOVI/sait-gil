@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { type Alert, pickAlert, shouldInterrupt } from './alertArbiter';
+import {
+    type Alert,
+    pickAlert,
+    shouldInterrupt,
+    stillTimely,
+} from './alertArbiter';
 
 const DANGER: Alert = { key: 'person', level: 'danger', text: '앞에 사람' };
 const TURN: Alert = { key: 'turn', level: 'route', text: '오른쪽' };
@@ -51,5 +56,20 @@ describe('shouldInterrupt', () => {
         expect(shouldInterrupt('route', 'danger')).toBe(true);
         expect(shouldInterrupt('route', 'route')).toBe(false);
         expect(shouldInterrupt('danger', 'route')).toBe(false);
+    });
+});
+
+describe('stillTimely', () => {
+    it('기다림에 한도가 있으면 한도 안에서만 읽는다', () => {
+        const brief = { maxWaitMs: 1_500 };
+
+        expect(stillTimely(brief, 0)).toBe(true);
+        expect(stillTimely(brief, 1_500)).toBe(true);
+        expect(stillTimely(brief, 1_501)).toBe(false);
+    });
+
+    it('wait 와 drop 은 기다린 시간과 상관없이 읽는다', () => {
+        expect(stillTimely('wait', 60_000)).toBe(true);
+        expect(stillTimely('drop', 0)).toBe(true);
     });
 });

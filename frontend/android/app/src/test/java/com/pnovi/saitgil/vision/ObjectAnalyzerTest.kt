@@ -82,6 +82,20 @@ class ObjectAnalyzerTest {
     }
 
     @Test
+    fun obstacleCenteredInSideSectorIsReadInTheFrontSectorItReaches() {
+        // 화각이 넓어 양 끝 칸이 10시·2시인 카메라. 가운데는 10시 칸이지만 11시 칸까지 걸친 차
+        val car = ObjectBox(DetectedClass.CAR, 0.0, 0.6, 0.3, 0.3, score = 0.9)
+        fun wideCamera(timeMs: Long) =
+            DetectionFrame(timeMs, emptyList(), widthPx, heightPx, focalLengthPx = 150.0, objects = listOf(car))
+        assertEquals(listOf(10, 11, 12, 1, 2), clockLabels(wideCamera(0), config))
+        val analyzer = ObjectAnalyzer(config)
+
+        val results = (0 until 3).map { analyzer.analyze(wideCamera(it * 100L)) }
+
+        assertEquals(11, results[2].alerts.single().direction)
+    }
+
+    @Test
     fun firstAlertNeedsConsecutiveFrames() {
         val pole = listOf(box(DetectedClass.POLE))
 
@@ -144,7 +158,7 @@ class ObjectAnalyzerTest {
     }
 
     @Test
-    fun redWinsWhenBothSignalsAreSeen() {
+    fun redWinsWhenAheadSignalsAreSameSize() {
         val both = listOf(
             box(DetectedClass.PED_SIGNAL_OTHER, sector = 1, bottom = 0.3),
             box(DetectedClass.PED_SIGNAL_RED, sector = 3, bottom = 0.3),
@@ -153,6 +167,42 @@ class ObjectAnalyzerTest {
         val results = run(ObjectAnalyzer(config), repeat(both, 3))
 
         assertEquals(SignalState.RED, results[2].signal)
+    }
+
+    @Test
+    fun ignoresSignalsInSideSectors() {
+        // 교차로 옆 방향 빨간불은 보지 않고 앞쪽 신호등 색을 쓴다.
+        val signals = listOf(
+            box(DetectedClass.PED_SIGNAL_RED, sector = 0, bottom = 0.3),
+            box(DetectedClass.PED_SIGNAL_RED, sector = 4, bottom = 0.3),
+            box(DetectedClass.PED_SIGNAL_OTHER, sector = 2, bottom = 0.3),
+        )
+
+        val results = run(ObjectAnalyzer(config), repeat(signals, 3))
+
+        assertEquals(SignalState.OTHER, results[2].signal)
+    }
+
+    @Test
+    fun onlySideSignalsMeanNoSignal() {
+        val side = listOf(box(DetectedClass.PED_SIGNAL_RED, sector = 0, bottom = 0.3))
+
+        val results = run(ObjectAnalyzer(config), repeat(side, 3))
+
+        assertTrue(results.all { it.signal == null })
+    }
+
+    @Test
+    fun largestAheadSignalWins() {
+        // 멀리 보이는 작은 빨간불보다 가까운 큰 신호등을 따른다.
+        val signals = listOf(
+            box(DetectedClass.PED_SIGNAL_RED, sector = 1, bottom = 0.3, width = 0.05),
+            box(DetectedClass.PED_SIGNAL_OTHER, sector = 2, bottom = 0.3, width = 0.15),
+        )
+
+        val results = run(ObjectAnalyzer(config), repeat(signals, 3))
+
+        assertEquals(SignalState.OTHER, results[2].signal)
     }
 
     @Test

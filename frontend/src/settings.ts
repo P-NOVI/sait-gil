@@ -88,6 +88,8 @@ export const VISION = {
     sustainedDangerMs: 5_000,
     // 가장자리로 비키라는 말을 다시 하기 전에 기다리는 시간(ms)
     moveAsideCooldownMs: 20_000,
+    // 장애물 알림은 읽던 말이 이보다 길게 이어지면 버린다(ms). 걸으며 지나치기 전에 읽어야 한다. 실기기에서 맞출 초안 값.
+    obstacleMaxWaitMs: 1_500,
 } as const;
 
 export type VisionSettings = typeof VISION;

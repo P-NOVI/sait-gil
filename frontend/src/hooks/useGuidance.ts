@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { Alert, AlertLevel } from '../lib/alertArbiter';
-import { pickAlert } from '../lib/alertArbiter';
+import type { Alert, AlertLevel, WhenBusy } from '../lib/alertArbiter';
+import { pickAlert, stillTimely } from '../lib/alertArbiter';
 import type { LngLat } from '../lib/geo';
 import {
     APPROXIMATE_KEY,
@@ -51,12 +51,10 @@ type Options = {
 export type GuidanceControl = Guidance & {
     /**
      * 안내 중 생긴 알림(오류·인파 등)을 알림 중재의 쿨다운을 거쳐 읽는다.
-     * 읽던 말을 끊지 못하면 wait 는 끝날 때까지 기다리고, drop 은 버린다(곧 다시 알릴 때).
+     * 읽던 말을 끊지 못하면 whenBusy 에 따라 기다리거나 버린다.
      */
     report: (alert: Alert, whenBusy?: WhenBusy) => void;
 };
-
-export type WhenBusy = 'wait' | 'drop';
 
 const IDLE: Guidance = { fix: null, step: null, lastAlert: null, error: null };
 
@@ -101,17 +99,21 @@ export function useGuidance({
 
     const report = useCallback((alert: Alert, whenBusy: WhenBusy = 'wait') => {
         const mine = session.current;
+        const reportedAt = Date.now();
         const tell = () => {
             if (session.current !== mine) {
                 return;
             }
             const current = latest.current;
             const now = Date.now();
-            if (!pickAlert([alert], spokenAt.current, now)) {
+            if (
+                !stillTimely(whenBusy, now - reportedAt) ||
+                !pickAlert([alert], spokenAt.current, now)
+            ) {
                 return;
             }
             if (current.busyFor(alert.level)) {
-                if (whenBusy === 'wait') {
+                if (whenBusy !== 'drop') {
                     void current.whenIdle().then(tell);
                 }
                 return;
