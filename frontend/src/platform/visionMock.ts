@@ -9,10 +9,11 @@ const FRAMES_PER_STEP = 12;
 
 /**
  * 한 단계. approach·obstacle 이 있으면 그 단계에 들어설 때 정면 접근·장애물을 한 번 보낸다.
+ * obstacle 은 그 단계 동안 프레임마다 화면용 장애물(obstacles)로도 보낸다.
  * 신호등은 길안내 중 횡단보도 근처에서만 읽는다.
  */
 type MockStep = {
-    frame: VisionFrame;
+    frame: Omit<VisionFrame, 'obstacles'>;
     approach?: VisionApproach;
     obstacle?: VisionObstacle;
 };
@@ -115,7 +116,11 @@ export function startMockVision(
         const step = SCRIPT[index];
         const entering = count % FRAMES_PER_STEP === 0;
         count += 1;
-        onFrame(step.frame);
+        // 장애물 알림을 보내는 단계는 그 장애물이 화면에도 보이게 한다.
+        onFrame({
+            ...step.frame,
+            obstacles: step.obstacle ? [step.obstacle] : [],
+        });
         if (entering && step.approach) {
             onApproach(step.approach);
         }

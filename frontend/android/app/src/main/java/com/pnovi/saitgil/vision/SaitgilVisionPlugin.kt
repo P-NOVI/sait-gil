@@ -127,7 +127,7 @@ class SaitgilVisionPlugin : Plugin() {
         if (!running) return
         val crowd = analyzer.analyze(frame)
         val objects = objectAnalyzer.analyze(frame)
-        emitCrowdState(crowd.frame.copy(signal = objects.signal))
+        emitCrowdState(crowd.frame.copy(signal = objects.signal, obstacles = objects.seen))
         crowd.alert?.let(::emitAlert)
         objects.alerts.forEach(::emitAlert)
     }

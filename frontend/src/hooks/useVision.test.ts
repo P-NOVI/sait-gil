@@ -16,6 +16,7 @@ const FRAME: VisionFrame = {
     nearestPersonM: 2.1,
     freeDirections: [11],
     signal: null,
+    obstacles: [],
 };
 
 // then/catch 로 이어진 약속이 모두 끝나도록 기다린다.
