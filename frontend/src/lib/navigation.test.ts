@@ -114,7 +114,10 @@ describe('judge', () => {
         ['오차가 크면 판단하지 않는다', progress(100, 200), 80, 'uncertain'],
         ['경로에서 멀면 이탈', progress(30, 200), 10, 'off_route'],
         ['오차 안이면 이탈로 보지 않는다', progress(30, 200), 40, 'on_route'],
-        ['끝이 가까우면 도착', progress(5, 15), 10, 'arrived'],
+        ['끝이 가까우면 도착', progress(5, 7), 3, 'arrived'],
+        ['도착 거리보다 멀면 계속 안내', progress(5, 9), 3, 'on_route'],
+        ['오차가 크면 오차만큼 넓혀 도착', progress(5, 12), 12, 'arrived'],
+        ['넓히는 데는 상한이 있다', progress(5, 20), 30, 'on_route'],
         ['끝이 가까워도 경로에서 멀면 이탈', progress(40, 15), 10, 'off_route'],
     ] as const)('%s', (_, given, accuracy, expected) => {
         expect(judge(given, accuracy)).toBe(expected);
