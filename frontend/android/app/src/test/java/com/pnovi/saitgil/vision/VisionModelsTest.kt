@@ -29,4 +29,29 @@ class VisionModelsTest {
         val wires = CrowdLevel.entries.map { it.wire }
         assertEquals(listOf("clear", "caution", "crowded", "danger", "unknown"), wires)
     }
+
+    @Test
+    fun detectedClassesFollowModelClassOrder() {
+        // 학습 노트북 CLASSES(g8v2) 순서. 모델 출력 번호가 이 순서다.
+        val wires = DetectedClass.entries.map { it.wire }
+        assertEquals(
+            listOf(
+                "person",
+                "two_wheeler",
+                "car",
+                "obstacle",
+                "pole",
+                "stairs",
+                "ped_signal_red",
+                "ped_signal_other",
+            ),
+            wires,
+        )
+    }
+
+    @Test
+    fun alertAndSignalWireValuesMatchWebType() {
+        assertEquals(listOf("danger", "obstacle", "signal", "gate"), AlertKind.entries.map { it.wire })
+        assertEquals(listOf("red", "other"), SignalState.entries.map { it.wire })
+    }
 }

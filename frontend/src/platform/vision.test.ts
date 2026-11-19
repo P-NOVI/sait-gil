@@ -74,6 +74,7 @@ describe('startVision', () => {
             level: 'clear',
             nearestPersonM: null,
             freeDirections: [11, 12, 1],
+            signal: null,
         });
         expect(plugin.addListener).not.toHaveBeenCalled();
         expect(plugin.start).not.toHaveBeenCalled();
@@ -180,7 +181,12 @@ describe('startVision', () => {
         emit({ level: 'crowded', nearestPersonM: 2.1, freeDirections: [11] });
 
         expect(frames).toEqual([
-            { level: 'crowded', nearestPersonM: 2.1, freeDirections: [11] },
+            {
+                level: 'crowded',
+                nearestPersonM: 2.1,
+                freeDirections: [11],
+                signal: null,
+            },
         ]);
     });
 
@@ -192,7 +198,12 @@ describe('startVision', () => {
         emit({ level: 'unknown', nearestPersonM: null, freeDirections: [] });
 
         expect(frames).toEqual([
-            { level: 'unknown', nearestPersonM: null, freeDirections: [] },
+            {
+                level: 'unknown',
+                nearestPersonM: null,
+                freeDirections: [],
+                signal: null,
+            },
         ]);
     });
 
@@ -209,9 +220,71 @@ describe('startVision', () => {
         emit('이상한 값');
 
         expect(frames).toEqual([
-            { level: 'unknown', nearestPersonM: null, freeDirections: [12] },
-            { level: 'unknown', nearestPersonM: null, freeDirections: [] },
+            {
+                level: 'unknown',
+                nearestPersonM: null,
+                freeDirections: [12],
+                signal: null,
+            },
+            {
+                level: 'unknown',
+                nearestPersonM: null,
+                freeDirections: [],
+                signal: null,
+            },
         ]);
+    });
+
+    it('보행 신호등 상태를 받고 모르는 값은 안 보인 것으로 본다', async () => {
+        native.value = true;
+        const frames: VisionFrame[] = [];
+        const stop = await startVision((frame) => frames.push(frame));
+
+        emit({ level: 'clear', freeDirections: [], signal: 'red' });
+        emit({ level: 'clear', freeDirections: [], signal: 'other' });
+        emit({ level: 'clear', freeDirections: [], signal: 'green' });
+
+        expect(frames.map((frame) => frame.signal)).toEqual([
+            'red',
+            'other',
+            null,
+        ]);
+        stop();
+    });
+
+    it('장애물 alert 를 클래스·방향과 함께 넘긴다', async () => {
+        native.value = true;
+        const onApproach = vi.fn();
+        const onObstacle = vi.fn();
+        const stop = await startVision(vi.fn(), onApproach, onObstacle);
+
+        emitAlert({
+            kind: 'obstacle',
+            message: 'pole',
+            objectClass: 'pole',
+            direction: 11,
+        });
+
+        expect(onObstacle).toHaveBeenCalledWith({
+            kind: 'pole',
+            direction: 11,
+        });
+        expect(onApproach).not.toHaveBeenCalled();
+        stop();
+    });
+
+    it('클래스나 방향이 잘못된 장애물 alert 와 멈춘 뒤의 alert 는 버린다', async () => {
+        native.value = true;
+        const onObstacle = vi.fn();
+        const stop = await startVision(vi.fn(), vi.fn(), onObstacle);
+
+        emitAlert({ kind: 'obstacle', objectClass: 'person', direction: 12 });
+        emitAlert({ kind: 'obstacle', objectClass: 'car', direction: 3 });
+        emitAlert({ kind: 'danger', objectClass: 'car', direction: 12 });
+        stop();
+        emitAlert({ kind: 'obstacle', objectClass: 'car', direction: 12 });
+
+        expect(onObstacle).not.toHaveBeenCalled();
     });
 
     it('돌려준 함수를 부르면 멈추고 구독을 끊는다. 두 번 불러도 한 번만 한다', async () => {
@@ -241,6 +314,7 @@ describe('startVision', () => {
             level: 'crowded',
             nearestPersonM: null,
             freeDirections: [2, 12, 10],
+            signal: null,
         });
         stop();
     });

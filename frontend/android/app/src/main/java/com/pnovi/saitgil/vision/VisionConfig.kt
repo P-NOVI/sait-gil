@@ -43,4 +43,17 @@ data class VisionConfig(
     val trackMaxMissedFrames: Int = 5,
     /** 접근 경고에 넣는 빈 방향은 이 프레임 수만큼 연달아 비어 있던 것만 쓴다. 한 프레임 튀는 방향을 막는다 */
     val freeConfirmFrames: Int = 3,
+    /**
+     * 장애물 박스 아래 끝이 영상 위에서 이만큼(0~1) 아래에 있으면 가까운 것으로 본다.
+     * 목걸이 높이(약 1.3m)에서 수평으로 찍으면 0.7 은 약 2.5m 앞 바닥이다. 실기기에서 맞출 초안 값이다.
+     */
+    val obstacleNearBottom: Double = 0.7,
+    /** 장애물은 이 프레임 수만큼 연달아 보여야 알린다. 한두 프레임 잘못 잡힌 것을 거른다 */
+    val obstacleConfirmFrames: Int = 3,
+    /** 이 프레임 수보다 오래 안 보인 장애물은 지나간 것으로 보고, 다시 보이면 새로 알린다 */
+    val obstacleMaxMissedFrames: Int = 5,
+    /** 같은 장애물이 계속 보이면 이 시간(ms)마다 다시 알린다 */
+    val obstacleRepeatMs: Long = 10_000,
+    /** 신호등 상태는 이 프레임 수만큼 연달아 같아야 바꾼다. 한 프레임 튀는 색을 막는다 */
+    val signalConfirmFrames: Int = 3,
 )

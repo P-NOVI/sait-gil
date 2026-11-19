@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { dueEvents, eventKey, type RouteEvent } from './routeEvents';
+import {
+    dueEvents,
+    eventKey,
+    nearCrosswalk,
+    type RouteEvent,
+} from './routeEvents';
 
 function event(
     kind: RouteEvent['kind'],
@@ -59,5 +64,20 @@ describe('eventKey', () => {
         expect(eventKey({ ...TURN, direction: 'left' })).not.toBe(
             eventKey(TURN),
         );
+    });
+});
+
+describe('nearCrosswalk', () => {
+    it('횡단보도 앞 aheadM 안부터 지나고 pastM 까지 근처로 본다', () => {
+        const settings = { aheadM: 30, pastM: 10 };
+
+        expect(nearCrosswalk(EVENTS, 79, settings)).toBe(false);
+        expect(nearCrosswalk(EVENTS, 80, settings)).toBe(true);
+        expect(nearCrosswalk(EVENTS, 120, settings)).toBe(true);
+        expect(nearCrosswalk(EVENTS, 121, settings)).toBe(false);
+    });
+
+    it('횡단보도가 아닌 이벤트는 보지 않는다', () => {
+        expect(nearCrosswalk([TURN, CROWD], 100)).toBe(false);
     });
 });

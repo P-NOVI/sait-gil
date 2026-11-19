@@ -92,6 +92,16 @@ export const VISION = {
 
 export type VisionSettings = typeof VISION;
 
+// 길안내 중 횡단보도 근처에서만 카메라가 본 보행 신호등을 알린다.
+export const CROSSWALK_SIGNAL_M = {
+    // 횡단보도까지 남은 거리가 이 안이면 알린다. 횡단보도 미리 알림(ALERT_DISTANCE_M)보다 넉넉히 둔다.
+    aheadM: 30,
+    // 횡단보도 지점을 이만큼 지나도 알린다. 횡단보도 앞에 서 있어도 GPS 가 앞뒤로 튀어서다.
+    pastM: 10,
+};
+
+export type CrosswalkSignalSettings = typeof CROSSWALK_SIGNAL_M;
+
 // 인파가 주의 단계가 됐을 때 말 없이 주는 짧은 진동(ms)
 export const CAUTION_VIBRATION: readonly number[] = [150];
 

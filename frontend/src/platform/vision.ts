@@ -18,6 +18,10 @@ export type VisionLevel = CrowdLevel | 'unknown';
 const CLOCK_DIRECTIONS = [10, 11, 12, 1, 2] as const;
 export type ClockDirection = (typeof CLOCK_DIRECTIONS)[number];
 
+/** 보행 신호등 상태. other 는 빨간불이 아닌 신호등(초록·깜빡임·꺼짐)이다 */
+const PED_SIGNALS = ['red', 'other'] as const;
+export type PedSignal = (typeof PED_SIGNALS)[number];
+
 /** 한 번 추론한 결과 */
 export type VisionFrame = {
     level: VisionLevel;
@@ -25,6 +29,24 @@ export type VisionFrame = {
     nearestPersonM: number | null;
     /** 지나갈 만한 빈 방향. 넓은 순 */
     freeDirections: ClockDirection[];
+    /** 몇 프레임 연달아 같았던 보행 신호등 상태. 안 보이면 null */
+    signal: PedSignal | null;
+};
+
+/** 걷는 길 앞에 있으면 알리는 장애물. 플러그인(DetectedClass)의 wire 값과 같아야 한다 */
+const OBSTACLE_KINDS = [
+    'two_wheeler',
+    'car',
+    'obstacle',
+    'pole',
+    'stairs',
+] as const;
+export type ObstacleKind = (typeof OBSTACLE_KINDS)[number];
+
+/** 가까운 장애물. 거리는 재지 않고 방향만 안다 */
+export type VisionObstacle = {
+    kind: ObstacleKind;
+    direction: ClockDirection;
 };
 
 /** 정면 사람이 빠르게 가까워짐(앞사람 멈춤, 마주 오는 사람) */
@@ -49,7 +71,7 @@ export function visionFailure(error: unknown): VisionFailure {
     return code === CAMERA_DENIED_CODE ? 'denied' : 'failed';
 }
 
-/** Kotlin 플러그인 SaitgilVision 의 화면 쪽 모양. alert 는 정면 접근(danger)만 받는다. */
+/** Kotlin 플러그인 SaitgilVision 의 화면 쪽 모양. alert 는 정면 접근(danger)과 장애물(obstacle)만 받는다. */
 type SaitgilVisionPlugin = {
     start(): Promise<void>;
     stop(): Promise<void>;
@@ -89,6 +111,7 @@ function toFrame(state: unknown): VisionFrame {
         level,
         nearestPersonM: toDistance(raw.nearestPersonM),
         freeDirections: toDirections(raw.freeDirections),
+        signal: PED_SIGNALS.find((known) => known === raw.signal) ?? null,
     };
 }
 
@@ -100,6 +123,17 @@ export function toApproach(alert: unknown): VisionApproach | null {
         return null;
     }
     return { distanceM, freeDirections: toDirections(raw.freeDirections) };
+}
+
+/** 플러그인 alert 를 장애물로 바꾼다. 장애물이 아니거나 클래스·방향이 잘못됐으면 null */
+export function toObstacle(alert: unknown): VisionObstacle | null {
+    const raw = asRecord(alert);
+    const kind = OBSTACLE_KINDS.find((known) => known === raw.objectClass);
+    const [direction] = toDirections([raw.direction]);
+    if (raw.kind !== 'obstacle' || !kind || direction === undefined) {
+        return null;
+    }
+    return { kind, direction };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -131,16 +165,18 @@ export function visionAvailable(): boolean {
 }
 
 /**
- * 인파 인식을 시작하고 결과가 나올 때마다 onFrame 으로, 정면 접근은 onApproach 로 알린다.
+ * 인파 인식을 시작하고 결과가 나올 때마다 onFrame 으로, 정면 접근은 onApproach 로,
+ * 가까운 장애물은 onObstacle 로 알린다.
  * 돌려준 함수를 부르면 멈춘다. 앱은 네이티브 플러그인, 웹은 명시적으로 켠 mock 을 사용한다.
  */
 export async function startVision(
     onFrame: (frame: VisionFrame) => void,
     onApproach: (approach: VisionApproach) => void = () => undefined,
+    onObstacle: (obstacle: VisionObstacle) => void = () => undefined,
 ): Promise<() => void> {
     if (!isNativeApp()) {
         if (mockEnabled()) {
-            return startMockVision(onFrame, onApproach);
+            return startMockVision(onFrame, onApproach, onObstacle);
         }
         throw new Error(VISION_NOT_READY);
     }
@@ -155,9 +191,17 @@ export async function startVision(
             }
         }),
         vision.addListener('alert', (alert) => {
+            if (stopped) {
+                return;
+            }
             const approach = toApproach(alert);
-            if (!stopped && approach !== null) {
+            if (approach !== null) {
                 onApproach(approach);
+                return;
+            }
+            const obstacle = toObstacle(alert);
+            if (obstacle !== null) {
+                onObstacle(obstacle);
             }
         }),
     ]);

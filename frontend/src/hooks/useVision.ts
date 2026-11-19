@@ -10,6 +10,8 @@ import {
 import type { Alert } from '../lib/alertArbiter';
 import {
     approachAlert,
+    obstacleAlert,
+    signalReader,
     visionFailureAlert,
     visionReader,
 } from '../lib/visionAlerts';
@@ -22,6 +24,7 @@ import {
     type VisionFailure,
     visionFailure,
     type VisionFrame,
+    type VisionObstacle,
 } from '../platform';
 import { CAUTION_VIBRATION } from '../settings';
 import type { WhenBusy } from './useGuidance';
@@ -31,12 +34,15 @@ type Options = {
     active: boolean;
     /** 이 단계부터 인파를 알린다(혼잡 민감도). 위험과 판단 불가는 늘 알린다. */
     minLevel: CrowdLevel;
+    /** 횡단보도 근처인지. 근처에서만 보행 신호등을 알린다. */
+    atCrosswalk: boolean;
     report: (alert: Alert, whenBusy?: WhenBusy) => void;
     buzz: (pattern: readonly number[]) => void;
 };
 
 /**
- * 인파 인식을 켜고 결과마다 onFrame 으로 알린다. 돌려준 함수를 부르면 멈춘다.
+ * 인파 인식을 켜고 결과마다 onFrame 으로, 정면 접근은 onApproach 로, 가까운 장애물은 onObstacle 로 알린다.
+ * 돌려준 함수를 부르면 멈춘다.
  * 시작이 끝나기 전에 멈추면 시작이 끝나는 대로 곧바로 멈추고, 멈춘 뒤에 온 결과는 버린다.
  * 시작에 실패하면 오류를 던지지 않고 onFailure 로 알린다. 이미 멈췄으면 알리지 않는다.
  */
@@ -44,6 +50,7 @@ export function connectVision(
     onFrame: (frame: VisionFrame) => void,
     onApproach: (approach: VisionApproach) => void = () => undefined,
     onFailure: (failure: VisionFailure) => void = () => undefined,
+    onObstacle: (obstacle: VisionObstacle) => void = () => undefined,
 ): () => void {
     let cancelled = false;
     let stop: (() => void) | null = null;
@@ -56,6 +63,11 @@ export function connectVision(
         (approach) => {
             if (!cancelled) {
                 onApproach(approach);
+            }
+        },
+        (obstacle) => {
+            if (!cancelled) {
+                onObstacle(obstacle);
             }
         },
     )
@@ -100,6 +112,7 @@ export type VisionState = {
 export function useVision({
     active,
     minLevel,
+    atCrosswalk,
     report,
     buzz,
 }: Options): VisionState {
@@ -109,9 +122,9 @@ export function useVision({
         visionControl,
         INITIAL_VISION_CONTROL,
     );
-    const latest = useRef({ minLevel, report, buzz });
+    const latest = useRef({ minLevel, atCrosswalk, report, buzz });
     useEffect(() => {
-        latest.current = { minLevel, report, buzz };
+        latest.current = { minLevel, atCrosswalk, report, buzz };
     });
     const running = active && enabled;
 
@@ -120,6 +133,7 @@ export function useVision({
             return;
         }
         const read = visionReader();
+        const readSignal = signalReader();
         const disconnect = connectVision(
             (next) => {
                 const current = latest.current;
@@ -130,6 +144,11 @@ export function useVision({
                 } else if (cue?.kind === 'buzz') {
                     current.buzz(CAUTION_VIBRATION);
                 }
+                // 신호등은 바뀔 때 한 번만 알리므로 읽던 말이 끝난 뒤에라도 읽는다.
+                const signal = readSignal(next.signal, current.atCrosswalk);
+                if (signal) {
+                    current.report(signal, 'wait');
+                }
             },
             (approach) =>
                 latest.current.report(approachAlert(approach), 'drop'),
@@ -138,6 +157,9 @@ export function useVision({
                 // 읽던 말이 끝난 뒤에라도 꼭 읽는다.
                 latest.current.report(visionFailureAlert(reason), 'wait');
             },
+            // 플러그인이 같은 장애물을 한참 뒤에야 다시 보내므로 버리지 않고 기다렸다 읽는다.
+            (obstacle) =>
+                latest.current.report(obstacleAlert(obstacle), 'wait'),
         );
 
         return () => {

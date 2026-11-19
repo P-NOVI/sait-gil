@@ -15,6 +15,12 @@ import {
     DANGER_TEXT,
     freeDirectionText,
     MOVE_ASIDE_TEXT,
+    obstacleAlert,
+    obstacleText,
+    SIGNAL_CHANGED_TEXT,
+    SIGNAL_RED_TEXT,
+    SIGNAL_SEEN_TEXT,
+    signalReader,
     UNKNOWN_TEXT,
     type VisionCue,
     VISION_DENIED_TEXT,
@@ -28,7 +34,7 @@ function frame(
     level: VisionLevel,
     freeDirections: ClockDirection[] = [12],
 ): VisionFrame {
-    return { level, nearestPersonM: null, freeDirections };
+    return { level, nearestPersonM: null, freeDirections, signal: null };
 }
 
 /** frames 를 1초 간격으로 넣고 마지막 결과를 돌려준다. */
@@ -219,5 +225,95 @@ describe('visionFailureAlert', () => {
 
     it('그 밖의 실패는 카메라를 켜지 못했다고 알린다', () => {
         expect(visionFailureAlert('failed').text).toBe(VISION_FAILED_TEXT);
+    });
+});
+
+describe('obstacleAlert', () => {
+    it('기둥·장애물·계단은 방향을 경로 등급으로 알린다', () => {
+        expect(obstacleAlert({ kind: 'pole', direction: 12 })).toEqual({
+            key: `${VISION_KEYS.obstacle}-pole`,
+            level: 'route',
+            text: '12시 방향에 기둥이 있습니다.',
+            cooldownMs: 0,
+        });
+        expect(obstacleText({ kind: 'obstacle', direction: 11 })).toBe(
+            '11시 방향에 장애물이 있습니다.',
+        );
+        expect(obstacleText({ kind: 'stairs', direction: 1 })).toBe(
+            '1시 방향에 계단이 있습니다.',
+        );
+    });
+
+    it('차·이륜차는 조심하라고 위험 등급으로 알린다', () => {
+        expect(obstacleAlert({ kind: 'car', direction: 1 })).toEqual({
+            key: `${VISION_KEYS.obstacle}-car`,
+            level: 'danger',
+            text: '1시 방향에 차가 있습니다. 조심하세요.',
+            cooldownMs: 0,
+        });
+        expect(obstacleText({ kind: 'two_wheeler', direction: 11 })).toBe(
+            '11시 방향에 이륜차가 있습니다. 조심하세요.',
+        );
+    });
+
+    it('클래스마다 따로 쿨다운을 받도록 이름이 다르다', () => {
+        expect(obstacleAlert({ kind: 'pole', direction: 12 }).key).not.toBe(
+            obstacleAlert({ kind: 'stairs', direction: 12 }).key,
+        );
+    });
+});
+
+describe('signalReader', () => {
+    const signalText = (
+        read: ReturnType<typeof signalReader>,
+        signal: Parameters<ReturnType<typeof signalReader>>[0],
+        atCrosswalk = true,
+    ) => read(signal, atCrosswalk)?.text ?? null;
+
+    it('횡단보도 근처가 아니면 알리지 않는다', () => {
+        const read = signalReader();
+
+        expect(read('red', false)).toBeNull();
+        expect(read('other', false)).toBeNull();
+    });
+
+    it('처음 보인 신호등이 빨간불인지 알린다', () => {
+        expect(signalText(signalReader(), 'red')).toBe(SIGNAL_RED_TEXT);
+        expect(signalText(signalReader(), 'other')).toBe(SIGNAL_SEEN_TEXT);
+    });
+
+    it('경로 등급으로 쿨다운 없이 알린다', () => {
+        expect(signalReader()('red', true)).toEqual({
+            key: VISION_KEYS.signal,
+            level: 'route',
+            text: SIGNAL_RED_TEXT,
+            cooldownMs: 0,
+        });
+    });
+
+    it('같은 상태는 다시 읽지 않고 빨간불에서 바뀌면 알린다', () => {
+        const read = signalReader();
+
+        expect(signalText(read, 'red')).toBe(SIGNAL_RED_TEXT);
+        expect(signalText(read, 'red')).toBeNull();
+        expect(signalText(read, 'other')).toBe(SIGNAL_CHANGED_TEXT);
+        expect(signalText(read, 'other')).toBeNull();
+        expect(signalText(read, 'red')).toBe(SIGNAL_RED_TEXT);
+    });
+
+    it('잠깐 안 보였다 같은 상태로 다시 보이면 읽지 않는다', () => {
+        const read = signalReader();
+
+        expect(signalText(read, 'red')).toBe(SIGNAL_RED_TEXT);
+        expect(signalText(read, null)).toBeNull();
+        expect(signalText(read, 'red')).toBeNull();
+    });
+
+    it('횡단보도를 벗어났다 다음 횡단보도에서는 처음부터 알린다', () => {
+        const read = signalReader();
+
+        expect(signalText(read, 'red')).toBe(SIGNAL_RED_TEXT);
+        expect(signalText(read, 'red', false)).toBeNull();
+        expect(signalText(read, 'red')).toBe(SIGNAL_RED_TEXT);
     });
 });

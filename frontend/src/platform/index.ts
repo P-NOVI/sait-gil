@@ -19,6 +19,8 @@ export { readStored, writeStored } from './storage';
 export {
     type ClockDirection,
     type CrowdLevel,
+    type ObstacleKind,
+    type PedSignal,
     startVision,
     VISION_NOT_READY,
     visionAvailable,
@@ -27,4 +29,5 @@ export {
     visionFailure,
     type VisionFrame,
     type VisionLevel,
+    type VisionObstacle,
 } from './vision';
