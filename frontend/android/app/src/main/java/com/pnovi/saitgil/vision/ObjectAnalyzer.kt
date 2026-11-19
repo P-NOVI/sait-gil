@@ -73,6 +73,10 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
     // 초당 1~2장 추론과 흔들리는 목걸이 카메라로는 박스를 이어 같은 물체인지 가리기 어려워 단순하게 둔다.
     private val tracks = mutableMapOf<DetectedClass, ObstacleTrack>()
 
+    // 차·이륜차는 1프레임만 봐도 알려 한 프레임 잘못 잡힌 것도 알린다. 안 보여 track 이 지워져도
+    // 알린 시각을 남겨, 주차된 차가 많은 길에서 잘못 잡힐 때마다 obstacleRepeatMs 안에 또 알리지 않게 한다.
+    private val lastFastAlertMs = mutableMapOf<DetectedClass, Long>()
+
     private var signal: SignalState? = null
     private var signalCandidate: SignalState? = null
     private var signalCandidateFrames = 0
@@ -138,9 +142,11 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val confirmFrames =
             if (kind in FAST_OBSTACLE_CLASSES) config.fastObstacleConfirmFrames else config.obstacleConfirmFrames
         if (track.seenFrames < confirmFrames) return false
-        val alertedAt = track.alertedAtMs
+        // 차·이륜차는 기록이 지워진 뒤에도 마지막으로 알린 시각을 남겨 반복 제한을 이어 간다.
+        val alertedAt = track.alertedAtMs ?: lastFastAlertMs[kind]
         if (alertedAt != null && nowMs - alertedAt < config.obstacleRepeatMs) return false
         track.alertedAtMs = nowMs
+        if (kind in FAST_OBSTACLE_CLASSES) lastFastAlertMs[kind] = nowMs
         return true
     }
 

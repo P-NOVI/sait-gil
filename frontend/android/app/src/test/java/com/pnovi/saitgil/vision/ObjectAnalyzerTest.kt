@@ -159,6 +159,22 @@ class ObjectAnalyzerTest {
     }
 
     @Test
+    fun fastObstacleSeenAgainAfterGapWaitsForRepeatTime() {
+        val car = listOf(box(DetectedClass.CAR))
+        val gap = repeat(emptyList(), config.obstacleMaxMissedFrames + 1)
+        // 기록이 지워진 뒤 다시 잡혀도 반복 시간 안이면 알리지 않고, 지나면 알린다.
+        val afterRepeat = (config.obstacleRepeatMs / 100).toInt()
+
+        val results = run(
+            ObjectAnalyzer(config),
+            listOf(car) + gap + listOf(car) + repeat(emptyList(), afterRepeat) + listOf(car),
+        )
+
+        val alertedAt = results.indices.filter { results[it].alerts.isNotEmpty() }
+        assertEquals(listOf(0, results.lastIndex), alertedAt)
+    }
+
+    @Test
     fun seenListsNearObstaclesAheadEveryFrameWithoutConfirming() {
         val pole = box(DetectedClass.POLE, sector = 1)
         val car = box(DetectedClass.CAR, sector = 3)
