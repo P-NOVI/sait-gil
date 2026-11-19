@@ -8,13 +8,14 @@ const platform = vi.hoisted(() => ({
 
 vi.mock('../platform', () => platform);
 
-import type { VisionApproach, VisionFrame } from '../platform';
+import type { VisionApproach, VisionFrame, VisionObstacle } from '../platform';
 import { connectVision } from './useVision';
 
 const FRAME: VisionFrame = {
     level: 'crowded',
     nearestPersonM: 2.1,
     freeDirections: [11],
+    signal: null,
 };
 
 // then/catch 로 이어진 약속이 모두 끝나도록 기다린다.
@@ -27,13 +28,16 @@ function pendingStart() {
     let fail: (error: Error) => void = () => undefined;
     let onFrame: (frame: VisionFrame) => void = () => undefined;
     let onApproach: (approach: VisionApproach) => void = () => undefined;
+    let onObstacle: (obstacle: VisionObstacle) => void = () => undefined;
     platform.startVision.mockImplementation(
         (
             listener: (frame: VisionFrame) => void,
             approachListener: (approach: VisionApproach) => void,
+            obstacleListener: (obstacle: VisionObstacle) => void,
         ) => {
             onFrame = listener;
             onApproach = approachListener;
+            onObstacle = obstacleListener;
             return new Promise<() => void>((resolve, reject) => {
                 finish = resolve;
                 fail = reject;
@@ -48,6 +52,8 @@ function pendingStart() {
         emit: (frame: VisionFrame) => onFrame(frame),
         /** 플러그인이 정면 접근을 보낸 것처럼 onApproach 를 부른다. */
         approach: (approach: VisionApproach) => onApproach(approach),
+        /** 플러그인이 장애물을 보낸 것처럼 onObstacle 을 부른다. */
+        obstacle: (obstacle: VisionObstacle) => onObstacle(obstacle),
     };
 }
 
@@ -83,6 +89,22 @@ describe('connectVision', () => {
 
         expect(onApproach).toHaveBeenCalledTimes(1);
         expect(onApproach).toHaveBeenCalledWith(APPROACH);
+    });
+
+    it('장애물을 onObstacle 로 넘기고 멈춘 뒤에는 버린다', async () => {
+        const start = pendingStart();
+        const onObstacle = vi.fn();
+        const obstacle: VisionObstacle = { kind: 'pole', direction: 12 };
+
+        const disconnect = connectVision(vi.fn(), vi.fn(), vi.fn(), onObstacle);
+        start.finish();
+        await flush();
+        start.obstacle(obstacle);
+        disconnect();
+        start.obstacle(obstacle);
+
+        expect(onObstacle).toHaveBeenCalledTimes(1);
+        expect(onObstacle).toHaveBeenCalledWith(obstacle);
     });
 
     it('시작이 끝난 뒤 멈추면 인식을 멈춘다', async () => {

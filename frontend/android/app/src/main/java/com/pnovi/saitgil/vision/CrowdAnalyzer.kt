@@ -27,7 +27,10 @@ data class PersonBox(
     val centerX: Double get() = left + width / 2
 }
 
-/** 한 번 추론한 사람 박스들. person 클래스만 거르고 점수 컷을 넘긴 것만 담는다. */
+/**
+ * 한 번 추론한 박스들. 점수 컷을 넘긴 것만 담는다.
+ * boxes 는 person 클래스, objects 는 그 밖의 클래스다.
+ */
 data class DetectionFrame(
     val timeMs: Long,
     val boxes: List<PersonBox>,
@@ -37,6 +40,7 @@ data class DetectionFrame(
     val imageHeightPx: Int,
     /** 카메라 초점거리(px). 모르면 null 이고 기본 화각으로 계산한다 */
     val focalLengthPx: Double? = null,
+    val objects: List<ObjectBox> = emptyList(),
 )
 
 /** 프레임 하나를 판단한 결과. alert 는 정면 접근이 있을 때만 있다. */

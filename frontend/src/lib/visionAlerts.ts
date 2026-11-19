@@ -1,13 +1,16 @@
-// 카메라 인파 인식 결과를 알림으로 바꾼다. 읽을지는 알림 중재(위험 > 경로 > 혼잡)가 정한다.
+// 카메라 인식 결과(인파·장애물·보행 신호등)를 알림으로 바꾼다. 읽을지는 알림 중재(위험 > 경로 > 혼잡)가 정한다.
 // 한 프레임 튀는 것은 넘기도록 같은 결과가 몇 프레임 이어질 때만 믿는다.
 
 import type {
     ClockDirection,
     CrowdLevel,
+    ObstacleKind,
+    PedSignal,
     VisionApproach,
     VisionFailure,
     VisionFrame,
     VisionLevel,
+    VisionObstacle,
 } from '../platform';
 import { VISION, type VisionSettings } from '../settings';
 import type { Alert } from './alertArbiter';
@@ -73,6 +76,78 @@ export function approachAlert(approach: VisionApproach): Alert {
     };
 }
 
+// 장애물 이름과 조사
+const OBSTACLE_NAMES: Readonly<Record<ObstacleKind, [string, string]>> = {
+    two_wheeler: ['이륜차', '가'],
+    car: ['차', '가'],
+    obstacle: ['장애물', '이'],
+    pole: ['기둥', '이'],
+    stairs: ['계단', '이'],
+};
+
+// 움직여 부딪히면 크게 다치는 장애물. 읽던 말을 끊고 알린다.
+const MOVING_OBSTACLES: ReadonlySet<ObstacleKind> = new Set([
+    'two_wheeler',
+    'car',
+]);
+
+/** 가까운 장애물을 알릴 말. 거리는 재지 않아 방향만 말한다. */
+export function obstacleText({ kind, direction }: VisionObstacle): string {
+    const [name, particle] = OBSTACLE_NAMES[kind];
+    const found = `${direction}시 방향에 ${name}${particle} 있습니다.`;
+    return MOVING_OBSTACLES.has(kind) ? `${found} 조심하세요.` : found;
+}
+
+/**
+ * 가까운 장애물 알림. 차·이륜차는 위험 등급, 그 밖은 경로 등급이다.
+ * 다시 알릴 때는 플러그인이 정하므로 쿨다운을 두지 않는다.
+ */
+export function obstacleAlert(obstacle: VisionObstacle): Alert {
+    return {
+        key: `${VISION_KEYS.obstacle}-${obstacle.kind}`,
+        level: MOVING_OBSTACLES.has(obstacle.kind) ? 'danger' : 'route',
+        text: obstacleText(obstacle),
+        cooldownMs: 0,
+    };
+}
+
+export const SIGNAL_RED_TEXT = '빨간불입니다.';
+export const SIGNAL_SEEN_TEXT = '신호등이 있습니다.';
+// 빨간불이 아닌 신호등에는 깜빡임·꺼짐도 섞여 있어 초록불이라고 말하지 않는다.
+export const SIGNAL_CHANGED_TEXT = '빨간불이 바뀌었습니다.';
+
+/** 보행 신호등 상태를 받아 알림을 돌려준다. 알릴 것이 없으면 null */
+export type SignalReader = (
+    signal: PedSignal | null,
+    atCrosswalk: boolean,
+) => Alert | null;
+
+/**
+ * 안내를 시작할 때마다 새로 만든다. 횡단보도 근처에서만 신호등 상태가 바뀔 때 알린다.
+ * 처음 보이면 빨간불인지 알리고, 빨간불에서 바뀌면 바뀌었다고 알린다.
+ * 잠깐 안 보였다 같은 상태로 다시 보이면 또 읽지 않는다. 횡단보도를 벗어나면 기록을 지운다.
+ */
+export function signalReader(): SignalReader {
+    let told: PedSignal | null = null;
+    return (signal, atCrosswalk) => {
+        if (!atCrosswalk) {
+            told = null;
+            return null;
+        }
+        if (signal === null || signal === told) {
+            return null;
+        }
+        const text =
+            signal === 'red'
+                ? SIGNAL_RED_TEXT
+                : told === 'red'
+                  ? SIGNAL_CHANGED_TEXT
+                  : SIGNAL_SEEN_TEXT;
+        told = signal;
+        return { key: VISION_KEYS.signal, level: 'route', text, cooldownMs: 0 };
+    };
+}
+
 export const VISION_KEYS = {
     danger: 'vision-danger',
     approach: 'vision-approach',
@@ -82,6 +157,9 @@ export const VISION_KEYS = {
     blocked: 'vision-blocked',
     unknown: 'vision-unknown',
     failure: 'vision-failure',
+    // 장애물은 클래스마다 따로 둔다(vision-obstacle-pole 등).
+    obstacle: 'vision-obstacle',
+    signal: 'vision-signal',
 } as const;
 
 /** 프레임을 보고 할 일. alert 는 알림 중재로 읽고, buzz 는 말 없이 짧게 진동한다. */

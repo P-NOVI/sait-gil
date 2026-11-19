@@ -34,6 +34,7 @@ import {
     routeTitle,
     sameKindRoute,
 } from './lib/routeApi';
+import { nearCrosswalk } from './lib/routeEvents';
 import { nearForSearch } from './lib/searchNear';
 import {
     cameraAnswer,
@@ -453,6 +454,10 @@ export default function App() {
     const vision = useVision({
         active: navigating,
         minLevel: CROWD_ALERT_FROM[settings.crowdSensitivity],
+        atCrosswalk:
+            guided !== null &&
+            guidance.step !== null &&
+            nearCrosswalk(guided.events, guidance.step.progress.travelledM),
         report: guidance.report,
         buzz,
     });

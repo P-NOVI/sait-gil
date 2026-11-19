@@ -1,7 +1,11 @@
 // 경로 위 이벤트(회전, 횡단보도, 계단, 혼잡 구간 시작 등) 중 지금 미리 알릴 것을 고른다.
 // 이벤트 목록은 백엔드(core/route_events.py)가 고른 경로마다 만들어 준다.
 
-import { ALERT_DISTANCE_M } from '../settings';
+import {
+    ALERT_DISTANCE_M,
+    CROSSWALK_SIGNAL_M,
+    type CrosswalkSignalSettings,
+} from '../settings';
 import type { LngLat } from './geo';
 
 export type EventKind =
@@ -62,4 +66,20 @@ export function dueEvents(
             );
         })
         .sort((a, b) => a.distance_m - b.distance_m);
+}
+
+/** 횡단보도 앞(남은 거리가 aheadM 안)이거나 막 지난(pastM 안) 곳에 있는지. 보행 신호등을 알릴지 정한다. */
+export function nearCrosswalk(
+    events: readonly RouteEvent[],
+    travelledM: number,
+    settings: CrosswalkSignalSettings = CROSSWALK_SIGNAL_M,
+): boolean {
+    return events.some((event) => {
+        const remainingM = event.distance_m - travelledM;
+        return (
+            event.kind === 'crosswalk' &&
+            remainingM <= settings.aheadM &&
+            remainingM >= -settings.pastM
+        );
+    });
 }
