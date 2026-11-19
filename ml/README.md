@@ -4,6 +4,8 @@ YOLO26n 인파 탐지 파인튜닝·LiteRT(`.tflite`) 변환과 LightGBM 혼잡 
 
 - 학습 데이터와 가중치(`*.pt`, 변환 중간 파일 `*.onnx`, 배포용 `*.tflite`)는 커밋하지 않는다.
 - 배포용 `.tflite`는 Android 앱 assets(`frontend/android/app/src/main/assets/models/`)에 넣어 앱과 함께 배포한다. 앱 빌드 전에 이 폴더로 복사한다.
+  - 파일 이름은 `sidewalk_yolo26n.tflite` 다(`DetectorConfig.modelAsset`). 학습 노트북이 내보낸 `weights/best.tflite` 를 이 이름으로 바꿔 넣는다.
+  - 앱은 입력 (1,3,640,640) float32, 출력 (1,12,8400) float32 인 모델만 쓴다(`format="litert"`, `nms` 없이 내보낸 YOLO26n g8v2). 모양이 다르거나 파일이 없으면 인식 없이 카메라만 켠다.
 - 학습 영상은 공개 허용 데이터나 동의받은 촬영분만 쓰고, 얼굴 등은 비식별 처리한다.
 
 ## 유동인구 예측 (`foot_traffic/`)

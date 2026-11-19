@@ -14,7 +14,8 @@ import com.pnovi.saitgil.BuildConfig
 
 /**
  * 카메라 인파 인식을 화면(React)에 이어 주는 플러그인.
- * start 하면 카메라 권한을 받아 후면 카메라를 켜고, 프레임을 분석기로 넘긴다. 모델이 붙기 전에는 결과를 보내지 않는다.
+ * start 하면 카메라 권한을 받아 후면 카메라를 켜고, 프레임을 LiteRT 모델로 추론해 판단기로 넘긴다.
+ * 모델 파일이 없으면 결과를 보내지 않는다.
  * 영상은 이 플러그인 밖으로 나가지 않고, 추론 결과만 이벤트(crowdState, alert)로 화면에 넘긴다.
  */
 @CapacitorPlugin(
@@ -33,6 +34,9 @@ class SaitgilVisionPlugin : Plugin() {
     // 안내마다 새로 만들어 지난 안내의 사람 추적·장애물·신호등 기록을 이어 쓰지 않는다.
     private var analyzer = CrowdAnalyzer()
     private var objectAnalyzer = ObjectAnalyzer()
+
+    // 마지막으로 로그에 남긴 인파 단계·신호등 상태
+    private var loggedState: Pair<CrowdLevel, SignalState?>? = null
 
     @PluginMethod
     fun start(call: PluginCall) {
@@ -68,7 +72,13 @@ class SaitgilVisionPlugin : Plugin() {
             preview = DebugPreview(activity)
         }
         val session = camera
-            ?: CameraSession(context, activity, NO_MODEL, ::emitCrowdState, preview?.view).also { camera = it }
+            ?: CameraSession(
+                context,
+                activity,
+                LazyModelAnalyzer { LiteRtDetector.load(context) },
+                ::onDetections,
+                preview?.view,
+            ).also { camera = it }
         session.start(
             onStarted = {
                 running = true
@@ -111,7 +121,6 @@ class SaitgilVisionPlugin : Plugin() {
     /**
      * 추론 한 번의 박스를 판단해 화면으로 보낸다. 카메라 분석 스레드에서 부른다.
      * 사람은 인파·정면 접근으로, 그 밖의 클래스는 장애물 알림과 신호등 상태로 보낸다.
-     * TODO: 모델이 붙으면 NO_MODEL 대신 LiteRT 추론으로 박스를 뽑아 이 함수로 넘긴다.
      */
     @Synchronized
     private fun onDetections(frame: DetectionFrame) {
@@ -124,11 +133,20 @@ class SaitgilVisionPlugin : Plugin() {
     }
 
     private fun emitCrowdState(frame: CrowdFrame) {
-        if (running) notifyListeners("crowdState", frame.toJs())
+        if (!running) return
+        // 실기기에서 판단이 맞는지 보려고 단계·신호등이 바뀔 때만 로그로 남긴다.
+        val state = frame.level to frame.signal
+        if (state != loggedState) {
+            Log.d(TAG, "인파 단계 ${frame.level.wire}, 신호등 ${frame.signal?.wire ?: "없음"}")
+            loggedState = state
+        }
+        notifyListeners("crowdState", frame.toJs())
     }
 
     private fun emitAlert(alert: VisionAlert) {
-        if (running) notifyListeners("alert", alert.toJs())
+        if (!running) return
+        Log.d(TAG, "알림 ${alert.kind.wire} ${alert.objectClass?.wire ?: ""} ${alert.direction?.let { "${it}시" } ?: ""}")
+        notifyListeners("alert", alert.toJs())
     }
 
     companion object {
