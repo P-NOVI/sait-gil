@@ -1,8 +1,10 @@
 package com.pnovi.saitgil.settings
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.util.Log
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
@@ -21,7 +23,19 @@ class SaitgilSettingsPlugin : Plugin() {
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.fromParts("package", context.packageName, null),
         )
-        activity.startActivity(intent)
+        try {
+            activity.startActivity(intent)
+        } catch (error: ActivityNotFoundException) {
+            // 설정 화면이 없는 기기. 화면은 실패를 받으면 열지 않고 다시 찾는다.
+            Log.w(TAG, "앱 설정 화면을 열지 못했습니다", error)
+            call.reject(SETTINGS_FAILED)
+            return
+        }
         call.resolve()
+    }
+
+    companion object {
+        private const val TAG = "SaitgilSettings"
+        private const val SETTINGS_FAILED = "앱 설정 화면을 열지 못했습니다."
     }
 }

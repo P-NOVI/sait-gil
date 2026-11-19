@@ -10,8 +10,9 @@ export const NO_NEAR_TEXT =
 
 /**
  * 검색 기준 위치를 정한다.
- * 앱을 막 열어 내 위치를 찾는 중이면 알리고 기다린다.
- * 끝내 못 찾으면 위치 없이 찾는다고 알리고 null 을 돌려준다.
+ * 앱을 막 열어 내 위치를 찾는 중이면 알리고 기다린다. 끝내 못 찾으면 위치 없이 찾는다고 알린다.
+ * 이미 못 찾았으면 그 이유를 앞서 읽었으므로 검색할 때마다 또 읽지 않는다.
+ * 위치를 모르면 null 을 돌려준다.
  */
 export async function nearForSearch(
     known: LocationFix | null,
@@ -27,7 +28,7 @@ export async function nearForSearch(
         if (fix) {
             return fix.position;
         }
+        say(NO_NEAR_TEXT);
     }
-    say(NO_NEAR_TEXT);
     return null;
 }

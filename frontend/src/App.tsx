@@ -207,7 +207,7 @@ export default function App() {
                 failure = error;
             };
             let fix = await findMe(remember);
-            if (!fix && isLocationDenied(failure) && canOpenAppSettings()) {
+            if (!fix && isLocationDenied(failure)) {
                 announce(OPEN_SETTINGS_TEXT);
                 await whenIdle();
                 await openAppSettings().catch(() => undefined);
@@ -219,9 +219,17 @@ export default function App() {
         }
     };
 
-    /** 내 위치를 못 찾은 이유를 읽는다. 권한이 꺼져 있고 말로 대답할 수 있으면 켤지 묻는다. */
+    /**
+     * 내 위치를 못 찾은 이유를 읽는다. 앱에서 권한이 꺼져 있고 말로 대답할 수 있으면 켤지 묻는다.
+     * 브라우저는 한 번 거절한 권한을 다시 묻지 않고 설정 화면도 열 수 없어 이유만 읽는다.
+     */
     const tellLocationError = (error: unknown) => {
-        if (isLocationDenied(error) && settings.voice && canListen()) {
+        if (
+            isLocationDenied(error) &&
+            canOpenAppSettings() &&
+            settings.voice &&
+            canListen()
+        ) {
             void askLocationPermission();
         } else {
             announce(errorMessage(error));

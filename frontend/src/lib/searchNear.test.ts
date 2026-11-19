@@ -40,10 +40,10 @@ describe('nearForSearch', () => {
         ]);
     });
 
-    it('이미 못 찾았으면 기다리지 않고 위치 없이 찾는다고 알린다', async () => {
+    it('이미 못 찾았으면 기다리지 않고 말없이 위치 없이 찾는다', async () => {
         const say = vi.fn();
 
         await expect(nearForSearch(null, null, say)).resolves.toBeNull();
-        expect(say.mock.calls).toEqual([[NO_NEAR_TEXT]]);
+        expect(say).not.toHaveBeenCalled();
     });
 });
