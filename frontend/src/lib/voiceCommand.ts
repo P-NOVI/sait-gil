@@ -44,11 +44,12 @@ export const VISION_DEFAULT_ON_TEXT =
 /** 안내 중 말하기 버튼을 누르거나 화면을 두 번 눌렀을 때 묻는 말 */
 export const SPEAK_PROMPT = '말씀하세요.';
 /** 안내 중 명령을 못 알아들었을 때 */
-export const NAVIGATION_COMMAND_HINT = '카메라 꺼, 또는 카메라 켜라고 하세요.';
+export const NAVIGATION_COMMAND_HINT =
+    '못 알아들었습니다. 카메라 꺼, 또는 카메라 켜라고 하세요.';
 
 /** 위치 권한이 꺼져 있을 때 켤지 묻는 말 */
 export const LOCATION_PERMISSION_QUESTION =
-    '위치 권한이 꺼져 있어 내 위치를 찾을 수 없습니다. 위치 권한을 켤까요? 켜 줘, 또는 응이라고 말하세요.';
+    '위치 권한이 꺼져 있어 내 위치를 찾을 수 없습니다. 위치 권한을 켤까요?';
 /** 위치 권한을 켜지 않았을 때. 나중에 켜는 방법을 알려 준다. */
 export const LOCATION_PERMISSION_LATER_TEXT =
     '위치 권한을 켜지 않았습니다. 켜려면 화면 오른쪽 위의 내 위치 찾기 버튼을 누르세요.';
