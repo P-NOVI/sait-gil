@@ -21,6 +21,8 @@ export {
     VISION_NOT_READY,
     visionAvailable,
     type VisionApproach,
+    type VisionFailure,
+    visionFailure,
     type VisionFrame,
     type VisionLevel,
 } from './vision';

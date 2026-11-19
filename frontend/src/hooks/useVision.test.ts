@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const platform = vi.hoisted(() => ({
     startVision: vi.fn(),
     visionAvailable: vi.fn(),
+    visionFailure: vi.fn(),
 }));
 
 vi.mock('../platform', () => platform);
@@ -130,5 +131,31 @@ describe('connectVision', () => {
 
         expect(() => disconnect()).not.toThrow();
         expect(start.stopVision).not.toHaveBeenCalled();
+    });
+
+    it('시작에 실패하면 실패 종류를 onFailure 로 넘긴다', async () => {
+        const start = pendingStart();
+        const error = new Error('권한 거부');
+        platform.visionFailure.mockReturnValue('denied');
+        const onFailure = vi.fn();
+
+        connectVision(vi.fn(), vi.fn(), onFailure);
+        start.fail(error);
+        await flush();
+
+        expect(platform.visionFailure).toHaveBeenCalledWith(error);
+        expect(onFailure).toHaveBeenCalledWith('denied');
+    });
+
+    it('멈춘 뒤에 실패하면 알리지 않는다', async () => {
+        const start = pendingStart();
+        const onFailure = vi.fn();
+
+        const disconnect = connectVision(vi.fn(), vi.fn(), onFailure);
+        disconnect();
+        start.fail(new Error('시작 실패'));
+        await flush();
+
+        expect(onFailure).not.toHaveBeenCalled();
     });
 });

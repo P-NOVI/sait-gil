@@ -5,6 +5,7 @@ import type {
     ClockDirection,
     CrowdLevel,
     VisionApproach,
+    VisionFailure,
     VisionFrame,
     VisionLevel,
 } from '../platform';
@@ -16,9 +17,36 @@ export const MOVE_ASIDE_TEXT = '멈추고 길 가장자리로 비켜 서세요.'
 export const CROWDED_TEXT = '앞이 붐빕니다. 속도를 줄이세요.';
 export const BLOCKED_TEXT = '앞이 붐빕니다. 잠시 멈춰 기다리세요.';
 export const UNKNOWN_TEXT = '주변을 인식할 수 없습니다.';
-export const VISION_ON_TEXT = '카메라 인식을 켰습니다.';
-export const VISION_OFF_TEXT = '카메라 인식을 껐습니다.';
-export const VISION_OFF_STATUS = '카메라 인식이 꺼져 있습니다.';
+export const VISION_ON_TEXT = '카메라를 켰습니다.';
+export const VISION_OFF_TEXT = '카메라를 껐습니다.';
+export const VISION_OFF_STATUS = '카메라가 꺼져 있습니다.';
+export const VISION_DENIED_TEXT =
+    '카메라 권한이 없어 인파를 알릴 수 없습니다. 설정에서 허용하세요.';
+export const VISION_FAILED_TEXT =
+    '카메라가 켜지지 않아 인파를 알릴 수 없습니다.';
+
+const FAILURE_TEXTS: Readonly<Record<VisionFailure, string>> = {
+    denied: VISION_DENIED_TEXT,
+    failed: VISION_FAILED_TEXT,
+};
+
+/** 카메라를 켜지 못했을 때 화면에 보이고 읽을 말 */
+export function visionFailureText(failure: VisionFailure): string {
+    return FAILURE_TEXTS[failure];
+}
+
+/**
+ * 카메라를 켜지 못했다는 알림. 사용자가 인파 인식이 되는 줄 알고 걷지 않게 꼭 알린다.
+ * 경로 등급이라 읽던 길안내가 끝난 뒤 읽는다. 다시 켜다 또 실패하면 쿨다운 없이 다시 알린다.
+ */
+export function visionFailureAlert(failure: VisionFailure): Alert {
+    return {
+        key: VISION_KEYS.failure,
+        level: 'route',
+        text: visionFailureText(failure),
+        cooldownMs: 0,
+    };
+}
 
 export function freeDirectionText(direction: ClockDirection): string {
     return `앞이 붐빕니다. ${direction}시 방향이 비어 있습니다.`;
@@ -32,10 +60,8 @@ export function approachText(approach: VisionApproach): string {
     const meters = Math.max(1, Math.round(approach.distanceM));
     const next = approach.freeDirections[0];
     const advice =
-        next === undefined
-            ? '잠시 멈추세요.'
-            : `${next}시 방향이 비어 있습니다.`;
-    return `${meters}미터 앞에 사람이 가까워집니다. ${advice}`;
+        next === undefined ? '잠시 멈추세요.' : `${next}시 방향이 비었습니다.`;
+    return `${meters}미터 앞 사람과 가까워집니다. ${advice}`;
 }
 
 /** 정면 접근 알림. 위험 등급이라 읽던 길안내를 끊고 읽는다. */
@@ -55,6 +81,7 @@ export const VISION_KEYS = {
     // 모두 막혀 멈추라는 말은 혼잡 알림을 읽은 직후라도 읽도록 따로 둔다.
     blocked: 'vision-blocked',
     unknown: 'vision-unknown',
+    failure: 'vision-failure',
 } as const;
 
 /** 프레임을 보고 할 일. alert 는 알림 중재로 읽고, buzz 는 말 없이 짧게 진동한다. */
