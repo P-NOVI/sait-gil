@@ -20,14 +20,14 @@ npm run cap:android
 ## CORS
 
 앱의 Origin은 `https://localhost`다. API 주소를 바꿔도 앱 Origin은 그대로다.
-백엔드 기본값과 `render.yaml`은 이 Origin과 iOS의 `capacitor://localhost`,
-개발 웹의 `http://localhost:5173`를 허용한다.
+백엔드 기본값(`backend/app/config.py`)은 이 Origin과 iOS의 `capacitor://localhost`만 허용한다.
+웹은 `/api`를 같은 주소로 넘겨 받아 CORS가 필요 없다.
 
 Render 대시보드에 `ALLOWED_ORIGINS`를 별도로 설정했다면 그 값이 기본 목록을
-덮어쓴다. 아래처럼 앱 Origin을 포함한 JSON 목록으로 설정하고 재배포한다.
+덮어쓴다. 따로 둘 이유가 없으면 지우고, 둔다면 아래처럼 앱 Origin을 포함한 JSON 목록으로 설정하고 재배포한다.
 
 ```json
-["http://localhost:5173", "https://localhost", "capacitor://localhost"]
+["https://localhost", "capacitor://localhost"]
 ```
 
 네트워크 오류를 확인할 때는 휴대폰을 USB로 연결하고 Chrome의
