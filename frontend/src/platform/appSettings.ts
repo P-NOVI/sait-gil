@@ -6,6 +6,7 @@ import { registerPlugin } from '@capacitor/core';
 import { isNativeApp } from './runtime';
 
 type SaitgilSettingsPlugin = {
+    /** 설정 화면을 열고, 사용자가 앱으로 돌아와 앱이 다시 보이면(onResume) 끝난다. */
     openAppSettings(): Promise<void>;
 };
 
@@ -19,20 +20,5 @@ export function canOpenAppSettings(): boolean {
 /** 앱 설정 화면(권한)을 열고, 사용자가 앱으로 돌아오면 끝난다. */
 export async function openAppSettings(): Promise<void> {
     plugin ??= registerPlugin<SaitgilSettingsPlugin>('SaitgilSettings');
-    // 설정 화면이 열리면 앱이 가려지고(hidden), 돌아오면 다시 보인다(visible).
-    let onChange: () => void = () => undefined;
-    const back = new Promise<void>((resolve) => {
-        onChange = () => {
-            if (document.visibilityState === 'visible') {
-                resolve();
-            }
-        };
-        document.addEventListener('visibilitychange', onChange);
-    });
-    try {
-        await plugin.openAppSettings();
-        await back;
-    } finally {
-        document.removeEventListener('visibilitychange', onChange);
-    }
+    await plugin.openAppSettings();
 }
