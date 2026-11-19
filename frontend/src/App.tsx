@@ -348,6 +348,11 @@ export default function App() {
             announce(routesAnnouncement(result));
             return;
         }
+        // 경로가 하나뿐이면 고를 것이 없으므로 요약을 읽지 않고 바로 안내를 시작한다.
+        if (result.length === 1) {
+            startGuidance(result[0]);
+            return;
+        }
         offered.current = result;
         const byVoice = settings.voice && canListen();
         let heard = await ask(
