@@ -23,6 +23,10 @@ export const NAVIGATION = {
 
 export type NavigationSettings = typeof NAVIGATION;
 
+// 앱(Android)에서 위치를 받는 간격(ms). 플러그인 기본값은 5~10초라 걸으면 위치가 한 번에 크게 옮겨 간다.
+// 짧을수록 위치가 촘촘히 따라오고 튄 위치를 거르는 범위(LOCATION_FILTER)도 좁아지지만 배터리를 더 쓴다.
+export const LOCATION_WATCH_INTERVAL_MS = 1_000;
+
 // 안내 중 받은 GPS 위치 거르기
 export const LOCATION_FILTER = {
     // 마지막 위치에서 (이 속력 × 지난 시간 + 새 위치 오차)보다 멀면 튄 위치로 보고 버린다(m/s).
