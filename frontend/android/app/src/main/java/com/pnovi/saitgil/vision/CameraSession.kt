@@ -26,7 +26,7 @@ class CameraSession(
     private val context: Context,
     private val owner: LifecycleOwner,
     private val analyzer: FrameAnalyzer,
-    private val onFrame: (CrowdFrame) -> Unit,
+    private val onFrame: (DetectionFrame) -> Unit,
     private val previewView: PreviewView? = null,
 ) {
     private val main = ContextCompat.getMainExecutor(context)
@@ -60,9 +60,10 @@ class CameraSession(
         }
     }
 
-    /** 플러그인이 사라질 때. 카메라를 끄고 분석 스레드를 닫는다. */
+    /** 플러그인이 사라질 때. 카메라를 끄고, 분석 중인 프레임이 끝나면 분석기를 닫은 뒤 분석 스레드를 닫는다. */
     fun close() {
         stop()
+        worker.execute(analyzer::close)
         worker.shutdown()
     }
 
@@ -76,6 +77,8 @@ class CameraSession(
             .setResolutionSelector(resolution)
             // 분석이 밀리면 지난 프레임은 버리고 가장 최근 것만 본다.
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            // 모델 입력(RGB)으로 바로 옮길 수 있게 RGBA 로 받는다.
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .build()
             .also { it.setAnalyzer(worker, ::analyze) }
     }
@@ -89,14 +92,21 @@ class CameraSession(
             if (frames % LOG_EVERY_FRAMES == 0L) {
                 Log.d(TAG, "분석한 프레임 ${frames}장 (${it.width}x${it.height})")
             }
-            analyzer.analyze(it)?.let(onFrame)
+            // 한 프레임 분석이 실패해도 앱을 멈추지 않고 다음 프레임을 본다.
+            val frame = try {
+                analyzer.analyze(it)
+            } catch (error: RuntimeException) {
+                Log.w(TAG, "프레임을 분석하지 못했습니다", error)
+                null
+            }
+            frame?.let(onFrame)
         }
     }
 
     companion object {
         private const val TAG = "SaitgilVision"
 
-        // 사람 박스를 찾기에 충분한 낮은 해상도. 모델 입력 크기가 정해지면 맞춘다.
+        // 모델 입력(640×640)에 맞춘 해상도. 세우면 480×640 이라 줄이지 않고 좌우 여백만 붙여 넣는다.
         private val ANALYSIS_SIZE = Size(640, 480)
 
         // 카메라가 돌고 있는지 로그로 확인할 간격(프레임 수)
