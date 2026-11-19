@@ -8,8 +8,6 @@ import type {
 } from '../platform';
 import { VISION } from '../settings';
 import {
-    approachAlert,
-    approachText,
     BLOCKED_TEXT,
     CROWDED_TEXT,
     DANGER_TEXT,
@@ -23,6 +21,7 @@ import {
     signalReader,
     UNKNOWN_TEXT,
     type VisionCue,
+    WAITING_FRONT_TEXT,
     VISION_DENIED_TEXT,
     VISION_FAILED_TEXT,
     VISION_KEYS,
@@ -88,7 +87,7 @@ describe('visionReader', () => {
         expect(text(cue)).toBe(CROWDED_TEXT);
     });
 
-    it('모든 방향이 막혔으면 멈춰 기다리라고 한다', () => {
+    it('모든 방향이 막혔으면 붐빈다고만 한다', () => {
         const cue = feed(times(VISION.confirmFrames, frame('crowded', [])));
 
         expect(text(cue)).toBe(BLOCKED_TEXT);
@@ -118,7 +117,7 @@ describe('visionReader', () => {
         expect(cue).toMatchObject({ kind: 'alert', alert: { level: 'crowd' } });
     });
 
-    it('위험은 더 적은 프레임으로 바로 멈추라고 한다', () => {
+    it('위험은 더 적은 프레임으로 바로 알린다', () => {
         const cue = feed(times(VISION.dangerFrames, frame('danger')));
 
         expect(cue).toMatchObject({
@@ -143,6 +142,80 @@ describe('visionReader', () => {
         const cue = feed(times(VISION.dangerFrames, frame('danger')), 'danger');
 
         expect(text(cue)).toBe(DANGER_TEXT);
+    });
+
+    it('사람 안내에는 멈추라는 말이 없다', () => {
+        [DANGER_TEXT, MOVE_ASIDE_TEXT, BLOCKED_TEXT, CROWDED_TEXT].forEach(
+            (each) => {
+                expect(each).not.toContain('멈추');
+                expect(each).not.toContain('기다리');
+            },
+        );
+    });
+
+    describe('신호를 기다리며 서 있을 때', () => {
+        /** waiting 으로 frames 를 넣고 알림 문구를 모두 모은다. */
+        function waitingTexts(
+            frames: readonly VisionFrame[],
+            read = visionReader(),
+        ) {
+            return frames.map((each, index) =>
+                text(read(each, index * 1_000, 'caution', true)),
+            );
+        }
+
+        it('앞에 사람이 서면 붐빔·위험 대신 앞에 사람이 있다고 한 번만 알린다', () => {
+            const crowded = times(
+                VISION.confirmFrames + 5,
+                frame('crowded', []),
+            );
+
+            const told = waitingTexts(crowded).filter((each) => each !== null);
+
+            expect(told).toEqual([WAITING_FRONT_TEXT]);
+        });
+
+        it('위험 단계여도 비켜 서라고 하지 않는다', () => {
+            const danger = times(
+                VISION.sustainedDangerMs / 1_000 + VISION.confirmFrames + 2,
+                frame('danger'),
+            );
+
+            const told = waitingTexts(danger).filter((each) => each !== null);
+
+            expect(told).toEqual([WAITING_FRONT_TEXT]);
+        });
+
+        it('사람이 사라졌다 다시 서면 다시 알린다', () => {
+            const frames = [
+                ...times(VISION.confirmFrames, frame('crowded')),
+                ...times(VISION.confirmFrames, frame('clear')),
+                ...times(VISION.confirmFrames, frame('crowded')),
+            ];
+
+            const told = waitingTexts(frames).filter((each) => each !== null);
+
+            expect(told).toEqual([WAITING_FRONT_TEXT, WAITING_FRONT_TEXT]);
+        });
+
+        it('한 프레임 튀는 사람은 알리지 않는다', () => {
+            const frames = [frame('clear'), frame('crowded'), frame('clear')];
+
+            expect(waitingTexts(frames)).toEqual([null, null, null]);
+        });
+
+        it('다시 걷기 시작하면 평소처럼 알린다', () => {
+            const read = visionReader();
+            waitingTexts(times(VISION.confirmFrames, frame('crowded')), read);
+
+            const walking = feed(
+                times(VISION.confirmFrames, frame('crowded')),
+                'caution',
+                read,
+            );
+
+            expect(text(walking)).toBe(freeDirectionText(12));
+        });
     });
 
     it('민감도보다 낮은 단계는 알리지 않는다', () => {
@@ -198,30 +271,6 @@ describe('visionReader', () => {
 
     it('여유는 알리지 않는다', () => {
         expect(feed(times(VISION.confirmFrames, frame('clear')))).toBeNull();
-    });
-});
-
-describe('approachAlert', () => {
-    it('거리와 가장 넓은 빈 방향을 위험 등급으로 알린다', () => {
-        expect(
-            approachAlert({ distanceM: 2.4, freeDirections: [1, 11] }),
-        ).toEqual({
-            key: VISION_KEYS.approach,
-            level: 'danger',
-            text: '2미터 앞 사람과 가까워집니다. 1시 방향이 비었습니다.',
-        });
-    });
-
-    it('빈 방향이 없으면 멈추라고 한다', () => {
-        expect(approachText({ distanceM: 2.6, freeDirections: [] })).toBe(
-            '3미터 앞 사람과 가까워집니다. 잠시 멈추세요.',
-        );
-    });
-
-    it('1미터보다 가까워도 1미터로 읽는다', () => {
-        expect(approachText({ distanceM: 0.3, freeDirections: [12] })).toBe(
-            '1미터 앞 사람과 가까워집니다. 12시 방향이 비었습니다.',
-        );
     });
 });
 

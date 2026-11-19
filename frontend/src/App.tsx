@@ -65,6 +65,7 @@ import {
     requestCompassPermission,
     visionAvailable,
 } from './platform';
+import { VISION } from './settings';
 
 const SHEET_TITLES: Record<Exclude<Tab, 'search'>, string> = {
     route: '길찾기',
@@ -451,13 +452,22 @@ export default function App() {
     useEffect(() => {
         reportAlert.current = guidance.report;
     }, [guidance.report]);
+    // 서 있는지는 경로 선에 붙이기 전의 GPS 위치(속력)로 본다.
+    const gpsLocation = guidance.fix ?? myLocation;
+    const atCrosswalk =
+        guided !== null &&
+        guidance.step !== null &&
+        nearCrosswalk(guided.events, guidance.step.progress.travelledM);
     const vision = useVision({
         active: navigating,
         minLevel: CROWD_ALERT_FROM[settings.crowdSensitivity],
-        atCrosswalk:
-            guided !== null &&
-            guidance.step !== null &&
-            nearCrosswalk(guided.events, guidance.step.progress.travelledM),
+        atCrosswalk,
+        // 횡단보도 근처에서 서 있으면 신호를 기다리는 중이다. 멈춰 있으면 속력(course)이 오지 않는다.
+        waiting:
+            atCrosswalk &&
+            gpsLocation !== null &&
+            (gpsLocation.course === undefined ||
+                gpsLocation.course.speed < VISION.waitingSpeedMps),
         report: guidance.report,
         buzz,
     });
