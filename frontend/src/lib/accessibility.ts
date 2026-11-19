@@ -4,7 +4,7 @@
 import type { CrowdLevel } from '../platform';
 
 export type FontScale = 'normal' | 'large' | 'xlarge';
-export type SpeechSpeed = 'slow' | 'normal' | 'fast' | 'faster';
+export type SpeechSpeed = 'slow' | 'normal' | 'fast' | 'faster' | 'fastest';
 export type VibrationStrength = 'off' | 'weak' | 'strong';
 export type CrowdSensitivity = 'low' | 'normal' | 'high';
 
@@ -36,10 +36,11 @@ export const FONT_SCALES: Readonly<Record<FontScale, number>> = {
 
 /** 음성 속도 배율. 화면낭독기에 익숙한 사용자는 빠르게 듣는 경우가 많다. */
 export const SPEECH_RATES: Readonly<Record<SpeechSpeed, number>> = {
-    slow: 0.8,
-    normal: 1,
-    fast: 1.3,
-    faster: 1.6,
+    slow: 1,
+    normal: 1.5,
+    fast: 2,
+    faster: 2.5,
+    fastest: 3,
 };
 
 /** 진동 시간에 곱하는 배율. 0 이면 진동하지 않는다. */
@@ -67,7 +68,8 @@ export const SPEECH_SPEED_LABELS: Readonly<Record<SpeechSpeed, string>> = {
     slow: '느리게',
     normal: '보통',
     fast: '빠르게',
-    faster: '아주 빠르게',
+    faster: '매우 빠르게',
+    fastest: '최대',
 };
 
 export const VIBRATION_LABELS: Readonly<Record<VibrationStrength, string>> = {
