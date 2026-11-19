@@ -78,7 +78,7 @@ class ObjectAnalyzerTest {
 
         val results = run(ObjectAnalyzer(config), repeat(listOf(wide), 3))
 
-        assertEquals(labels[sectorOf(wide.centerX)], results[2].alerts.single().direction)
+        assertEquals(labels[sectorOf(wide.centerX)], results[0].alerts.single().direction)
     }
 
     @Test
@@ -90,9 +90,9 @@ class ObjectAnalyzerTest {
         assertEquals(listOf(10, 11, 12, 1, 2), clockLabels(wideCamera(0), config))
         val analyzer = ObjectAnalyzer(config)
 
-        val results = (0 until 3).map { analyzer.analyze(wideCamera(it * 100L)) }
+        val result = analyzer.analyze(wideCamera(0))
 
-        assertEquals(11, results[2].alerts.single().direction)
+        assertEquals(11, result.alerts.single().direction)
     }
 
     @Test
@@ -142,8 +142,47 @@ class ObjectAnalyzerTest {
 
         val results = run(ObjectAnalyzer(config), repeat(both, 3))
 
-        val classes = results[2].alerts.map { it.objectClass }.toSet()
-        assertEquals(setOf(DetectedClass.POLE, DetectedClass.CAR), classes)
+        assertEquals(listOf(DetectedClass.CAR), results[0].alerts.map { it.objectClass })
+        assertEquals(listOf(DetectedClass.POLE), results[2].alerts.map { it.objectClass })
+    }
+
+    @Test
+    fun fastObstaclesAlertOnFirstFrame() {
+        // 차·이륜차는 빨리 지나가 여러 프레임 연달아 잡히기 전에 알린다.
+        val results = run(
+            ObjectAnalyzer(config),
+            listOf(listOf(box(DetectedClass.CAR, sector = 1)), emptyList(), listOf(box(DetectedClass.TWO_WHEELER))),
+        )
+
+        assertEquals(listOf(DetectedClass.CAR), results[0].alerts.map { it.objectClass })
+        assertEquals(listOf(DetectedClass.TWO_WHEELER), results[2].alerts.map { it.objectClass })
+    }
+
+    @Test
+    fun seenListsNearObstaclesAheadEveryFrameWithoutConfirming() {
+        val pole = box(DetectedClass.POLE, sector = 1)
+        val car = box(DetectedClass.CAR, sector = 3)
+        val labels = clockLabels(frame(0), config)
+
+        val results = run(ObjectAnalyzer(config), listOf(listOf(pole, car), emptyList(), listOf(pole)))
+
+        assertEquals(
+            listOf(ObstacleSighting(DetectedClass.CAR, labels[3]), ObstacleSighting(DetectedClass.POLE, labels[1])),
+            results[0].seen,
+        )
+        assertTrue(results[0].alerts.none { it.objectClass == DetectedClass.POLE })
+        assertTrue(results[1].seen.isEmpty())
+        assertEquals(listOf(ObstacleSighting(DetectedClass.POLE, labels[1])), results[2].seen)
+    }
+
+    @Test
+    fun seenSkipsFarAndSideObstacles() {
+        val far = box(DetectedClass.OBSTACLE, bottom = 0.5)
+        val side = box(DetectedClass.CAR, sector = 0)
+
+        val result = ObjectAnalyzer(config).analyze(frame(0, far, side))
+
+        assertTrue(result.seen.isEmpty())
     }
 
     @Test

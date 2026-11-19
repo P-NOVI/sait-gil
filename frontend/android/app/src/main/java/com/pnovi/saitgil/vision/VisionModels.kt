@@ -67,6 +67,8 @@ data class CrowdFrame(
     val freeDirections: List<Int>,
     /** 몇 프레임 연달아 같았던 보행 신호등 상태. 신호등이 안 보이면 null */
     val signal: SignalState? = null,
+    /** 이번 프레임에 앞쪽 가까이 보인 장애물. 여러 프레임 확인을 거치지 않는다 */
+    val obstacles: List<ObstacleSighting> = emptyList(),
 ) {
     fun toJs(): JSObject = JSObject().apply {
         put("level", level.wire)
@@ -74,6 +76,12 @@ data class CrowdFrame(
         put("nearestPersonM", nearestPersonM ?: JSONObject.NULL)
         put("freeDirections", JSArray().apply { freeDirections.forEach { put(it) } })
         put("signal", signal?.wire ?: JSONObject.NULL)
+        put(
+            "obstacles",
+            JSArray().apply {
+                obstacles.forEach { put(JSObject().put("kind", it.kind.wire).put("direction", it.direction)) }
+            },
+        )
     }
 }
 

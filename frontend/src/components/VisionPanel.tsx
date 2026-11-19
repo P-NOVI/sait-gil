@@ -8,6 +8,7 @@ import {
 } from '../platform';
 import { distanceLabel } from '../lib/routeApi';
 import {
+    obstacleName,
     UNKNOWN_TEXT,
     VISION_OFF_STATUS,
     visionFailureText,
@@ -45,6 +46,20 @@ function statusText(frame: VisionFrame): string {
     return `${nearest}${free}`;
 }
 
+/** 이 프레임에 보인 장애물. 음성 알림과 달리 여러 프레임 확인 없이 바로 보여 준다. */
+function obstaclesText(frame: VisionFrame): string {
+    if (frame.obstacles.length === 0) {
+        return '';
+    }
+    const seen = frame.obstacles
+        .map(
+            ({ kind, direction }) =>
+                `${clockLabel(direction)} ${obstacleName(kind)}`,
+        )
+        .join(', ');
+    return ` 앞 장애물: ${seen}.`;
+}
+
 function clockLabel(direction: ClockDirection): string {
     return `${direction}시`;
 }
@@ -76,7 +91,7 @@ function panelStatus(
         return visionFailureText(failure);
     }
     return frame
-        ? `${LEVEL_LABELS[frame.level]}. ${statusText(frame)}`
+        ? `${LEVEL_LABELS[frame.level]}. ${statusText(frame)}${obstaclesText(frame)}`
         : VISION_NOT_READY;
 }
 

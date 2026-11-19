@@ -50,6 +50,11 @@ data class VisionConfig(
     val obstacleNearBottom: Double = 0.7,
     /** 장애물은 이 프레임 수만큼 연달아 보여야 알린다. 한두 프레임 잘못 잡힌 것을 거른다 */
     val obstacleConfirmFrames: Int = 3,
+    /**
+     * 차·이륜차는 이 프레임 수만큼만 보이면 알린다. 빨라서 여러 프레임 연달아 잡히기 전에 지나간다.
+     * 한 프레임 잘못 잡힌 것도 알리지만, 부딪히면 크게 다쳐 놓치지 않는 쪽을 고른다. 실기기에서 맞출 초안 값이다.
+     */
+    val fastObstacleConfirmFrames: Int = 1,
     /** 이 프레임 수보다 오래 안 보인 장애물은 지나간 것으로 보고, 다시 보이면 새로 알린다 */
     val obstacleMaxMissedFrames: Int = 5,
     /** 같은 장애물이 계속 보이면 이 시간(ms)마다 다시 알린다 */
