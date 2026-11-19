@@ -6,7 +6,6 @@ import type {
     CrowdLevel,
     ObstacleKind,
     PedSignal,
-    VisionApproach,
     VisionFailure,
     VisionFrame,
     VisionLevel,
@@ -15,10 +14,12 @@ import type {
 import { VISION, type VisionSettings } from '../settings';
 import type { Alert } from './alertArbiter';
 
-export const DANGER_TEXT = '멈추세요. 바로 앞에 사람이 있습니다.';
-export const MOVE_ASIDE_TEXT = '멈추고 길 가장자리로 비켜 서세요.';
+export const DANGER_TEXT = '바로 앞에 사람이 있습니다.';
+export const MOVE_ASIDE_TEXT = '길 가장자리로 비켜 서세요.';
 export const CROWDED_TEXT = '앞이 붐빕니다. 속도를 줄이세요.';
-export const BLOCKED_TEXT = '앞이 붐빕니다. 잠시 멈춰 기다리세요.';
+export const BLOCKED_TEXT = '앞이 붐빕니다.';
+// 신호를 기다리느라 서 있는데 앞에 사람이 서면 붐빔·위험이 아니라 이것만 알린다.
+export const WAITING_FRONT_TEXT = '앞에 사람이 있습니다.';
 export const UNKNOWN_TEXT = '주변을 인식할 수 없습니다.';
 export const VISION_ON_TEXT = '카메라를 켰습니다.';
 export const VISION_OFF_TEXT = '카메라를 껐습니다.';
@@ -53,27 +54,6 @@ export function visionFailureAlert(failure: VisionFailure): Alert {
 
 export function freeDirectionText(direction: ClockDirection): string {
     return `앞이 붐빕니다. ${direction}시 방향이 비어 있습니다.`;
-}
-
-/**
- * 정면 사람이 빠르게 가까워질 때 읽을 말. 앞사람이 멈췄는지 마주 오는지는 카메라로 가릴 수 없어 거리로 말한다.
- * 가까운 거리라 길안내처럼 10미터 단위로 반올림하지 않고 1미터 단위로 읽는다.
- */
-export function approachText(approach: VisionApproach): string {
-    const meters = Math.max(1, Math.round(approach.distanceM));
-    const next = approach.freeDirections[0];
-    const advice =
-        next === undefined ? '잠시 멈추세요.' : `${next}시 방향이 비었습니다.`;
-    return `${meters}미터 앞 사람과 가까워집니다. ${advice}`;
-}
-
-/** 정면 접근 알림. 위험 등급이라 읽던 길안내를 끊고 읽는다. */
-export function approachAlert(approach: VisionApproach): Alert {
-    return {
-        key: VISION_KEYS.approach,
-        level: 'danger',
-        text: approachText(approach),
-    };
 }
 
 // 장애물 이름과 조사
@@ -150,11 +130,11 @@ export function signalReader(): SignalReader {
 
 export const VISION_KEYS = {
     danger: 'vision-danger',
-    approach: 'vision-approach',
     moveAside: 'vision-move-aside',
     crowded: 'vision-crowded',
-    // 모두 막혀 멈추라는 말은 혼잡 알림을 읽은 직후라도 읽도록 따로 둔다.
+    // 모두 막혔다는 말은 혼잡 알림을 읽은 직후라도 읽도록 따로 둔다.
     blocked: 'vision-blocked',
+    waitingFront: 'vision-waiting-front',
     unknown: 'vision-unknown',
     failure: 'vision-failure',
     // 장애물은 클래스마다 따로 둔다(vision-obstacle-pole 등).
@@ -165,11 +145,15 @@ export const VISION_KEYS = {
 /** 프레임을 보고 할 일. alert 는 알림 중재로 읽고, buzz 는 말 없이 짧게 진동한다. */
 export type VisionCue = { kind: 'alert'; alert: Alert } | { kind: 'buzz' };
 
-/** 프레임 하나를 받아 할 일을 돌려준다. minLevel 보다 낮은 단계는 알리지 않는다. */
+/**
+ * 프레임 하나를 받아 할 일을 돌려준다. minLevel 보다 낮은 단계는 알리지 않는다.
+ * waiting 은 신호를 기다리느라 서 있는지다. 서 있을 때 앞에 사람이 서면 붐빔·위험 대신 한 번만 알린다.
+ */
 export type VisionReader = (
     frame: VisionFrame,
     nowMs: number,
     minLevel: CrowdLevel,
+    waiting?: boolean,
 ) => VisionCue | null;
 
 const ORDER: readonly CrowdLevel[] = ['clear', 'caution', 'crowded', 'danger'];
@@ -207,9 +191,44 @@ export function visionReader(settings: VisionSettings = VISION): VisionReader {
     // 마지막으로 이어진 단계. 프레임이 섞여도 지우지 않아 한 번 튄 뒤 다시 진동하지 않는다.
     let lastSteady: VisionLevel | null = null;
     let dangerSince: number | null = null;
+    // 서 있는 동안 앞에 사람이 있다고 이미 알렸는지. 사람이 사라지거나 다시 걸으면 지운다.
+    let toldWaiting = false;
 
-    return (frame, nowMs, minLevel) => {
+    // 서 있는 동안에는 앞에 사람이 서도 한 번만 알린다. 이어진 프레임이 모두 사람이 있는 단계여야 믿는다.
+    const waitingCue = (
+        frames: readonly VisionFrame[],
+        minLevel: CrowdLevel,
+    ): VisionCue | null => {
+        if (frames.length < settings.confirmFrames) {
+            return null;
+        }
+        if (frames.every((each) => each.level === 'clear')) {
+            toldWaiting = false;
+            return null;
+        }
+        const present = frames.every(
+            (each) => each.level !== 'unknown' && atLeast(each.level, minLevel),
+        );
+        if (!present || toldWaiting) {
+            return null;
+        }
+        toldWaiting = true;
+        return alertCue({
+            key: VISION_KEYS.waitingFront,
+            level: 'crowd',
+            text: WAITING_FRONT_TEXT,
+            cooldownMs: 0,
+        });
+    };
+
+    return (frame, nowMs, minLevel, waiting = false) => {
         recent = [...recent, frame].slice(-settings.confirmFrames);
+
+        if (waiting) {
+            dangerSince = null;
+            return waitingCue(recent, minLevel);
+        }
+        toldWaiting = false;
 
         const dangerFrames = recent.slice(-settings.dangerFrames);
         const danger =

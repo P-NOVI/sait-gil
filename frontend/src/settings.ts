@@ -102,6 +102,8 @@ export const VISION = {
     moveAsideCooldownMs: 20_000,
     // 장애물 알림은 읽던 말이 이보다 길게 이어지면 버린다(ms). 걸으며 지나치기 전에 읽어야 한다. 실기기에서 맞출 초안 값.
     obstacleMaxWaitMs: 1_500,
+    // 횡단보도 근처에서 GPS 속력이 이보다 느리면 신호를 기다리며 서 있는 것으로 본다(m/s). 멈춰 있으면 속력이 아예 안 올 수도 있다.
+    waitingSpeedMps: 0.5,
 } as const;
 
 export type VisionSettings = typeof VISION;

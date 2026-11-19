@@ -9,9 +9,9 @@ import {
 
 import type { Alert, WhenBusy } from '../lib/alertArbiter';
 import {
-    approachAlert,
     obstacleAlert,
     signalReader,
+    VISION_KEYS,
     visionFailureAlert,
     visionReader,
 } from '../lib/visionAlerts';
@@ -35,6 +35,8 @@ type Options = {
     minLevel: CrowdLevel;
     /** 횡단보도 근처인지. 근처에서만 보행 신호등을 알린다. */
     atCrosswalk: boolean;
+    /** 신호를 기다리느라 서 있는지. 서 있을 때 앞에 사람이 서도 "앞에 사람이 있습니다"만 한 번 알린다. */
+    waiting: boolean;
     report: (alert: Alert, whenBusy?: WhenBusy) => void;
     buzz: (pattern: readonly number[]) => void;
 };
@@ -112,6 +114,7 @@ export function useVision({
     active,
     minLevel,
     atCrosswalk,
+    waiting,
     report,
     buzz,
 }: Options): VisionState {
@@ -121,9 +124,9 @@ export function useVision({
         visionControl,
         INITIAL_VISION_CONTROL,
     );
-    const latest = useRef({ minLevel, atCrosswalk, report, buzz });
+    const latest = useRef({ minLevel, atCrosswalk, waiting, report, buzz });
     useEffect(() => {
-        latest.current = { minLevel, atCrosswalk, report, buzz };
+        latest.current = { minLevel, atCrosswalk, waiting, report, buzz };
     });
     const running = active && enabled;
 
@@ -137,9 +140,20 @@ export function useVision({
             (next) => {
                 const current = latest.current;
                 setFrame(next);
-                const cue = read(next, Date.now(), current.minLevel);
+                const cue = read(
+                    next,
+                    Date.now(),
+                    current.minLevel,
+                    current.waiting,
+                );
                 if (cue?.kind === 'alert') {
-                    current.report(cue.alert, 'drop');
+                    // 서 있을 때 앞에 사람이 있다는 말은 한 번만 하므로 버리지 않고 기다렸다 읽는다.
+                    current.report(
+                        cue.alert,
+                        cue.alert.key === VISION_KEYS.waitingFront
+                            ? 'wait'
+                            : 'drop',
+                    );
                 } else if (cue?.kind === 'buzz') {
                     current.buzz(CAUTION_VIBRATION);
                 }
@@ -149,8 +163,8 @@ export function useVision({
                     current.report(signal, 'wait');
                 }
             },
-            (approach) =>
-                latest.current.report(approachAlert(approach), 'drop'),
+            // 정면으로 다가오는 사람은 알아서 피하므로 알리지 않는다.
+            undefined,
             (reason) => {
                 dispatch({ type: 'failed', failure: reason });
                 // 읽던 말이 끝난 뒤에라도 꼭 읽는다.

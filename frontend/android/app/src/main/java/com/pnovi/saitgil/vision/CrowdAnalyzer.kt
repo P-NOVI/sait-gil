@@ -176,8 +176,10 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
         }
 
         val blocked = mutableSetOf<Int>()
+        var nearPeople = 0
         distances.forEach { (track, distance) ->
             if (distance != null && distance <= config.blockedDistanceM) {
+                nearPeople += 1
                 (sectorOf(track.box.left)..sectorOf(track.box.right)).forEach { blocked += it }
             }
         }
@@ -198,7 +200,8 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val level = when {
             frontClipped -> CrowdLevel.DANGER
             nearestFront != null && nearestFront <= config.dangerDistanceM -> CrowdLevel.DANGER
-            blocked.size >= config.crowdedBlockedSectors -> CrowdLevel.CROWDED
+            blocked.size >= config.crowdedBlockedSectors &&
+                nearPeople >= config.crowdedPeople -> CrowdLevel.CROWDED
             blocked.size >= config.cautionBlockedSectors -> CrowdLevel.CAUTION
             else -> CrowdLevel.CLEAR
         }

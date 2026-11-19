@@ -20,6 +20,8 @@ data class VisionConfig(
     val cautionBlockedSectors: Int = 1,
     /** 막힌 칸이 이만큼 이상이면 혼잡 */
     val crowdedBlockedSectors: Int = 3,
+    /** 막힌 칸 조건과 함께, blockedDistanceM 안의 사람이 이만큼 이상이어야 혼잡. 큰 사람 한 명이 여러 칸에 걸쳐도 혼잡으로 보지 않는다 */
+    val crowdedPeople: Int = 5,
     /** 정면 사람이 이 거리(m) 안이면 위험 */
     val dangerDistanceM: Double = 1.0,
     /**

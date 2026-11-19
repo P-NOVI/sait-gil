@@ -145,12 +145,32 @@ class CrowdAnalyzerTest {
         assertEquals(CrowdLevel.CAUTION, caution.frame.level)
 
         val crowded = CrowdAnalyzer(config).analyze(
-            frame(0, person(0, 3.0), person(1, 3.0), person(3, 3.0)),
+            frame(
+                0,
+                person(0, 3.0),
+                person(0, 3.5),
+                person(1, 3.0),
+                person(1, 3.5),
+                person(3, 3.0),
+            ),
         )
         assertEquals(CrowdLevel.CROWDED, crowded.frame.level)
         // 왼쪽 두 칸(11시)과 오른쪽 안쪽 칸(1시)이 막혀 비어 있는 방향은 12시뿐이다.
         assertEquals(listOf(12), crowded.frame.freeDirections)
         assertEquals(3.0, crowded.frame.nearestPersonM!!, 1e-6)
+    }
+
+    @Test
+    fun blockedSectorsWithoutEnoughPeopleAreNotCrowded() {
+        // 세 칸이 막혀도 사람이 crowdedPeople 명 미만이면 혼잡이 아니라 주의다.
+        val few = CrowdAnalyzer(config).analyze(
+            frame(0, person(0, 3.0), person(1, 3.0), person(3, 3.0)),
+        )
+        assertEquals(CrowdLevel.CAUTION, few.frame.level)
+
+        // 한 사람이 여러 칸에 걸쳐도 혼잡이 아니다.
+        val wide = CrowdAnalyzer(config).analyze(frame(0, person(2, 3.0, width = 0.6)))
+        assertEquals(CrowdLevel.CAUTION, wide.frame.level)
     }
 
     @Test

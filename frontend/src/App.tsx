@@ -65,6 +65,7 @@ import {
     requestCompassPermission,
     visionAvailable,
 } from './platform';
+import { VISION } from './settings';
 
 const SHEET_TITLES: Record<Exclude<Tab, 'search'>, string> = {
     route: '길찾기',
@@ -451,17 +452,24 @@ export default function App() {
     useEffect(() => {
         reportAlert.current = guidance.report;
     }, [guidance.report]);
+    const shownLocation = guidance.fix ?? myLocation;
+    const atCrosswalk =
+        guided !== null &&
+        guidance.step !== null &&
+        nearCrosswalk(guided.events, guidance.step.progress.travelledM);
     const vision = useVision({
         active: navigating,
         minLevel: CROWD_ALERT_FROM[settings.crowdSensitivity],
-        atCrosswalk:
-            guided !== null &&
-            guidance.step !== null &&
-            nearCrosswalk(guided.events, guidance.step.progress.travelledM),
+        atCrosswalk,
+        // 횡단보도 근처에서 서 있으면 신호를 기다리는 중이다. 멈춰 있으면 속력(course)이 오지 않는다.
+        waiting:
+            atCrosswalk &&
+            shownLocation !== null &&
+            (shownLocation.course === undefined ||
+                shownLocation.course.speed < VISION.waitingSpeedMps),
         report: guidance.report,
         buzz,
     });
-    const shownLocation = guidance.fix ?? myLocation;
     const heading = useHeading(shownLocation?.course ?? null);
     // 안내 중 화면 아무 곳이나 두 번 탭하면 말하기 버튼처럼 한 번 듣는다.
     useDoubleTap(navigating && canAskByVoice(), () => void listenCommand());
