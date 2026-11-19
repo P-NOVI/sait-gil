@@ -34,11 +34,17 @@ import {
     routeTitle,
     sameKindRoute,
 } from './lib/routeApi';
+import { nearForSearch } from './lib/searchNear';
 import {
     cameraAnswer,
+    LOCATION_FOUND_TEXT,
+    LOCATION_PERMISSION_LATER_TEXT,
+    LOCATION_PERMISSION_QUESTION,
     NAVIGATION_COMMAND_HINT,
     navigationCommand,
     NOT_HEARD_TEXT,
+    OPEN_SETTINGS_TEXT,
+    permissionAnswer,
     routeAnswer,
     routeAnswerHint,
     routeQuestion,
@@ -49,9 +55,12 @@ import {
 import { VISION_OFF_TEXT, VISION_ON_TEXT } from './lib/visionAlerts';
 import {
     canListen,
+    canOpenAppSettings,
     getCurrentPosition,
+    isLocationDenied,
     listenOnce,
     type LocationFix,
+    openAppSettings,
     requestCompassPermission,
     visionAvailable,
 } from './platform';
@@ -135,9 +144,12 @@ export default function App() {
     });
     const whereAmI = useRequest(requestAddress, announce);
 
+    // 지금 찾고 있는 내 위치. 검색이 위치보다 먼저 오면 이걸 기다린다.
+    const pendingFix = useRef<Promise<LocationFix | null> | null>(null);
+
     const settle = useCallback(
-        (pending: Promise<LocationFix>, onError?: (message: string) => void) =>
-            pending
+        (pending: Promise<LocationFix>, onError?: (error: unknown) => void) => {
+            const result: Promise<LocationFix | null> = pending
                 .then(
                     (fix) => {
                         setMyLocation(fix);
@@ -145,27 +157,98 @@ export default function App() {
                         return fix;
                     },
                     (error: unknown) => {
-                        const message = errorMessage(error);
-                        setLocationError(message);
-                        onError?.(message);
+                        setLocationError(errorMessage(error));
+                        onError?.(error);
                         return null;
                     },
                 )
-                .finally(() => setLocating(false)),
+                .finally(() => {
+                    setLocating(false);
+                    if (pendingFix.current === result) {
+                        pendingFix.current = null;
+                    }
+                });
+            pendingFix.current = result;
+            return result;
+        },
         [],
     );
 
+    /** 내 위치를 찾는다. 못 찾으면 onError 로 이유를 넘긴다. */
+    const findMe = (onError?: (error: unknown) => void) => {
+        setLocating(true);
+        return settle(getCurrentPosition(), onError);
+    };
+
+    // 위치 권한을 묻는 중이면 다시 묻지 않는다. 앱을 열 때와 버튼을 누를 때가 겹쳐도 한 번만 묻는다.
+    const askingPermission = useRef(false);
+
+    /**
+     * 위치 권한이 꺼져 있다고 읽고 켤지 묻는다. "켜 줘"·"응"이라고 하면 권한 창을 다시 띄우고,
+     * Android 가 더 묻지 않으면 앱 설정 화면을 연 뒤 돌아오면 다시 찾는다.
+     */
+    const askLocationPermission = async () => {
+        if (askingPermission.current) {
+            return;
+        }
+        askingPermission.current = true;
+        try {
+            const heard = await ask(LOCATION_PERMISSION_QUESTION);
+            const answer =
+                heard.status === 'heard' ? permissionAnswer(heard.text) : null;
+            if (answer !== 'on') {
+                if (listened(heard)) {
+                    announce(LOCATION_PERMISSION_LATER_TEXT);
+                }
+                return;
+            }
+            let failure: unknown = null;
+            const remember = (error: unknown) => {
+                failure = error;
+            };
+            let fix = await findMe(remember);
+            if (!fix && isLocationDenied(failure) && canOpenAppSettings()) {
+                announce(OPEN_SETTINGS_TEXT);
+                await whenIdle();
+                await openAppSettings().catch(() => undefined);
+                fix = await findMe(remember);
+            }
+            announce(fix ? LOCATION_FOUND_TEXT : errorMessage(failure));
+        } finally {
+            askingPermission.current = false;
+        }
+    };
+
+    /** 내 위치를 못 찾은 이유를 읽는다. 권한이 꺼져 있고 말로 대답할 수 있으면 켤지 묻는다. */
+    const tellLocationError = (error: unknown) => {
+        if (isLocationDenied(error) && settings.voice && canListen()) {
+            void askLocationPermission();
+        } else {
+            announce(errorMessage(error));
+        }
+    };
+    // 앱을 열 때 찾은 결과는 처음 한 번만 받으므로 최신 함수를 ref 로 넘긴다.
+    const tellLocationErrorNow = useRef(tellLocationError);
     useEffect(() => {
-        void settle(getCurrentPosition());
+        tellLocationErrorNow.current = tellLocationError;
+    });
+
+    useEffect(() => {
+        // 음성 안내를 껐으면 announce 는 읽지 않고, 화면낭독기가 화면의 오류를 읽는다.
+        void settle(getCurrentPosition(), (error) =>
+            tellLocationErrorNow.current(error),
+        );
     }, [settle]);
 
     const locate = () => {
         // iOS 는 버튼을 누른 순간에만 나침반 권한을 물을 수 있다.
         void requestCompassPermission();
-        setLocating(true);
-        // 앱을 열 때 실패는 화면에만 띄우고, 찾아 달라고 했을 때만 읽는다.
-        return settle(getCurrentPosition(), announce);
+        return findMe(tellLocationError);
     };
+
+    /** 목적지 검색 기준 위치. 앱을 막 열어 내 위치를 찾는 중이면 알리고 기다린다. */
+    const findNear = () =>
+        nearForSearch(myLocation, pendingFix.current, (text) => announce(text));
 
     const found = useMemo(
         () =>
@@ -495,9 +578,8 @@ export default function App() {
                         <TopSearch
                             inputRef={searchInput}
                             results={places.state}
-                            onSearch={(query) =>
-                                places.run(query, myLocation?.position ?? null)
-                            }
+                            onFindNear={findNear}
+                            onSearch={(query, near) => places.run(query, near)}
                             onListen={listenOnce}
                             onPick={pickPlace}
                             onPreview={setPreview}
@@ -510,6 +592,7 @@ export default function App() {
                         locating={locating}
                         error={tab === 'route' ? null : locationError}
                         onLocate={() => void locate()}
+                        voice={settings.voice}
                     />
                     {tab !== 'search' && (
                         <BottomSheet

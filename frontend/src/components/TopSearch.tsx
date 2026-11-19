@@ -9,6 +9,7 @@ import {
 
 import { type Answer, listened } from '../hooks/useAnnouncer';
 import type { RequestState } from '../hooks/useRequest';
+import type { LngLat } from '../lib/geo';
 import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
 import {
@@ -29,8 +30,10 @@ import {
 type TopSearchProps = {
     inputRef: RefObject<HTMLInputElement | null>;
     results: RequestState<Place[]>;
-    /** 검색 결과를 돌려준다. 실패하면 null */
-    onSearch: (query: string) => Promise<Place[] | null>;
+    /** 가까운 곳부터 찾을 기준 위치. 검색마다 한 번 묻는다. 모르면 null */
+    onFindNear: () => Promise<LngLat | null>;
+    /** near 가까운 곳부터 검색한 결과를 돌려준다. 실패하면 null */
+    onSearch: (query: string, near: LngLat | null) => Promise<Place[] | null>;
     /** 말로 목적지를 넣는다. 알아들은 말을 돌려주고, 못 알아들으면 null */
     onListen: () => Promise<string | null>;
     onPick: (place: Place) => void;
@@ -55,6 +58,7 @@ type Confirming = { places: Place[]; index: number };
 export default function TopSearch({
     inputRef,
     results,
+    onFindNear,
     onSearch,
     onListen,
     onPick,
@@ -161,8 +165,9 @@ export default function TopSearch({
         event.preventDefault();
         setConfirming(null);
         setNotice(null);
-        if (query.trim()) {
-            void onSearch(query.trim());
+        const typed = query.trim();
+        if (typed) {
+            void onFindNear().then((near) => onSearch(typed, near));
         }
     };
 
@@ -180,10 +185,12 @@ export default function TopSearch({
         }
         const queries = spokenQueries(heard);
         setQuery(queries[0]);
+        // 검색어 후보가 여럿이어도 기준 위치는 한 번만 묻는다.
+        const near = await onFindNear();
         let searched = '';
         const found = await searchSpoken(queries, (candidate) => {
             searched = candidate;
-            return onSearch(candidate);
+            return onSearch(candidate, near);
         });
         if (!found) {
             return;
@@ -192,7 +199,7 @@ export default function TopSearch({
         setQuery(found.query);
         if (found.query !== searched) {
             // 목록에도 고른 검색어의 결과가 보이게 다시 검색한다.
-            await onSearch(found.query);
+            await onSearch(found.query, near);
         }
         if (found.places.length === 0) {
             // 화면에는 아래 "검색 결과가 없습니다" 안내가 이미 뜬다.

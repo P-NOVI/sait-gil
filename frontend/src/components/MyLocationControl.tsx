@@ -2,6 +2,8 @@ type MyLocationControlProps = {
     locating: boolean;
     error: string | null;
     onLocate: () => void;
+    /** 음성 안내를 켰으면 앱이 이유를 읽으므로 화면낭독기가 또 읽지 않게 한다. */
+    voice: boolean;
 };
 
 /** 지도 위 '내 위치' 버튼. 못 찾으면 이유를 버튼 옆에 띄운다. */
@@ -9,11 +11,15 @@ export default function MyLocationControl({
     locating,
     error,
     onLocate,
+    voice,
 }: MyLocationControlProps) {
     return (
         <div className="my-location-control">
             {error && (
-                <p role="alert" className="my-location-control__error">
+                <p
+                    role={voice ? undefined : 'alert'}
+                    className="my-location-control__error"
+                >
                     {error}
                 </p>
             )}
