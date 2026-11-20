@@ -90,6 +90,10 @@ export const LOCATION_LOST_COOLDOWN_MS = 30_000;
 // 한 문장을 읽는 중으로 보는 가장 긴 시간. 끝 이벤트를 놓쳐도 이보다 오래 알림을 미루지 않는다.
 export const SPEECH_BUSY_MAX_MS = 15_000;
 
+// 음성 명령을 듣기 전에 블루투스 이어폰 마이크 연결을 기다리는 가장 긴 시간(ms).
+// 넘으면 폰 마이크로 듣는다. 그동안은 듣기 시작이 늦어진다. 실기기에서 맞출 초안 값.
+export const BLUETOOTH_MIC_CONNECT_MS = 3_000;
+
 // 카메라 인파 인식 알림
 export const VISION = {
     // 같은 단계·같은 빈 방향이 이만큼 연달아 나와야 믿는다. 한 프레임 튀는 것은 넘긴다.
