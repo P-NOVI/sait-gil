@@ -59,6 +59,10 @@ data class VisionConfig(
     val carHeightM: Double = 1.5,
     /** 이륜차 높이(m). 탄 사람이 박스에 들어가는지는 학습 라벨에 따라 달라 실기기에서 맞출 초안 값이다 */
     val twoWheelerHeightM: Double = 1.1,
+    /** 박스 아래가 잘린 차의 거리를 박스 폭으로 잴 때 쓰는 차 폭(m) */
+    val carWidthM: Double = 1.8,
+    /** 박스 아래가 잘린 이륜차의 거리를 박스 폭으로 잴 때 쓰는 이륜차 폭(m) */
+    val twoWheelerWidthM: Double = 0.8,
     /** 차가 이 거리(m) 안이면 가까운 것으로 본다. 시속 30km 차가 약 2.4초에 오는 거리. 실기기에서 맞출 초안 값이다 */
     val carNearM: Double = 20.0,
     /** 이륜차가 이 거리(m) 안이면 가까운 것으로 본다. 실기기에서 맞출 초안 값이다 */
@@ -90,7 +94,7 @@ data class VisionConfig(
     val vehicleCrossingMps: Double = 1.5,
     /** 걷는 길로 보는 통로의 반폭(m). 카메라 정면에서 좌우 이만큼(폭 2m)에 차가 걸치면 길 위로 본다 */
     val vehicleCorridorHalfWidthM: Double = 1.0,
-    /** 움직임을 아직 모르는데 길 위 이 거리(m) 안이면 기다리지 않고 움직이는 차로 알린다 */
+    /** 세 프레임을 보기 전이라도 길 위 이 거리(m) 안에서 두 프레임 사이 vehicleMovingMps 넘게 다가오면 움직이는 차로 알린다 */
     val vehicleImmediateM: Double = 10.0,
     /** 서 있는 차는 길 위 이 거리(m) 안일 때 장애물처럼 알린다. 다른 장애물 기준(obstacleNearBottom, 약 10m 앞 바닥)과 맞춘다 */
     val vehicleStillNearM: Double = 10.0,

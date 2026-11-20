@@ -91,6 +91,14 @@ class VehicleTrackerTest {
     }
 
     @Test
+    fun bodyTurnWithParkedCarBesideThePathIsNotWarned() {
+        // 몸을 돌려 8m 앞 왼쪽 주차된 차가 화면에서 길 쪽으로 약 1.4m/s 움직인 것처럼 보인다. 걷는 길 밖이라 알리지 않는다.
+        val alerts = run(listOf(-4.5, -3.5, -2.5).map { car(8.0, lateralM = it) })
+
+        assertTrue(alerts.all { it.isEmpty() })
+    }
+
+    @Test
     fun leavingCarIsNotWarned() {
         val alerts = run(listOf(11.0, 14.0, 17.0).map { car(it) })
 

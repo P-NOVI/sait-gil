@@ -33,7 +33,7 @@ enum class VehicleMotion(val wire: String) {
 data class VehicleState(
     val id: Int,
     val kind: DetectedClass,
-    /** 박스 높이로 잰 거리(m). 박스 아래가 잘려 잴 수 없으면 null */
+    /** 박스 높이로 잰 거리(m). 박스 아래가 잘렸으면 박스 폭으로 잰다. 잴 수 없으면 null */
     val distanceM: Double?,
     /** 박스 가운데의 옆 위치(m). 오른쪽이 + 다. 거리를 모르면 null */
     val lateralM: Double?,
@@ -62,6 +62,21 @@ fun vehicleNearM(kind: DetectedClass, config: VisionConfig): Double =
 
 /** 박스 아래가 영상 끝에 닿아 잘렸는지. 바퀴가 안 보일 만큼 가깝다 */
 fun isCutOffAtBottom(box: ObjectBox, config: VisionConfig): Boolean = box.bottom >= 1 - config.clippedEdge
+
+/**
+ * 박스 폭으로 잰 차·이륜차 거리(m). 아래가 잘려 높이를 쓸 수 없는 가까운 차에 쓴다.
+ * 옆모습이면 폭이 차 길이라 가깝게 나오지만, 움직임은 거리가 바뀌는 속도로 보므로 판단할 수 있다.
+ */
+fun vehicleWidthDistanceM(box: ObjectBox, frame: DetectionFrame, config: VisionConfig): Double? {
+    val widthM = when (box.kind) {
+        DetectedClass.CAR -> config.carWidthM
+        DetectedClass.TWO_WHEELER -> config.twoWheelerWidthM
+        else -> return null
+    }
+    val widthPx = box.width * frame.imageWidthPx
+    if (widthPx <= 0.0) return null
+    return focalLengthPx(frame, config) * widthM / widthPx
+}
 
 private data class VehicleSample(val timeMs: Long, val distanceM: Double, val lateralM: Double)
 
@@ -106,7 +121,12 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
 
     /** 이번 프레임의 거리·옆 위치를 기록하고 움직임을 판단한다 */
     private fun measure(track: VehicleTrack, frame: DetectionFrame, focalPx: Double): VehicleState {
-        val distance = if (isCutOffAtBottom(track.box, config)) null else vehicleDistanceM(track.box, frame, config)
+        // 아래가 잘린 박스도 폭으로 거리를 재 기록을 이어 간다. 잘렸다고 움직임을 모르는 채로 두면 바로 "조심" 으로 알리게 된다.
+        val distance = if (isCutOffAtBottom(track.box, config)) {
+            vehicleWidthDistanceM(track.box, frame, config)
+        } else {
+            vehicleDistanceM(track.box, frame, config)
+        }
         val lateral = distance?.let { lateralM(track.box.centerX, it, frame, focalPx) }
         if (distance == null || lateral == null) {
             // 잘린 박스는 거리를 잴 수 없어 기록을 새로 시작한다.
@@ -146,7 +166,9 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
     /**
      * 알릴 차인지 정한다.
      * - 걷는 길로 다가오거나 들어오는 차는 가까운 거리(carNearM·twoWheelerNearM) 안이면 움직이는 차로 알린다.
-     * - 아직 모르는데 아주 가까운(잘림, vehicleImmediateM 안) 길 위 차는 기다리지 않고 움직이는 차로 알린다.
+     * - 들어오는 차도 걷는 길에 걸쳐야 알린다. 몸을 돌리면 서 있는 차도 옆으로 움직인 것처럼 잡혀서다.
+     * - 세 프레임을 보기 전이라도 길 위 vehicleImmediateM 안에서 두 프레임 사이 vehicleMovingMps 넘게 다가오면 알린다.
+     *   한 프레임만 보고는 알리지 않는다.
      * - 서 있는 차는 길 위 vehicleStillNearM 안일 때 장애물처럼 알린다.
      */
     private fun decide(
@@ -164,8 +186,8 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
         val veryNear = distance == null || distance <= config.vehicleImmediateM
         val warn = when (state.motion) {
             VehicleMotion.APPROACHING -> near && inPath
-            VehicleMotion.CROSSING -> near
-            VehicleMotion.UNKNOWN -> veryNear && inPath
+            VehicleMotion.CROSSING -> near && inPath
+            VehicleMotion.UNKNOWN -> veryNear && inPath && (state.approachMps ?: 0.0) >= config.vehicleMovingMps
             else -> false
         }
         val notice = state.motion == VehicleMotion.STILL && inPath &&
