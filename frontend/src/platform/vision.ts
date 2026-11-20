@@ -49,6 +49,8 @@ export type ObstacleKind = (typeof OBSTACLE_KINDS)[number];
 export type VisionObstacle = {
     kind: ObstacleKind;
     direction: ClockDirection;
+    /** 서 있는 차·이륜차. 움직이는 차처럼 조심하라고 하지 않고 장애물처럼 알린다 */
+    still?: true;
 };
 
 /** 정면 사람이 빠르게 가까워짐(앞사람 멈춤, 마주 오는 사람) */
@@ -136,9 +138,11 @@ export function toApproach(alert: unknown): VisionApproach | null {
 /** 플러그인 alert 를 장애물로 바꾼다. 장애물이 아니거나 클래스·방향이 잘못됐으면 null */
 export function toObstacle(alert: unknown): VisionObstacle | null {
     const raw = asRecord(alert);
-    return raw.kind === 'obstacle'
-        ? toSighting(raw.objectClass, raw.direction)
-        : null;
+    if (raw.kind !== 'obstacle') return null;
+    const sighting = toSighting(raw.objectClass, raw.direction);
+    return sighting && raw.moving === false
+        ? { ...sighting, still: true }
+        : sighting;
 }
 
 /** 장애물 클래스·방향을 VisionObstacle 로 바꾼다. 하나라도 잘못됐으면 null */

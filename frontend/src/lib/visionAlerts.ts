@@ -76,25 +76,31 @@ export function obstacleName(kind: ObstacleKind): string {
     return OBSTACLE_NAMES[kind][0];
 }
 
+/** 다가오거나 길로 들어오는 차·이륜차인지. 서 있는 차는 장애물처럼 다룬다 */
+function isMovingVehicle({ kind, still }: VisionObstacle): boolean {
+    return MOVING_OBSTACLES.has(kind) && !still;
+}
+
 /**
  * 가까운 장애물을 알릴 말. 거리는 말하지 않고 방향만 말한다.
- * 차·이륜차는 빨리 다가와 다 읽기 전에 지나가지 않도록 짧게 말한다.
+ * 움직이는 차·이륜차는 빨리 다가와 다 읽기 전에 지나가지 않도록 짧게 말한다.
  */
-export function obstacleText({ kind, direction }: VisionObstacle): string {
+export function obstacleText(obstacle: VisionObstacle): string {
+    const { kind, direction } = obstacle;
     const [name, particle] = OBSTACLE_NAMES[kind];
-    return MOVING_OBSTACLES.has(kind)
+    return isMovingVehicle(obstacle)
         ? `${direction}시 ${name} 조심.`
         : `${direction}시 방향에 ${name}${particle} 있습니다.`;
 }
 
 /**
- * 가까운 장애물 알림. 차·이륜차는 위험 등급, 그 밖은 경로 등급이다.
+ * 가까운 장애물 알림. 움직이는 차·이륜차는 위험 등급, 그 밖(서 있는 차 포함)은 경로 등급이다.
  * 다시 알릴 때는 플러그인이 정하므로 쿨다운을 두지 않는다.
  */
 export function obstacleAlert(obstacle: VisionObstacle): Alert {
     return {
         key: `${VISION_KEYS.obstacle}-${obstacle.kind}`,
-        level: MOVING_OBSTACLES.has(obstacle.kind) ? 'danger' : 'route',
+        level: isMovingVehicle(obstacle) ? 'danger' : 'route',
         text: obstacleText(obstacle),
         cooldownMs: 0,
     };

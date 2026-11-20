@@ -130,6 +130,14 @@ class SaitgilVisionPlugin : Plugin() {
         emitCrowdState(crowd.frame.copy(signal = objects.signal, obstacles = objects.seen))
         crowd.alert?.let(::emitAlert)
         objects.alerts.forEach(::emitAlert)
+        // 실기기에서 차 움직임 기준을 맞추려고 추적 중인 차를 프레임마다 남긴다.
+        objects.vehicles.forEach { Log.d(TAG, vehicleLog(it)) }
+    }
+
+    private fun vehicleLog(state: VehicleState): String {
+        fun fmt(value: Double?) = value?.let { "%.1f".format(it) } ?: "-"
+        return "차 #${state.id} ${state.kind.wire} 거리 ${fmt(state.distanceM)}m 옆 ${fmt(state.lateralM)}m " +
+            "다가옴 ${fmt(state.approachMps)}m/s 안쪽 ${fmt(state.inwardMps)}m/s ${state.motion.wire}"
     }
 
     private fun emitCrowdState(frame: CrowdFrame) {
@@ -145,7 +153,12 @@ class SaitgilVisionPlugin : Plugin() {
 
     private fun emitAlert(alert: VisionAlert) {
         if (!running) return
-        Log.d(TAG, "알림 ${alert.kind.wire} ${alert.objectClass?.wire ?: ""} ${alert.direction?.let { "${it}시" } ?: ""}")
+        val distance = alert.distanceM?.let { " %.1fm".format(it) } ?: ""
+        val moving = alert.moving?.let { if (it) " 움직임" else " 서 있음" } ?: ""
+        Log.d(
+            TAG,
+            "알림 ${alert.kind.wire} ${alert.objectClass?.wire ?: ""} ${alert.direction?.let { "${it}시" } ?: ""}$distance$moving",
+        )
         notifyListeners("alert", alert.toJs())
     }
 
