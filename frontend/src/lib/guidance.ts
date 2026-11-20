@@ -9,8 +9,8 @@ import {
     ARRIVED_END_TEXT,
     blockText,
     eventText,
-    farText,
     REROUTE_TEXT,
+    STRAIGHT_TEXT,
 } from './guidanceText';
 import {
     judge,
@@ -138,13 +138,10 @@ export function guidanceStep(
             state.announced,
         );
         if (block) {
-            const remainingM = block.event.distance_m - progress.travelledM;
             alerts.push({
                 key: blockKey(block.event, block.far),
                 level: 'route',
-                text: block.far
-                    ? farText(block.event, remainingM)
-                    : blockText(block.event),
+                text: block.far ? STRAIGHT_TEXT : blockText(block.event),
             });
         }
     }

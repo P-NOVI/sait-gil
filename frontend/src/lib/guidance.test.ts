@@ -287,14 +287,14 @@ describe('guidanceStep 블럭 안내', () => {
         expect(texts(step)).toEqual(['곧 오른쪽입니다.']);
     });
 
-    it('블럭이 길면 먼저 미터로 알리고, 가까워지면 블럭으로 다시 알린다', () => {
+    it('블럭이 길면 먼저 직진을 알리고, 가까워지면 블럭으로 다시 알린다', () => {
         const far = guidanceStep(BLOCK_ROUTE, NEW_GUIDANCE, north(110), 5, 0);
         const state = markAnnounced(far.state, far.alerts[0]);
         const same = guidanceStep(BLOCK_ROUTE, state, north(120), 5, 1_000);
         // 시간이 충분히 지나 걸어서 닿을 수 있는 범위 안
         const near = guidanceStep(BLOCK_ROUTE, state, north(160), 5, 30_000);
 
-        expect(texts(far)).toEqual(['190미터 앞에 횡단보도가 있습니다.']);
+        expect(texts(far)).toEqual(['다음 안내까지 직진입니다.']);
         expect(same.alerts).toEqual([]);
         expect(texts(near)).toEqual(['이번 블럭 끝에 횡단보도가 있습니다.']);
     });

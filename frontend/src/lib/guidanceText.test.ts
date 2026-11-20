@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
     blockText,
     eventText,
-    farText,
     spokenDistance,
     upcomingText,
 } from './guidanceText';
@@ -53,15 +52,6 @@ describe('blockText', () => {
     });
 });
 
-describe('farText', () => {
-    it.each([
-        [event('turn', 'right'), 510, '510미터 앞에서 오른쪽입니다.'],
-        [event('crosswalk'), 190, '190미터 앞에 횡단보도가 있습니다.'],
-    ] as const)('%o, %d m', (given, remainingM, expected) => {
-        expect(farText(given, remainingM)).toBe(expected);
-    });
-});
-
 describe('upcomingText', () => {
     const events: RouteEvent[] = [
         { ...event('crosswalk'), distance_m: 520 },
@@ -69,8 +59,8 @@ describe('upcomingText', () => {
         { ...event('stairs'), distance_m: 600 },
     ];
 
-    it('교차로는 음성과 같게 멀면 미터, 가까우면 블럭, 곧이면 곧으로 읽는다', () => {
-        expect(upcomingText(events, 20)).toBe('280미터 앞에서 왼쪽입니다.');
+    it('교차로는 음성과 같게 멀면 직진, 가까우면 블럭, 곧이면 곧으로 읽는다', () => {
+        expect(upcomingText(events, 20)).toBe('다음 안내까지 직진입니다.');
         expect(upcomingText(events, 200)).toBe('이번 블럭에서 왼쪽입니다.');
         expect(upcomingText(events, 295)).toBe('곧 왼쪽입니다.');
     });

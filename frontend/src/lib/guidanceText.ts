@@ -50,20 +50,8 @@ export function spokenDistance(meters: number): string {
     return `${Math.max(10, Math.round(meters / 10) * 10)}미터`;
 }
 
-/** 먼 교차로(블럭 대신 미터로 알릴 때)의 안내 문장 */
-export function farText(
-    { kind, direction }: RouteEvent,
-    remainingM: number,
-): string {
-    const ahead = spokenDistance(remainingM);
-    if (kind === 'turn') {
-        const label = direction ? DIRECTION_LABELS[direction] : '방향 전환';
-        return `${ahead} 앞에서 ${label}입니다.`;
-    }
-    const [name, particle] = PLACE_NAMES.crosswalk;
-    const place = direction ? `${DIRECTION_LABELS[direction]} ${name}` : name;
-    return `${ahead} 앞에 ${place}${particle} 있습니다.`;
-}
+// 다음 교차로가 멀 때(BLOCK.maxM 보다 멀 때)는 미터·방향 없이 직진만 알린다.
+export const STRAIGHT_TEXT = '다음 안내까지 직진입니다.';
 
 /** 이 블럭이 끝나는 교차로 이벤트의 블럭 안내 문장 */
 export function blockText({ kind, direction }: RouteEvent): string {
@@ -124,7 +112,5 @@ export function upcomingText(
         return eventText(next, remainingM);
     }
     // 교차로는 음성과 같게 거리에 따라 블럭 문장·미터 문장으로 보인다.
-    return remainingM <= blockSettings.maxM
-        ? blockText(next)
-        : farText(next, remainingM);
+    return remainingM <= blockSettings.maxM ? blockText(next) : STRAIGHT_TEXT;
 }
