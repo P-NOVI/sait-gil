@@ -4,12 +4,19 @@ const native = vi.hoisted(() => ({ value: false }));
 const plugins = vi.hoisted(() => ({
     tts: { speak: vi.fn(), stop: vi.fn() },
     haptics: { vibrate: vi.fn() },
-    stt: { available: vi.fn(), requestPermissions: vi.fn(), start: vi.fn() },
+    stt: {
+        available: vi.fn(),
+        requestPermissions: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+    },
     keepAwake: { keepAwake: vi.fn(), allowSleep: vi.fn() },
+    audio: { startBluetoothMic: vi.fn(), stopBluetoothMic: vi.fn() },
 }));
 
 vi.mock('@capacitor/core', () => ({
     Capacitor: { isNativePlatform: () => native.value },
+    registerPlugin: () => plugins.audio,
 }));
 vi.mock('@capacitor-community/text-to-speech', () => ({
     TextToSpeech: plugins.tts,
@@ -22,6 +29,7 @@ vi.mock('@capacitor-community/keep-awake', () => ({
     KeepAwake: plugins.keepAwake,
 }));
 
+import { BLUETOOTH_MIC_CONNECT_MS } from '../settings';
 import {
     canListen,
     keepScreenOn,
@@ -30,6 +38,15 @@ import {
     stopListening,
     vibrate,
 } from './index';
+
+/** 앱에서 음성 인식을 쓸 수 있고 마이크 권한이 있다. */
+function nativeListening() {
+    native.value = true;
+    plugins.stt.available.mockResolvedValue({ available: true });
+    plugins.stt.requestPermissions.mockResolvedValue({
+        speechRecognition: 'granted',
+    });
+}
 
 beforeEach(() => {
     native.value = false;
@@ -141,6 +158,91 @@ describe('listenOnce', () => {
 
         expect(await listenOnce()).toBeNull();
         expect(plugins.stt.start).not.toHaveBeenCalled();
+        expect(plugins.audio.startBluetoothMic).not.toHaveBeenCalled();
+    });
+
+    it('앱에서는 블루투스 이어폰 마이크로 바꾼 뒤 듣고, 다 들으면 되돌린다', async () => {
+        nativeListening();
+        plugins.audio.startBluetoothMic.mockResolvedValue({ connected: true });
+        plugins.stt.start.mockResolvedValue({ matches: ['다음'] });
+
+        expect(await listenOnce()).toBe('다음');
+        expect(plugins.audio.startBluetoothMic).toHaveBeenCalledWith({
+            timeoutMs: BLUETOOTH_MIC_CONNECT_MS,
+        });
+        const [connect] =
+            plugins.audio.startBluetoothMic.mock.invocationCallOrder;
+        const [listen] = plugins.stt.start.mock.invocationCallOrder;
+        const [release] =
+            plugins.audio.stopBluetoothMic.mock.invocationCallOrder;
+        expect(connect).toBeLessThan(listen);
+        expect(listen).toBeLessThan(release);
+    });
+
+    it('블루투스 마이크로 바꾸지 못해도 폰 마이크로 듣는다', async () => {
+        nativeListening();
+        plugins.audio.startBluetoothMic.mockRejectedValue(new Error('없음'));
+        plugins.stt.start.mockResolvedValue({ matches: ['다음'] });
+
+        expect(await listenOnce()).toBe('다음');
+        expect(plugins.audio.stopBluetoothMic).toHaveBeenCalledTimes(1);
+    });
+
+    it('블루투스 마이크를 기다리는 사이 멈추면 듣지 않는다', async () => {
+        nativeListening();
+        let connect: (value: { connected: boolean }) => void = () => undefined;
+        plugins.audio.startBluetoothMic.mockReturnValue(
+            new Promise((resolve) => {
+                connect = resolve;
+            }),
+        );
+
+        const heard = listenOnce();
+        await vi.waitFor(() =>
+            expect(plugins.audio.startBluetoothMic).toHaveBeenCalled(),
+        );
+        stopListening();
+        connect({ connected: true });
+
+        expect(await heard).toBeNull();
+        expect(plugins.stt.start).not.toHaveBeenCalled();
+        expect(plugins.audio.stopBluetoothMic).toHaveBeenCalledTimes(1);
+    });
+
+    it('앞선 듣기가 늦게 끝나도 새 듣기의 블루투스 마이크를 끄지 않는다', async () => {
+        nativeListening();
+        plugins.audio.startBluetoothMic.mockResolvedValue({ connected: true });
+        let finishFirst: (value: { matches: string[] }) => void = () =>
+            undefined;
+        let finishSecond: (value: { matches: string[] }) => void = () =>
+            undefined;
+        plugins.stt.start
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    finishFirst = resolve;
+                }),
+            )
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    finishSecond = resolve;
+                }),
+            );
+
+        const first = listenOnce();
+        await vi.waitFor(() =>
+            expect(plugins.stt.start).toHaveBeenCalledTimes(1),
+        );
+        const second = listenOnce();
+        await vi.waitFor(() =>
+            expect(plugins.stt.start).toHaveBeenCalledTimes(2),
+        );
+        finishFirst({ matches: ['이전'] });
+
+        expect(await first).toBeNull();
+        expect(plugins.audio.stopBluetoothMic).not.toHaveBeenCalled();
+        finishSecond({ matches: ['다음'] });
+        expect(await second).toBe('다음');
+        expect(plugins.audio.stopBluetoothMic).toHaveBeenCalledTimes(1);
     });
 
     it('웹에서 인식한 첫 문장을 돌려준다', async () => {
@@ -163,6 +265,7 @@ describe('listenOnce', () => {
         );
 
         expect(await listenOnce()).toBe('한강 축제 가 줘');
+        expect(plugins.audio.startBluetoothMic).not.toHaveBeenCalled();
     });
 
     it('웹에서 음성 인식을 지원하지 않으면 null을 돌려준다', async () => {
