@@ -5,7 +5,13 @@ import type { LocationFix } from '../platform';
 import { NAVIGATION } from '../settings';
 import type { Alert } from './alertArbiter';
 import type { LngLat } from './geo';
-import { ARRIVED_END_TEXT, eventText, REROUTE_TEXT } from './guidanceText';
+import {
+    ARRIVED_END_TEXT,
+    blockText,
+    eventText,
+    REROUTE_TEXT,
+    STRAIGHT_TEXT,
+} from './guidanceText';
 import {
     judge,
     type Judgement,
@@ -17,7 +23,13 @@ import {
     type SearchRange,
     trackOffRoute,
 } from './navigation';
-import { dueEvents, eventKey, type RouteEvent } from './routeEvents';
+import {
+    blockKey,
+    dueBlockAlert,
+    dueEvents,
+    eventKey,
+    type RouteEvent,
+} from './routeEvents';
 
 export const ARRIVED_KEY = 'goal:arrived';
 export const REROUTE_KEY = 'route:reroute';
@@ -117,6 +129,19 @@ export function guidanceStep(
                 key: eventKey(event),
                 level: event.kind === 'crowd' ? 'crowd' : 'route',
                 text: eventText(event, event.distance_m - progress.travelledM),
+            });
+        }
+        // 한 위치에 하나만 읽으므로 가까운 지점 알림이 먼저 나가도록 뒤에 둔다.
+        const block = dueBlockAlert(
+            route.events,
+            progress.travelledM,
+            state.announced,
+        );
+        if (block) {
+            alerts.push({
+                key: blockKey(block.event, block.far),
+                level: 'route',
+                text: block.far ? STRAIGHT_TEXT : blockText(block.event),
             });
         }
     }
