@@ -1,7 +1,6 @@
 package com.pnovi.saitgil.vision
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -46,7 +45,6 @@ class VehicleTrackerTest {
         assertTrue(alerts[0].isEmpty())
         assertTrue(alerts[1].isEmpty())
         val warning = alerts[2].single()
-        assertTrue(warning.moving)
         assertEquals(8.0, warning.distanceM!!, 0.01)
         assertEquals(12, warning.direction)
         assertTrue(alerts[3].isEmpty())
@@ -57,19 +55,44 @@ class VehicleTrackerTest {
         val alerts = run(listOf(15.0, 10.0).map { car(it) })
 
         assertTrue(alerts[0].isEmpty())
-        assertTrue(alerts[1].single().moving)
+        assertEquals(1, alerts[1].size)
     }
 
     @Test
-    fun parkedCarIsNoticedOnceWhenCloseAndNeverWarned() {
-        // 서 있는 차로 약 1.2m/s 로 걸어간다.
+    fun parkedCarIsNoticedWhenNearAndAgainWhenCloseButNeverWarned() {
+        // 서 있는 차로 약 1.2m/s 로 걸어간다. 후보로 나오면 바로 알렸다고 적는다.
         val distances = (0 until 13).map { 15.0 - it * 0.84 }
+        val tracker = VehicleTracker(config)
 
-        val alerts = run(distances.map { car(it) })
+        val analyses = distances.mapIndexed { index, distance ->
+            val frame = frame(index, car(distance))
+            tracker.analyze(frame, clockLabels(frame, config)).also { it.notices.forEach(StillNotice::notified) }
+        }
 
-        val alerted = alerts.indices.filter { alerts[it].isNotEmpty() }
-        assertEquals(listOf(distances.indexOfFirst { it <= config.vehicleStillNearM }), alerted)
-        assertFalse(alerts[alerted.single()].single().moving)
+        val noticed = analyses.indices.filter { analyses[it].notices.isNotEmpty() }
+        assertEquals(
+            listOf(
+                distances.indexOfFirst { it <= config.vehicleStillNearM },
+                distances.indexOfFirst { it <= config.obstacleCloseM },
+            ),
+            noticed,
+        )
+        assertTrue(analyses.all { it.alerts.isEmpty() })
+    }
+
+    @Test
+    fun parkedCarStaysCandidateUntilNotified() {
+        // 다른 장애물이 더 가까워 고르지 않은 서 있는 차는 다음 프레임에도 후보다.
+        val tracker = VehicleTracker(config)
+
+        // 처음부터 vehicleImmediateM 안이면 움직이는지 모르는 차로 바로 알리므로 그보다 멀리서 시작한다.
+        val analyses = (0 until 7).map { index ->
+            val frame = frame(index, car(12.0 - index * 0.84))
+            tracker.analyze(frame, clockLabels(frame, config))
+        }
+
+        assertTrue(analyses.take(3).all { it.notices.isEmpty() })
+        assertTrue(analyses.drop(3).all { it.notices.size == 1 })
     }
 
     @Test
@@ -87,7 +110,7 @@ class VehicleTrackerTest {
 
         assertTrue(alerts[0].isEmpty())
         assertTrue(alerts[1].isEmpty())
-        assertTrue(alerts[2].single().moving)
+        assertEquals(1, alerts[2].size)
     }
 
     @Test
