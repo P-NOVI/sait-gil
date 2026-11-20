@@ -5,8 +5,6 @@ package com.pnovi.saitgil.vision
 // Android 클래스를 쓰지 않아 가짜 박스로 JVM 단위 테스트를 할 수 있다.
 
 import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
 
 /** 거리·움직임을 따로 판단하는 차 클래스 */
 val VEHICLE_CLASSES: Set<DetectedClass> = setOf(DetectedClass.CAR, DetectedClass.TWO_WHEELER)
@@ -80,29 +78,34 @@ fun vehicleWidthDistanceM(box: ObjectBox, frame: DetectionFrame, config: VisionC
 
 private data class VehicleSample(val timeMs: Long, val distanceM: Double, val lateralM: Double)
 
-private class VehicleTrack(val id: Int, val kind: DetectedClass, var box: ObjectBox) {
+private class VehicleTrack(val id: Int, kind: DetectedClass, box: ObjectBox) : BoxTrack(kind, box) {
     val samples = ArrayDeque<VehicleSample>()
-    var missed = 0
 
     /** 움직이는 차로 알렸는지 */
     var warned = false
 
-    /** 서 있는 차로 알렸는지 */
-    var noticed = false
+    /** 서 있는 차로 알린 기록. 움직이는 차로 알렸어도 적는다 */
+    val notice = NoticeRecord()
 }
 
-/** 프레임 하나를 판단한 결과. alerts 는 이번 프레임에 알릴 차다 */
-data class VehicleAnalysis(val alerts: List<VehicleAlert>, val states: List<VehicleState>)
+/**
+ * 프레임 하나를 판단한 결과. alerts 는 이번 프레임에 바로 알릴 움직이는 차다.
+ * notices 는 알릴 수 있는 서 있는 차로, 장애물과 거리를 비교해 ObjectAnalyzer 가 고른다.
+ */
+data class VehicleAnalysis(
+    val alerts: List<VehicleAlert>,
+    val states: List<VehicleState>,
+    val notices: List<StillNotice> = emptyList(),
+)
 
-/** 알릴 차 하나. moving 이 false 면 서 있는 차로 장애물처럼 알린다 */
+/** 바로 알릴 움직이는 차 하나. 거리가 null 이면 박스 아래가 잘릴 만큼 가깝다 */
 data class VehicleAlert(
     val kind: DetectedClass,
     val direction: Int,
     val distanceM: Double?,
-    val moving: Boolean,
 )
 
-/** 안내를 시작할 때마다 새로 만든다. 같은 차는 한 번만 알린다. */
+/** 안내를 시작할 때마다 새로 만든다. 같은 차는 한 번, 서 있는 차가 크게 가까워지면 한 번 더 알린다. */
 class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
     private val tracks = mutableListOf<VehicleTrack>()
     private var nextId = 0
@@ -113,10 +116,24 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
 
     fun analyze(frame: DetectionFrame, labels: List<Int>): VehicleAnalysis {
         val focalPx = focalLengthPx(frame, config)
-        val seen = match(frame.objects.filter { it.kind in VEHICLE_CLASSES })
+        val boxes = frame.objects.filter { it.kind in VEHICLE_CLASSES }
+        val seen = updateTracks(tracks, boxes, config) { VehicleTrack(nextId++, it.kind, it) }
         val states = seen.map { track -> measure(track, frame, focalPx) }
-        val alerts = seen.zip(states).mapNotNull { (track, state) -> decide(track, state, frame, focalPx, labels) }
-        return VehicleAnalysis(alerts, states)
+        val alerts = mutableListOf<VehicleAlert>()
+        val notices = mutableListOf<StillNotice>()
+        for ((track, state) in seen.zip(states)) {
+            // 거리가 null 이면 박스 아래가 잘릴 만큼 가깝다.
+            val distance = state.distanceM
+            val inPath = distance?.let { inCorridor(track.box, it, frame, focalPx) } ?: overlapsAhead(track.box)
+            if (shouldWarn(track, state, inPath, frame.timeMs)) {
+                track.warned = true
+                track.notice.mark(distance ?: 0.0)
+                alerts += VehicleAlert(track.kind, directionOf(track.box, labels), distance)
+            } else {
+                stillNotice(track, state, inPath, frame.timeMs, labels)?.let(notices::add)
+            }
+        }
+        return VehicleAnalysis(alerts, states, notices)
     }
 
     /** 이번 프레임의 거리·옆 위치를 기록하고 움직임을 판단한다 */
@@ -164,24 +181,15 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
     }
 
     /**
-     * 알릴 차인지 정한다.
-     * - 걷는 길로 다가오거나 들어오는 차는 가까운 거리(carNearM·twoWheelerNearM) 안이면 움직이는 차로 알린다.
+     * 움직이는 차로 바로 알릴지. 같은 차는 한 번만 알린다.
+     * - 걷는 길로 다가오거나 들어오는 차는 가까운 거리(carNearM·twoWheelerNearM) 안이면 알린다.
      * - 들어오는 차도 걷는 길에 걸쳐야 알린다. 몸을 돌리면 서 있는 차도 옆으로 움직인 것처럼 잡혀서다.
      * - 세 프레임을 보기 전이라도 길 위 vehicleImmediateM 안에서 두 프레임 사이 vehicleMovingMps 넘게 다가오면 알린다.
      *   한 프레임만 보고는 알리지 않는다.
-     * - 서 있는 차는 길 위 vehicleStillNearM 안일 때 장애물처럼 알린다.
      */
-    private fun decide(
-        track: VehicleTrack,
-        state: VehicleState,
-        frame: DetectionFrame,
-        focalPx: Double,
-        labels: List<Int>,
-    ): VehicleAlert? {
-        val box = track.box
-        // 거리가 null 이면 박스 아래가 잘릴 만큼 가깝다.
+    private fun shouldWarn(track: VehicleTrack, state: VehicleState, inPath: Boolean, nowMs: Long): Boolean {
+        if (track.warned) return false
         val distance = state.distanceM
-        val inPath = distance?.let { inCorridor(box, it, frame, focalPx) } ?: overlapsAhead(box)
         val near = distance == null || distance <= vehicleNearM(track.kind, config)
         val veryNear = distance == null || distance <= config.vehicleImmediateM
         val warn = when (state.motion) {
@@ -190,24 +198,37 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
             VehicleMotion.UNKNOWN -> veryNear && inPath && (state.approachMps ?: 0.0) >= config.vehicleMovingMps
             else -> false
         }
-        val notice = state.motion == VehicleMotion.STILL && inPath &&
-            distance != null && distance <= config.vehicleStillNearM
-        val moving = when {
-            warn && !track.warned && due(track.kind, lastWarnMs, config.vehicleWarnRepeatMs, frame.timeMs) -> true
-            notice && !track.noticed && due(track.kind, lastNoticeMs, config.obstacleRepeatMs, frame.timeMs) -> false
-            else -> return null
-        }
-        if (moving) track.warned = true
-        track.noticed = true
-        return VehicleAlert(track.kind, directionOf(box, labels), distance, moving)
+        if (!warn || !elapsed(track.kind, lastWarnMs, config.vehicleWarnRepeatMs, nowMs)) return false
+        lastWarnMs[track.kind] = nowMs
+        return true
     }
 
-    /** 이 클래스를 마지막으로 알린 뒤 repeatMs 가 지났으면 지금 시각을 적고 true */
-    private fun due(kind: DetectedClass, last: MutableMap<DetectedClass, Long>, repeatMs: Long, nowMs: Long): Boolean {
-        val at = last[kind]
-        if (at != null && nowMs - at < repeatMs) return false
-        last[kind] = nowMs
-        return true
+    /**
+     * 서 있는 차가 길 위 vehicleStillNearM 안이면 장애물처럼 알릴 후보로 낸다.
+     * 처음 알리는 차는 클래스마다 stillVehicleRepeatMs 안에 한 번만 낸다. 추적이 끊겨 같은 차가 새 차로 잡힐 때다.
+     */
+    private fun stillNotice(
+        track: VehicleTrack,
+        state: VehicleState,
+        inPath: Boolean,
+        nowMs: Long,
+        labels: List<Int>,
+    ): StillNotice? {
+        val distance = state.distanceM ?: return null
+        if (state.motion != VehicleMotion.STILL || !inPath || distance > config.vehicleStillNearM) return null
+        if (!track.notice.due(distance, config.obstacleCloseM)) return null
+        val first = !track.notice.noticed
+        if (first && !elapsed(track.kind, lastNoticeMs, config.stillVehicleRepeatMs, nowMs)) return null
+        return StillNotice(track.kind, directionOf(track.box, labels), distance) {
+            if (first) lastNoticeMs[track.kind] = nowMs
+            track.notice.mark(distance)
+        }
+    }
+
+    /** 이 클래스를 마지막으로 알린 뒤 repeatMs 가 지났는지 */
+    private fun elapsed(kind: DetectedClass, last: Map<DetectedClass, Long>, repeatMs: Long, nowMs: Long): Boolean {
+        val at = last[kind] ?: return true
+        return nowMs - at >= repeatMs
     }
 
     /** 박스 좌우 끝의 옆 위치가 걷는 길 통로와 겹치는지 */
@@ -216,57 +237,6 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
         val rightM = lateralM(box.right, distanceM, frame, focalPx)
         return rightM >= -config.vehicleCorridorHalfWidthM && leftM <= config.vehicleCorridorHalfWidthM
     }
-
-    /** 앞쪽 칸(11~1시)에 걸치면 그중 박스 가운데에 가장 가까운 칸, 아니면 박스 가운데 칸의 시계 방향 */
-    private fun directionOf(box: ObjectBox, labels: List<Int>): Int {
-        val center = sectorOf(box.centerX)
-        val ahead = (sectorOf(box.left)..sectorOf(box.right)).filter { it in AHEAD_SECTORS }
-        return labels[ahead.minByOrNull { abs(it - center) } ?: center]
-    }
-
-    private fun overlapsAhead(box: ObjectBox): Boolean =
-        (sectorOf(box.left)..sectorOf(box.right)).any { it in AHEAD_SECTORS }
-
-    /** 새 박스를 앞 프레임의 같은 클래스 차와 짝짓는다. 많이 겹치는 것부터, 안 겹치면 가운데가 가까운 것끼리 */
-    private fun match(boxes: List<ObjectBox>): List<VehicleTrack> {
-        val pairs = tracks
-            .flatMap { track -> boxes.indices.filter { boxes[it].kind == track.kind }.map { track to it } }
-            .mapNotNull { (track, index) -> matchScore(track.box, boxes[index])?.let { Triple(track, index, it) } }
-            .sortedByDescending { it.third }
-        val matchedTracks = mutableSetOf<VehicleTrack>()
-        val matchedBoxes = mutableSetOf<Int>()
-        for ((track, index, _) in pairs) {
-            if (track in matchedTracks || index in matchedBoxes) continue
-            track.box = boxes[index]
-            track.missed = 0
-            matchedTracks += track
-            matchedBoxes += index
-        }
-        tracks.filter { it !in matchedTracks }.forEach { it.missed += 1 }
-        tracks.removeAll { it.missed > config.obstacleMaxMissedFrames }
-        val added = boxes.indices
-            .filter { it !in matchedBoxes }
-            .map { VehicleTrack(nextId++, boxes[it].kind, boxes[it]) }
-        tracks += added
-        return matchedTracks.toList() + added
-    }
-
-    /**
-     * 같은 차로 볼 점수. 겹치면 1 + IoU, 안 겹쳐도 가운데가 vehicleMaxShift 안이고 크기가 비슷하면 1 보다 작은 값이다.
-     * 옆으로 빠르게 지나가는 차는 0.7초 사이에 제 폭보다 멀리 움직여 겹치지 않는다.
-     */
-    private fun matchScore(previous: ObjectBox, next: ObjectBox): Double? {
-        val overlap = boxIou(previous, next)
-        if (overlap >= config.vehicleTrackIou) return 1 + overlap
-        val shift = abs(next.centerX - previous.centerX)
-        val ratio = max(next.height, previous.height) / min(next.height, previous.height)
-        return if (shift <= config.vehicleMaxShift && ratio <= config.vehicleMaxSizeRatio) 1 - shift else null
-    }
-
-    private fun boxIou(a: ObjectBox, b: ObjectBox): Double = iou(
-        PersonBox(a.left, a.top, a.width, a.height, a.score),
-        PersonBox(b.left, b.top, b.width, b.height, b.score),
-    )
 
     private fun lateralM(x: Double, distanceM: Double, frame: DetectionFrame, focalPx: Double): Double =
         (x - 0.5) * frame.imageWidthPx * distanceM / focalPx
