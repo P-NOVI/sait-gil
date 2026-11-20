@@ -3,6 +3,7 @@
 
 import {
     ALERT_DISTANCE_M,
+    BLOCK_MIN_M,
     CROSSWALK_SIGNAL_M,
     type CrosswalkSignalSettings,
 } from '../settings';
@@ -66,6 +67,47 @@ export function dueEvents(
             );
         })
         .sort((a, b) => a.distance_m - b.distance_m);
+}
+
+/** 블럭 단위로 알리는 이벤트인지. 회전·횡단보도만 블럭 끝(교차로)으로 본다. */
+export function isBlockEnd({ kind }: RouteEvent): boolean {
+    return kind === 'turn' || kind === 'crosswalk';
+}
+
+/**
+ * 지금 블럭 시작을 알릴 교차로 이벤트. 없으면 null.
+ * 블럭은 직전 교차로(없으면 출발점)부터 이 교차로까지다. 직전 교차로를 지났고, 블럭이 minBlockM 이상이며,
+ * 교차로가 아직 알림 거리 밖이고, 아직 알리지 않았을 때만 낸다. 짧은 블럭·막 닿은 교차로는 "곧"만 읽는다.
+ */
+export function dueBlockStart(
+    events: readonly RouteEvent[],
+    travelledM: number,
+    announced: ReadonlySet<string>,
+    minBlockM: number = BLOCK_MIN_M,
+    alertDistanceM: Readonly<Record<EventKind, number>> = ALERT_DISTANCE_M,
+): RouteEvent | null {
+    const ends = events
+        .filter(isBlockEnd)
+        .sort((a, b) => a.distance_m - b.distance_m);
+    const index = ends.findIndex((event) => event.distance_m >= travelledM);
+    if (index < 0) {
+        return null;
+    }
+    const event = ends[index];
+    const startM = index > 0 ? ends[index - 1].distance_m : 0;
+    if (
+        event.distance_m - startM < minBlockM ||
+        event.distance_m - travelledM <= alertDistanceM[event.kind] ||
+        announced.has(blockKey(event))
+    ) {
+        return null;
+    }
+    return event;
+}
+
+/** 블럭 시작 알림의 이름. 같은 교차로의 블럭 안내는 한 번만 읽는다. */
+export function blockKey(event: RouteEvent): string {
+    return `block:${eventKey(event)}`;
 }
 
 /** 횡단보도 앞(남은 거리가 aheadM 안)이거나 막 지난(pastM 안) 곳에 있는지. 보행 신호등을 알릴지 정한다. */

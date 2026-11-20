@@ -12,7 +12,12 @@ import {
     REROUTE_KEY,
     shownFix,
 } from './guidance';
-import { eventKey, type RouteEvent } from './routeEvents';
+import {
+    blockKey,
+    dueBlockStart,
+    eventKey,
+    type RouteEvent,
+} from './routeEvents';
 
 // 북쪽으로 곧장 500m 가는 경로. 200m 에서 오른쪽, 300m 부터 붐빔
 const START: LngLat = [127, 37.5];
@@ -48,7 +53,7 @@ describe('guidanceStep', () => {
             {
                 key: eventKey(TURN),
                 level: 'route',
-                text: '20미터 앞에서 오른쪽입니다.',
+                text: '곧 오른쪽입니다.',
             },
             {
                 key: eventKey(CROWD),
@@ -241,9 +246,70 @@ describe('guidanceStep 나란한 구간', () => {
 
         const step = guidanceStep(U_ROUTE, first.state, JUMPED, 5, 1_000);
 
-        expect(first.alerts).toEqual([]);
+        expect(first.alerts.map((alert) => alert.key)).toEqual([
+            blockKey(CROSSWALK),
+        ]);
         expect(step.alerts.map((alert) => alert.key)).toEqual([
             eventKey(CROSSWALK),
         ]);
+    });
+});
+
+describe('guidanceStep 블럭 안내', () => {
+    // 출발 → 100m 오른쪽 → 300m 횡단보도 → 310m 왼쪽(짧은 블럭) → 500m 도착
+    const turn = (distance_m: number, direction: 'left' | 'right') =>
+        ({
+            kind: 'turn',
+            distance_m,
+            position: north(distance_m),
+            direction,
+        }) satisfies RouteEvent;
+    const FIRST = turn(100, 'right');
+    const CROSS: RouteEvent = {
+        kind: 'crosswalk',
+        distance_m: 300,
+        position: north(300),
+        direction: null,
+    };
+    const SHORT = turn(310, 'left');
+    const BLOCK_ROUTE: GuidedRoute = {
+        ...ROUTE,
+        events: [FIRST, CROSS, SHORT],
+    };
+    const texts = (step: ReturnType<typeof guidanceStep>) =>
+        step.alerts.map((alert) => alert.text);
+
+    it('출발하면 첫 블럭을 알리고, 한 번 읽은 뒤에는 다시 알리지 않는다', () => {
+        const first = guidanceStep(BLOCK_ROUTE, NEW_GUIDANCE, north(5), 5, 0);
+        const state = markAnnounced(first.state, first.alerts[0]);
+        const next = guidanceStep(BLOCK_ROUTE, state, north(10), 5, 1_000);
+
+        expect(texts(first)).toEqual(['이번 블럭에서 오른쪽입니다.']);
+        expect(next.alerts).toEqual([]);
+    });
+
+    it('교차로가 알림 거리 안에 들어오면 곧 알린다', () => {
+        const step = guidanceStep(BLOCK_ROUTE, NEW_GUIDANCE, north(85), 5, 0);
+
+        expect(texts(step)).toEqual(['곧 오른쪽입니다.']);
+    });
+
+    it('교차로를 지나면 다음 블럭을 알린다', () => {
+        const step = guidanceStep(BLOCK_ROUTE, NEW_GUIDANCE, north(110), 5, 0);
+
+        expect(texts(step)).toEqual(['이번 블럭 끝에 횡단보도가 있습니다.']);
+    });
+
+    it('블럭이 최소 길이보다 짧으면 블럭 안내 없이 곧만 알린다', () => {
+        const step = guidanceStep(BLOCK_ROUTE, NEW_GUIDANCE, north(295), 5, 0);
+
+        expect(texts(step)).toEqual(['곧 횡단보도입니다.', '곧 왼쪽입니다.']);
+        expect(dueBlockStart([CROSS, SHORT], 301, new Set())).toBeNull();
+    });
+
+    it('이미 알림 거리 안에서 시작한 블럭은 곧만 알린다', () => {
+        const step = guidanceStep(BLOCK_ROUTE, NEW_GUIDANCE, north(90), 5, 0);
+
+        expect(texts(step)).toEqual(['곧 오른쪽입니다.']);
     });
 });

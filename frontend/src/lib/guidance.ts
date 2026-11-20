@@ -5,7 +5,12 @@ import type { LocationFix } from '../platform';
 import { NAVIGATION } from '../settings';
 import type { Alert } from './alertArbiter';
 import type { LngLat } from './geo';
-import { ARRIVED_END_TEXT, eventText, REROUTE_TEXT } from './guidanceText';
+import {
+    ARRIVED_END_TEXT,
+    blockText,
+    eventText,
+    REROUTE_TEXT,
+} from './guidanceText';
 import {
     judge,
     type Judgement,
@@ -17,7 +22,13 @@ import {
     type SearchRange,
     trackOffRoute,
 } from './navigation';
-import { dueEvents, eventKey, type RouteEvent } from './routeEvents';
+import {
+    blockKey,
+    dueBlockStart,
+    dueEvents,
+    eventKey,
+    type RouteEvent,
+} from './routeEvents';
 
 export const ARRIVED_KEY = 'goal:arrived';
 export const REROUTE_KEY = 'route:reroute';
@@ -108,6 +119,18 @@ export function guidanceStep(
         alerts.push({ key: REROUTE_KEY, level: 'route', text: REROUTE_TEXT });
     }
     if (judgement === 'on_route') {
+        const blockStart = dueBlockStart(
+            route.events,
+            progress.travelledM,
+            state.announced,
+        );
+        if (blockStart) {
+            alerts.push({
+                key: blockKey(blockStart),
+                level: 'route',
+                text: blockText(blockStart),
+            });
+        }
         for (const event of dueEvents(
             route.events,
             progress.travelledM,

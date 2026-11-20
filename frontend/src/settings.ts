@@ -76,6 +76,10 @@ export const ALERT_DISTANCE_M: Readonly<Record<EventKind, number>> = {
 // 남은 거리가 이보다 짧으면 "곧"이라고 읽는다.
 export const NEAR_M = 10;
 
+// 블럭(회전·횡단보도 사이 구간) 시작 안내를 하는 최소 블럭 길이(m).
+// 이보다 짧은 블럭은 블럭 안내를 건너뛰고 지점 근처의 "곧 ○○"만 읽는다.
+export const BLOCK_MIN_M = 20;
+
 // 같은 알림(key)을 다시 읽기 전에 기다리는 시간
 export const ALERT_COOLDOWN_MS: Readonly<Record<AlertLevel, number>> = {
     danger: 3_000,

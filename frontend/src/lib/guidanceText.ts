@@ -1,7 +1,12 @@
 // 미리 알림 이벤트를 읽어 줄 문장으로 바꾼다.
 
 import { NEAR_M } from '../settings';
-import type { Direction, EventKind, RouteEvent } from './routeEvents';
+import {
+    type Direction,
+    type EventKind,
+    isBlockEnd,
+    type RouteEvent,
+} from './routeEvents';
 
 export const ARRIVED_TEXT = '목적지에 도착했습니다.';
 // 도착하면 이 말을 끝으로 안내를 끝낸다.
@@ -40,7 +45,18 @@ export function spokenDistance(meters: number): string {
     return `${Math.max(10, Math.round(meters / 10) * 10)}미터`;
 }
 
-/** 남은 거리가 remainingM 인 이벤트의 안내 문장 */
+/** 이 블럭이 끝나는 교차로 이벤트의 블럭 시작 안내 문장 */
+export function blockText({ kind, direction }: RouteEvent): string {
+    if (kind === 'turn') {
+        const label = direction ? DIRECTION_LABELS[direction] : '방향 전환';
+        return `이번 블럭에서 ${label}입니다.`;
+    }
+    const [name, particle] = PLACE_NAMES.crosswalk;
+    const place = direction ? `${DIRECTION_LABELS[direction]} ${name}` : name;
+    return `이번 블럭 끝에 ${place}${particle} 있습니다.`;
+}
+
+/** 남은 거리가 remainingM 인 이벤트의 안내 문장. 회전·횡단보도는 거리 없이 "곧"으로 읽는다. */
 export function eventText(
     { kind, direction }: RouteEvent,
     remainingM: number,
@@ -50,7 +66,7 @@ export function eventText(
     const ahead = spokenDistance(remainingM);
     if (kind === 'turn') {
         const label = direction ? DIRECTION_LABELS[direction] : '방향 전환';
-        return near ? `곧 ${label}입니다.` : `${ahead} 앞에서 ${label}입니다.`;
+        return `곧 ${label}입니다.`;
     }
     if (kind === 'crowd') {
         return near
@@ -59,7 +75,7 @@ export function eventText(
     }
     const [name, particle] = PLACE_NAMES[kind];
     const place = direction ? `${DIRECTION_LABELS[direction]} ${name}` : name;
-    return near
+    return near || kind === 'crosswalk'
         ? `곧 ${place}입니다.`
         : `${ahead} 앞에 ${place}${particle} 있습니다.`;
 }
@@ -78,5 +94,11 @@ export function upcomingText(
                     : nearest,
             null,
         );
-    return next ? eventText(next, next.distance_m - travelledM) : null;
+    if (!next) {
+        return null;
+    }
+    // 화면에는 멀리서도 읽히도록 교차로는 블럭 문장으로 보인다.
+    return isBlockEnd(next)
+        ? blockText(next)
+        : eventText(next, next.distance_m - travelledM);
 }
