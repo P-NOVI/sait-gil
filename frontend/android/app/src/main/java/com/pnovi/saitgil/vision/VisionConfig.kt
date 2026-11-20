@@ -96,3 +96,14 @@ data class DetectorConfig(
     /** 레터박스 여백 밝기(0~255). 학습 때 Ultralytics 가 채우는 회색과 같다 */
     val padGray: Int = 114,
 )
+
+/**
+ * 폰이 목걸이에 위아래 거꾸로 걸렸는지 판단하는 기준값(MountOrientation). 실기기에서 맞출 초안 값이다.
+ * 각도는 방향 센서 값으로, 0° 는 폰을 바로 세운 것, 180° 는 위아래 거꾸로 세운 것이다.
+ */
+data class MountConfig(
+    /** 바로(0°)나 거꾸로(180°)에서 이 각도(도) 안이면 그 방향으로 본다. 그 사이(옆으로 기운 것)는 판단하지 않는다 */
+    val maxTiltDeg: Int = 45,
+    /** 새 방향이 이 시간(ms) 동안 이어져야 바꾼다. 걸을 때 흔들려 잠깐 뒤집힌 것은 넘긴다 */
+    val flipHoldMs: Long = 1_000,
+)
