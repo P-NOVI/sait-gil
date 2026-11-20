@@ -1,6 +1,11 @@
 // 미리 알림 이벤트를 읽어 줄 문장으로 바꾼다.
 
-import { NEAR_M } from '../settings';
+import {
+    ALERT_DISTANCE_M,
+    BLOCK,
+    type BlockSettings,
+    NEAR_M,
+} from '../settings';
 import {
     type Direction,
     type EventKind,
@@ -45,7 +50,22 @@ export function spokenDistance(meters: number): string {
     return `${Math.max(10, Math.round(meters / 10) * 10)}미터`;
 }
 
-/** 이 블럭이 끝나는 교차로 이벤트의 블럭 시작 안내 문장 */
+/** 먼 교차로(블럭 대신 미터로 알릴 때)의 안내 문장 */
+export function farText(
+    { kind, direction }: RouteEvent,
+    remainingM: number,
+): string {
+    const ahead = spokenDistance(remainingM);
+    if (kind === 'turn') {
+        const label = direction ? DIRECTION_LABELS[direction] : '방향 전환';
+        return `${ahead} 앞에서 ${label}입니다.`;
+    }
+    const [name, particle] = PLACE_NAMES.crosswalk;
+    const place = direction ? `${DIRECTION_LABELS[direction]} ${name}` : name;
+    return `${ahead} 앞에 ${place}${particle} 있습니다.`;
+}
+
+/** 이 블럭이 끝나는 교차로 이벤트의 블럭 안내 문장 */
 export function blockText({ kind, direction }: RouteEvent): string {
     if (kind === 'turn') {
         const label = direction ? DIRECTION_LABELS[direction] : '방향 전환';
@@ -84,6 +104,8 @@ export function eventText(
 export function upcomingText(
     events: readonly RouteEvent[],
     travelledM: number,
+    blockSettings: BlockSettings = BLOCK,
+    alertDistanceM: Readonly<Record<EventKind, number>> = ALERT_DISTANCE_M,
 ): string | null {
     const next = events
         .filter((event) => event.distance_m >= travelledM)
@@ -97,8 +119,12 @@ export function upcomingText(
     if (!next) {
         return null;
     }
-    // 화면에는 멀리서도 읽히도록 교차로는 블럭 문장으로 보인다.
-    return isBlockEnd(next)
+    const remainingM = next.distance_m - travelledM;
+    if (!isBlockEnd(next) || remainingM <= alertDistanceM[next.kind]) {
+        return eventText(next, remainingM);
+    }
+    // 교차로는 음성과 같게 거리에 따라 블럭 문장·미터 문장으로 보인다.
+    return remainingM <= blockSettings.maxM
         ? blockText(next)
-        : eventText(next, next.distance_m - travelledM);
+        : farText(next, remainingM);
 }

@@ -62,8 +62,8 @@ export const HEADING = {
 
 // 이벤트까지 남은 거리가 이 안에 들어오면 미리 알린다.
 export const ALERT_DISTANCE_M: Readonly<Record<EventKind, number>> = {
-    turn: 20,
-    crosswalk: 20,
+    turn: 10,
+    crosswalk: 10,
     stairs: 20,
     ramp: 20,
     overpass: 30,
@@ -76,9 +76,17 @@ export const ALERT_DISTANCE_M: Readonly<Record<EventKind, number>> = {
 // 남은 거리가 이보다 짧으면 "곧"이라고 읽는다.
 export const NEAR_M = 10;
 
-// 블럭(회전·횡단보도 사이 구간) 시작 안내를 하는 최소 블럭 길이(m).
-// 이보다 짧은 블럭은 블럭 안내를 건너뛰고 지점 근처의 "곧 ○○"만 읽는다.
-export const BLOCK_MIN_M = 20;
+// 블럭(회전·횡단보도 사이 구간) 안내. 자체 도로망이 없어 Tmap 이 주는 교차로(회전·횡단보도)만 블럭 경계로 본다.
+export const BLOCK = {
+    // "곧" 안내 전까지 이만큼 걸을 거리가 남아야 블럭 안내를 한다(m).
+    // 이보다 짧으면 블럭 안내 직후 "곧"이 또 나오므로 "곧 ○○"만 읽는다.
+    minWalkM: 20,
+    // 교차로까지 남은 거리가 이보다 길면 블럭 대신 미터로 알린다(m).
+    // Tmap 안내점이 없어 한 블럭이 수백 m 로 묶일 수 있어, 이 안에 들어오면 그때 블럭으로 다시 알린다.
+    maxM: 150,
+} as const;
+
+export type BlockSettings = typeof BLOCK;
 
 // 같은 알림(key)을 다시 읽기 전에 기다리는 시간
 export const ALERT_COOLDOWN_MS: Readonly<Record<AlertLevel, number>> = {

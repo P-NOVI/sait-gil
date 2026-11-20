@@ -9,6 +9,7 @@ import {
     ARRIVED_END_TEXT,
     blockText,
     eventText,
+    farText,
     REROUTE_TEXT,
 } from './guidanceText';
 import {
@@ -24,7 +25,7 @@ import {
 } from './navigation';
 import {
     blockKey,
-    dueBlockStart,
+    dueBlockAlert,
     dueEvents,
     eventKey,
     type RouteEvent,
@@ -119,18 +120,6 @@ export function guidanceStep(
         alerts.push({ key: REROUTE_KEY, level: 'route', text: REROUTE_TEXT });
     }
     if (judgement === 'on_route') {
-        const blockStart = dueBlockStart(
-            route.events,
-            progress.travelledM,
-            state.announced,
-        );
-        if (blockStart) {
-            alerts.push({
-                key: blockKey(blockStart),
-                level: 'route',
-                text: blockText(blockStart),
-            });
-        }
         for (const event of dueEvents(
             route.events,
             progress.travelledM,
@@ -140,6 +129,22 @@ export function guidanceStep(
                 key: eventKey(event),
                 level: event.kind === 'crowd' ? 'crowd' : 'route',
                 text: eventText(event, event.distance_m - progress.travelledM),
+            });
+        }
+        // 한 위치에 하나만 읽으므로 가까운 지점 알림이 먼저 나가도록 뒤에 둔다.
+        const block = dueBlockAlert(
+            route.events,
+            progress.travelledM,
+            state.announced,
+        );
+        if (block) {
+            const remainingM = block.event.distance_m - progress.travelledM;
+            alerts.push({
+                key: blockKey(block.event, block.far),
+                level: 'route',
+                text: block.far
+                    ? farText(block.event, remainingM)
+                    : blockText(block.event),
             });
         }
     }
