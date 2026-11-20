@@ -317,6 +317,20 @@ describe('obstacleAlert', () => {
         );
     });
 
+    it('서 있는 차·이륜차는 장애물처럼 경로 등급으로 알린다', () => {
+        expect(
+            obstacleAlert({ kind: 'car', direction: 12, still: true }),
+        ).toEqual({
+            key: `${VISION_KEYS.obstacle}-car`,
+            level: 'route',
+            text: '12시 방향에 차가 있습니다.',
+            cooldownMs: 0,
+        });
+        expect(
+            obstacleText({ kind: 'two_wheeler', direction: 1, still: true }),
+        ).toBe('1시 방향에 이륜차가 있습니다.');
+    });
+
     it('클래스마다 따로 쿨다운을 받도록 이름이 다르다', () => {
         expect(obstacleAlert({ kind: 'pole', direction: 12 }).key).not.toBe(
             obstacleAlert({ kind: 'stairs', direction: 12 }).key,

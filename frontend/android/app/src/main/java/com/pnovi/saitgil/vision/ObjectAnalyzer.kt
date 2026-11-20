@@ -1,7 +1,7 @@
 package com.pnovi.saitgil.vision
 
 // 사람 밖의 클래스 박스로 가까운 장애물과 보행 신호등 상태를 판단한다.
-// 차·이륜차는 박스 높이로 거리를 재고, 그 밖은 박스 아래 끝 위치로 가까운지만 본다. 읽을 문장은 화면이 만든다.
+// 차·이륜차는 VehicleTracker 가 추적해 움직이는지 보고 알리고, 그 밖은 박스 아래 끝 위치로 가까운지만 본다. 읽을 문장은 화면이 만든다.
 // Android 클래스를 쓰지 않아 가짜 박스로 JVM 단위 테스트를 할 수 있다.
 
 import kotlin.math.abs
@@ -29,14 +29,8 @@ val OBSTACLE_CLASSES: Set<DetectedClass> = setOf(
     DetectedClass.STAIRS,
 )
 
-/** 빨리 지나가 여러 프레임 연달아 잡히기 어려운 장애물. fastObstacleConfirmFrames 만큼만 보이면 알린다 */
-private val FAST_OBSTACLE_CLASSES: Set<DetectedClass> = setOf(
-    DetectedClass.TWO_WHEELER,
-    DetectedClass.CAR,
-)
-
 // 걷는 길 앞으로 보는 칸(11~1시). 양 끝 칸(10시·2시)에만 걸친 장애물은 알리지 않는다.
-private val AHEAD_SECTORS: Set<Int> =
+internal val AHEAD_SECTORS: Set<Int> =
     CLOCK_SECTORS.indices.filter { CLOCK_SECTORS[it] in setOf(11, 12, 1) }.toSet()
 
 /** 보행 신호등 클래스와 그 상태 */
@@ -51,12 +45,14 @@ data class ObstacleSighting(val kind: DetectedClass, val direction: Int)
 /**
  * 프레임 하나를 판단한 결과.
  * seen 은 이번 프레임에 보인 장애물(클래스마다 하나)로, 확인 없이 화면에 바로 보여 준다.
- * alerts 는 여러 프레임 확인을 거쳐 이번 프레임에 알릴 장애물이다.
+ * alerts 는 이번 프레임에 알릴 장애물이다. 차·이륜차를 앞에 둔다.
+ * vehicles 는 추적 중인 차의 거리·움직임으로, 실기기 로그로 기준을 맞출 때 쓴다.
  */
 data class ObjectAnalysis(
     val signal: SignalState?,
     val alerts: List<VisionAlert>,
     val seen: List<ObstacleSighting> = emptyList(),
+    val vehicles: List<VehicleState> = emptyList(),
 )
 
 /** 클래스 하나의 가까운 장애물을 지켜본 기록 */
@@ -73,9 +69,7 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
     // 초당 1~2장 추론과 흔들리는 목걸이 카메라로는 박스를 이어 같은 물체인지 가리기 어려워 단순하게 둔다.
     private val tracks = mutableMapOf<DetectedClass, ObstacleTrack>()
 
-    // 차·이륜차는 1프레임만 봐도 알려 한 프레임 잘못 잡힌 것도 알린다. 안 보여 track 이 지워져도
-    // 알린 시각을 남겨, 주차된 차가 많은 길에서 잘못 잡힐 때마다 obstacleRepeatMs 안에 또 알리지 않게 한다.
-    private val lastFastAlertMs = mutableMapOf<DetectedClass, Long>()
+    private val vehicles = VehicleTracker(config)
 
     private var signal: SignalState? = null
     private var signalCandidate: SignalState? = null
@@ -90,9 +84,10 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
                 .maxByOrNull { it.bottom }
                 ?.let { ObstacleSighting(kind, labels[aheadSector(it)]) }
         }
-        OBSTACLE_CLASSES.filter { kind -> seen.none { it.kind == kind } }.forEach(::miss)
-        val alerts = seen
-            .filter { seenAndDue(it.kind, frame.timeMs) }
+        val fixed = OBSTACLE_CLASSES - VEHICLE_CLASSES
+        fixed.filter { kind -> seen.none { it.kind == kind } }.forEach(::miss)
+        val obstacleAlerts = seen
+            .filter { it.kind in fixed && seenAndDue(it.kind, frame.timeMs) }
             .map {
                 VisionAlert(
                     kind = AlertKind.OBSTACLE,
@@ -101,7 +96,18 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
                     direction = it.direction,
                 )
             }
-        return ObjectAnalysis(followSignal(frame), alerts, seen)
+        val vehicleAnalysis = vehicles.analyze(frame, labels)
+        val vehicleAlerts = vehicleAnalysis.alerts.map {
+            VisionAlert(
+                kind = AlertKind.OBSTACLE,
+                message = it.kind.wire,
+                distanceM = it.distanceM,
+                objectClass = it.kind,
+                direction = it.direction,
+                moving = it.moving,
+            )
+        }
+        return ObjectAnalysis(followSignal(frame), vehicleAlerts + obstacleAlerts, seen, vehicleAnalysis.states)
     }
 
     /** 가깝고 앞쪽 칸에 걸쳐 있는지 */
@@ -113,15 +119,10 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
      * 차·이륜차 박스 아래가 영상 끝에 닿아 잘렸으면 바퀴가 안 보일 만큼 가까운 것으로 본다.
      */
     private fun isNear(box: ObjectBox, frame: DetectionFrame): Boolean {
-        val (heightM, nearM) = when (box.kind) {
-            DetectedClass.CAR -> config.carHeightM to config.carNearM
-            DetectedClass.TWO_WHEELER -> config.twoWheelerHeightM to config.twoWheelerNearM
-            else -> return box.bottom >= config.obstacleNearBottom
-        }
-        if (box.bottom >= 1 - config.clippedEdge) return true
-        val heightPx = box.height * frame.imageHeightPx
-        if (heightPx <= 0.0) return false
-        return focalLengthPx(frame, config) * heightM / heightPx <= nearM
+        if (box.kind !in VEHICLE_CLASSES) return box.bottom >= config.obstacleNearBottom
+        if (isCutOffAtBottom(box, config)) return true
+        val distance = vehicleDistanceM(box, frame, config) ?: return false
+        return distance <= vehicleNearM(box.kind, config)
     }
 
     /**
@@ -154,14 +155,10 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val track = tracks.getOrPut(kind, ::ObstacleTrack)
         track.seenFrames += 1
         track.missedFrames = 0
-        val confirmFrames =
-            if (kind in FAST_OBSTACLE_CLASSES) config.fastObstacleConfirmFrames else config.obstacleConfirmFrames
-        if (track.seenFrames < confirmFrames) return false
-        // 차·이륜차는 기록이 지워진 뒤에도 마지막으로 알린 시각을 남겨 반복 제한을 이어 간다.
-        val alertedAt = track.alertedAtMs ?: lastFastAlertMs[kind]
+        if (track.seenFrames < config.obstacleConfirmFrames) return false
+        val alertedAt = track.alertedAtMs
         if (alertedAt != null && nowMs - alertedAt < config.obstacleRepeatMs) return false
         track.alertedAtMs = nowMs
-        if (kind in FAST_OBSTACLE_CLASSES) lastFastAlertMs[kind] = nowMs
         return true
     }
 
