@@ -43,6 +43,14 @@ class ObjectAnalyzerTest {
     /** 실기기 추론 간격(약 0.7초)으로 index 번째 노트8 프레임 */
     private fun walkFrame(index: Int, vararg objects: ObjectBox) = note8Frame(*objects).copy(timeMs = index * 700L)
 
+    /** 바닥 기준 distanceM 앞에 서 있는 높이 1m 장애물 박스. 목걸이 높이에서 수평으로 찍은 노트8 영상이다 */
+    private fun groundBox(kind: DetectedClass, distanceM: Double, sector: Int = 2): ObjectBox {
+        val bottom = config.horizonY + config.cameraHeightM * note8FocalPx / distanceM / heightPx
+        val height = note8FocalPx * 1.0 / distanceM / heightPx
+        val centerX = (sector + 0.5) / CLOCK_SECTORS.size
+        return ObjectBox(kind, centerX - 0.05, bottom - height, 0.1, height, score = 0.9)
+    }
+
     /** 100ms 간격 프레임들을 차례로 판단한다. 프레임마다 보일 박스를 준다(없으면 빈 프레임) */
     private fun run(
         analyzer: ObjectAnalyzer,
@@ -119,13 +127,75 @@ class ObjectAnalyzerTest {
     }
 
     @Test
-    fun repeatsWhileStillSeenOnlyAfterRepeatTime() {
-        val frames = (config.obstacleRepeatMs / 100 + 3).toInt()
-
-        val results = run(ObjectAnalyzer(config), repeat(listOf(box(DetectedClass.STAIRS)), frames))
+    fun sameObstacleIsAlertedOnceWhileSeen() {
+        // 약 2.5m 앞 계단이 12초 동안 계속 보인다.
+        val results = run(ObjectAnalyzer(config), repeat(listOf(box(DetectedClass.STAIRS)), 120))
 
         val alertedAt = results.indices.filter { results[it].alerts.isNotEmpty() }
-        assertEquals(listOf(2, 2 + (config.obstacleRepeatMs / 100).toInt()), alertedAt)
+        assertEquals(listOf(2), alertedAt)
+    }
+
+    @Test
+    fun obstacleAlertedFarIsAlertedAgainWhenClose() {
+        val analyzer = ObjectAnalyzer(config)
+
+        // 9m 앞 기둥으로 약 1.2m/s 로 걸어간다.
+        val results = (0 until 8).map { index ->
+            walkFrame(index, groundBox(DetectedClass.POLE, 9.0 - index * 0.84))
+        }.map(analyzer::analyze)
+
+        val alertedAt = results.indices.filter { results[it].alerts.isNotEmpty() }
+        assertEquals(listOf(2, 5), alertedAt)
+        assertEquals(9.0 - 2 * 0.84, results[2].alerts.single().distanceM!!, 0.01)
+        assertTrue(results[5].alerts.single().distanceM!! <= config.obstacleCloseM)
+        assertNull(results[5].alerts.single().moving)
+    }
+
+    @Test
+    fun nearestObstacleIsAlertedFirstAndNextAfterGap() {
+        val analyzer = ObjectAnalyzer(config)
+        val pole = groundBox(DetectedClass.POLE, 8.0, sector = 1)
+        val low = groundBox(DetectedClass.OBSTACLE, 4.0, sector = 3)
+
+        val results = (0 until 6).map { analyzer.analyze(walkFrame(it, pole, low)) }
+
+        val alerted = results.map { result -> result.alerts.map { it.objectClass } }
+        // 앞 알림 뒤 noticeGapMs(1.5초) 안의 프레임(0.7초 간격)은 건너뛴다.
+        assertEquals(
+            listOf(emptyList(), emptyList(), listOf(DetectedClass.OBSTACLE), emptyList(), emptyList(), listOf(DetectedClass.POLE)),
+            alerted,
+        )
+    }
+
+    @Test
+    fun parkedCarCloserThanPoleIsAlertedFirst() {
+        val analyzer = ObjectAnalyzer(config)
+
+        // 약 1.2m/s 로 걷는다. 가까운 바닥 장애물을 알린 뒤 기다리는 동안, 서 있는 차(12m 에서 시작)와
+        // 그보다 조금 먼 기둥(12.3m 에서 시작)이 함께 알릴 차례가 된다.
+        val results = (0 until 9).map { index ->
+            val walked = index * 0.84
+            val car = boxAt(DetectedClass.CAR, config.carHeightM, 12.0 - walked)
+            val pole = groundBox(DetectedClass.POLE, 12.3 - walked, sector = 3)
+            val low = groundBox(DetectedClass.OBSTACLE, 5.0 - walked, sector = 1).takeIf { index <= 2 }
+            walkFrame(index, *listOfNotNull(car, pole, low).toTypedArray())
+        }.map(analyzer::analyze)
+
+        val alerted = results.indices.filter { results[it].alerts.isNotEmpty() }
+        assertEquals(listOf(2, 5, 8), alerted)
+        assertEquals(DetectedClass.OBSTACLE, results[2].alerts.single().objectClass)
+        val car = results[5].alerts.single()
+        assertEquals(DetectedClass.CAR, car.objectClass)
+        assertEquals(false, car.moving)
+        assertEquals(DetectedClass.POLE, results[8].alerts.single().objectClass)
+    }
+
+    @Test
+    fun groundDistanceComesFromBoxBottom() {
+        val frame = note8Frame()
+
+        assertEquals(1.3 * note8FocalPx / (0.1 * heightPx), groundDistanceM(box(DetectedClass.POLE, bottom = 0.6), frame, config)!!, 0.01)
+        assertNull(groundDistanceM(box(DetectedClass.POLE, bottom = 0.5), frame, config))
     }
 
     @Test
@@ -141,7 +211,8 @@ class ObjectAnalyzerTest {
     @Test
     fun obstacleGoneLongerThanMaxMissedAlertsAgain() {
         val pole = listOf(box(DetectedClass.POLE))
-        val gap = repeat(emptyList(), config.obstacleMaxMissedFrames + 1)
+        // 추적에서 빠질 만큼 오래, 그리고 알림 간격(noticeGapMs)보다 길게 안 보인다.
+        val gap = repeat(emptyList(), maxOf(config.obstacleMaxMissedFrames + 1, (config.noticeGapMs / 100).toInt()))
 
         val results = run(ObjectAnalyzer(config), repeat(pole, 3) + gap + repeat(pole, 3))
 
@@ -153,9 +224,13 @@ class ObjectAnalyzerTest {
     fun eachClassAlertsOnItsOwn() {
         val both = listOf(box(DetectedClass.POLE, sector = 1), box(DetectedClass.STAIRS, sector = 3))
 
-        val results = run(ObjectAnalyzer(config), repeat(both, 3))
+        // 한 번에 하나씩, 알림 간격(noticeGapMs)을 두고 각각 한 번 알린다.
+        val results = run(ObjectAnalyzer(config), repeat(both, 3 + (config.noticeGapMs / 100).toInt()))
 
-        assertEquals(setOf(DetectedClass.POLE, DetectedClass.STAIRS), results[2].alerts.map { it.objectClass }.toSet())
+        val alerted = results.flatMap { result -> result.alerts.map { it.objectClass } }
+        assertEquals(1, results[2].alerts.size)
+        assertEquals(setOf(DetectedClass.POLE, DetectedClass.STAIRS), alerted.toSet())
+        assertEquals(2, alerted.size)
     }
 
     @Test
@@ -235,9 +310,10 @@ class ObjectAnalyzerTest {
 
     @Test
     fun vehiclesAreSeenByDistanceFromBoxHeightNotBoxBottom() {
-        // 박스 아래 끝(0.6)은 obstacleNearBottom(0.7) 보다 위라 바닥 기준으로는 먼 차·이륜차
-        val car = boxAt(DetectedClass.CAR, config.carHeightM, config.carNearM - 1)
-        val twoWheeler = boxAt(DetectedClass.TWO_WHEELER, config.twoWheelerHeightM, config.twoWheelerNearM - 1)
+        // 박스 아래 끝(0.55)은 바닥 기준으로 약 20m 라 obstacleNearM 보다 먼 차·이륜차
+        val car = boxAt(DetectedClass.CAR, config.carHeightM, config.carNearM - 1, bottom = 0.55)
+        val twoWheeler =
+            boxAt(DetectedClass.TWO_WHEELER, config.twoWheelerHeightM, config.twoWheelerNearM - 1, bottom = 0.55)
 
         val result = ObjectAnalyzer(config).analyze(note8Frame(car, twoWheeler))
 
@@ -247,19 +323,20 @@ class ObjectAnalyzerTest {
     }
 
     @Test
-    fun parkedCarAlertSaysItIsStillWithDistance() {
+    fun parkedCarAlertSaysItIsStillWithDistanceAndAgainWhenClose() {
         val analyzer = ObjectAnalyzer(config)
 
-        // 서 있는 차로 약 1.2m/s 로 걸어간다(0.7초 간격 프레임).
+        // 서 있는 차로 약 1.2m/s 로 걸어간다(0.7초 간격 프레임). 마지막은 약 4.9m 다.
         val results = (0 until 13).map { index ->
-            val car = boxAt(DetectedClass.CAR, config.carHeightM, 15.0 - index * 0.84)
-            analyzer.analyze(note8Frame(car).copy(timeMs = index * 700L))
+            analyzer.analyze(walkFrame(index, boxAt(DetectedClass.CAR, config.carHeightM, 15.0 - index * 0.84)))
         }
 
-        val alert = results.flatMap { it.alerts }.single()
-        assertEquals(AlertKind.OBSTACLE, alert.kind)
-        assertEquals(false, alert.moving)
-        assertTrue(alert.distanceM!! <= config.vehicleStillNearM)
+        val (far, close) = results.flatMap { it.alerts }
+        assertEquals(AlertKind.OBSTACLE, far.kind)
+        assertEquals(false, far.moving)
+        assertTrue(far.distanceM!! in config.obstacleCloseM..config.vehicleStillNearM)
+        assertEquals(false, close.moving)
+        assertTrue(close.distanceM!! <= config.obstacleCloseM)
         assertTrue(results.last().vehicles.single().motion == VehicleMotion.STILL)
     }
 
@@ -287,8 +364,8 @@ class ObjectAnalyzerTest {
     }
 
     @Test
-    fun otherObstaclesStillUseBoxBottom() {
-        // 높이로 재면 가깝지만 아래 끝이 높은 기둥과, 작지만 아래 끝이 가까운 바닥 장애물
+    fun otherObstaclesUseGroundDistanceFromBoxBottom() {
+        // 높이로 재면 가깝지만 아래 끝이 수평선에 있는 기둥과, 작지만 아래 끝이 가까운 바닥 장애물
         val pole = boxAt(DetectedClass.POLE, 1.0, 2.0, bottom = 0.5)
         val low = boxAt(DetectedClass.OBSTACLE, 0.3, 20.0, bottom = 0.9)
 

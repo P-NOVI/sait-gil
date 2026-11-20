@@ -45,13 +45,25 @@ data class VisionConfig(
     val trackMaxMissedFrames: Int = 5,
     /** 접근 경고에 넣는 빈 방향은 이 프레임 수만큼 연달아 비어 있던 것만 쓴다. 한 프레임 튀는 방향을 막는다 */
     val freeConfirmFrames: Int = 3,
+    /** 목걸이에 건 카메라의 바닥에서 높이(m). 기둥·장애물·계단의 바닥 기준 거리를 잴 때 쓴다 */
+    val cameraHeightM: Double = 1.3,
     /**
-     * 장애물 박스 아래 끝이 영상 위에서 이만큼(0~1) 아래에 있으면 가까운 것으로 본다. 차·이륜차는 쓰지 않는다.
-     * 목걸이 높이(약 1.3m)에서 1배 기본 렌즈(약 67°)로 수평으로 찍으면 0.6 은 약 10m 앞 바닥이다(0.7 은 약 5m).
-     * 음성이 나오는 데 걸리는 시간을 생각해 10m 로 둔다. 수평선(0.5)에 가까워 폰이 위로 들리면 더 먼 장애물도 알린다.
-     * 실기기에서 맞출 초안 값이다.
+     * 폰을 수평으로 걸었을 때 영상 속 수평선 위치(위에서 0~1). 박스 아래 끝이 이보다 아래여야 바닥 거리를 잰다.
+     * 폰이 위로 들리면 실제 수평선이 내려가 거리가 멀게 나온다(5° 들리면 10m 가 약 30m).
      */
-    val obstacleNearBottom: Double = 0.6,
+    val horizonY: Double = 0.5,
+    /**
+     * 기둥·장애물·계단이 바닥 기준 이 거리(m) 안이면 가까운 것으로 본다. 차·이륜차는 쓰지 않는다.
+     * 음성이 나오는 데 걸리는 시간을 생각해 10m 로 둔다. 1배 기본 렌즈로 수평으로 찍으면 박스 아래 끝 약 0.6 이다.
+     */
+    val obstacleNearM: Double = 10.0,
+    /** 이 거리(m) 밖에서 알린 장애물·서 있는 차가 이 안으로 들어오면 한 번 더 알린다 */
+    val obstacleCloseM: Double = 5.0,
+    /**
+     * 장애물·서 있는 차 알림 사이 최소 간격(ms). 화면은 읽는 중에 온 장애물 알림을 VISION.obstacleMaxWaitMs(1.5초)까지만
+     * 기다리고 버리므로, 앞 알림을 읽는 동안 다음 것을 보내지 않는다. 움직이는 차는 쓰지 않는다.
+     */
+    val noticeGapMs: Long = 1_500,
     /**
      * 박스 높이로 거리를 잴 때 쓰는 차 높이(m). 버스·트럭도 car 로 학습돼 실제보다 가깝게 나와 일찍 알린다.
      * 화면 위치와 달리 목걸이 폰이 기울어도 거리가 거의 바뀌지 않아 차·이륜차는 박스 높이로 잰다.
@@ -71,15 +83,18 @@ data class VisionConfig(
     val obstacleConfirmFrames: Int = 3,
     /** 이 프레임 수보다 오래 안 보인 장애물·차는 지나간 것으로 보고, 다시 보이면 새로 알린다 */
     val obstacleMaxMissedFrames: Int = 5,
-    /** 같은 장애물이 계속 보이면 이 시간(ms)마다 다시 알린다. 서 있는 차는 클래스마다 이 시간 안에 한 번만 알린다 */
-    val obstacleRepeatMs: Long = 10_000,
+    /** 서 있는 차는 클래스마다 이 시간(ms) 안에 새 차를 한 번만 알린다. 추적이 끊겨 같은 차가 새 차로 잡힐 때 */
+    val stillVehicleRepeatMs: Long = 10_000,
+    /** 앞 프레임 차·장애물 박스와 이만큼 이상 겹치면(IoU) 같은 물체로 본다 */
+    val objectTrackIou: Double = 0.2,
+    /**
+     * 안 겹쳐도 가운데가 이만큼(영상 폭 0~1) 안에서 움직였고 크기가 비슷하면 같은 물체로 본다.
+     * 옆으로 빠르게 지나가는 차와, 목걸이가 흔들려 옆으로 밀린 가는 기둥
+     */
+    val objectMaxShift: Double = 0.25,
+    /** 같은 물체로 볼 박스 높이 비(큰 쪽 ÷ 작은 쪽) 상한 */
+    val objectMaxSizeRatio: Double = 1.7,
     // 아래 vehicle* 값은 차·이륜차 추적(VehicleTracker) 기준이다. 모두 실기기에서 맞출 초안 값이다.
-    /** 앞 프레임 차 박스와 이만큼 이상 겹치면(IoU) 같은 차로 본다 */
-    val vehicleTrackIou: Double = 0.2,
-    /** 안 겹쳐도 가운데가 이만큼(영상 폭 0~1) 안에서 움직였고 크기가 비슷하면 같은 차로 본다. 옆으로 빠르게 지나가는 차 */
-    val vehicleMaxShift: Double = 0.25,
-    /** 같은 차로 볼 박스 높이 비(큰 쪽 ÷ 작은 쪽) 상한 */
-    val vehicleMaxSizeRatio: Double = 1.7,
     /** 움직임을 잴 때 돌아보는 시간(ms). 약 0.7초 간격 프레임 세 장이 들어간다 */
     val vehicleMotionWindowMs: Long = 2_000,
     /** 움직임을 재려면 이 시간(ms) 이상 지켜봐야 한다. 프레임 두 장 간격이다 */
@@ -101,7 +116,7 @@ data class VisionConfig(
     val vehicleCorridorHalfWidthM: Double = 1.0,
     /** 세 프레임을 보기 전이라도 길 위 이 거리(m) 안에서 두 프레임 사이 vehicleMovingMps 넘게 다가오면 움직이는 차로 알린다 */
     val vehicleImmediateM: Double = 10.0,
-    /** 서 있는 차는 길 위 이 거리(m) 안일 때 장애물처럼 알린다. 다른 장애물 기준(obstacleNearBottom, 약 10m 앞 바닥)과 맞춘다 */
+    /** 서 있는 차는 길 위 이 거리(m) 안일 때 장애물처럼 알린다. 다른 장애물 기준(obstacleNearM)과 맞춘다 */
     val vehicleStillNearM: Double = 10.0,
     /** 움직이는 차는 클래스마다 이 시간(ms) 안에 한 번만 알린다. 추적이 끊겨 같은 차가 새 차로 잡힐 때와 차가 줄지어 올 때 */
     val vehicleWarnRepeatMs: Long = 5_000,
