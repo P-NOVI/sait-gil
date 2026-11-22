@@ -306,6 +306,36 @@ describe('startVision', () => {
         stop();
     });
 
+    it('서 있는 차 alert(moving false)는 still 을 붙이고, 움직이는 차는 붙이지 않는다', async () => {
+        native.value = true;
+        const onObstacle = vi.fn();
+        const stop = await startVision(vi.fn(), vi.fn(), onObstacle);
+
+        emitAlert({
+            kind: 'obstacle',
+            objectClass: 'car',
+            direction: 12,
+            moving: false,
+        });
+        emitAlert({
+            kind: 'obstacle',
+            objectClass: 'car',
+            direction: 1,
+            moving: true,
+        });
+
+        expect(onObstacle).toHaveBeenNthCalledWith(1, {
+            kind: 'car',
+            direction: 12,
+            still: true,
+        });
+        expect(onObstacle).toHaveBeenNthCalledWith(2, {
+            kind: 'car',
+            direction: 1,
+        });
+        stop();
+    });
+
     it('클래스나 방향이 잘못된 장애물 alert 와 멈춘 뒤의 alert 는 버린다', async () => {
         native.value = true;
         const onObstacle = vi.fn();

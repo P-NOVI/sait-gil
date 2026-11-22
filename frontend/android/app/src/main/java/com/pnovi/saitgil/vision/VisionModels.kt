@@ -107,6 +107,8 @@ data class VisionAlert(
     val objectClass: DetectedClass? = null,
     /** 장애물이 있는 시계 방향(10~2시). 장애물 알림이 아니면 null */
     val direction: Int? = null,
+    /** 차·이륜차가 움직여 조심하라고 알리는지. false 는 서 있는 차, 차·이륜차가 아니면 null */
+    val moving: Boolean? = null,
 ) {
     fun toJs(): JSObject = JSObject().apply {
         put("kind", kind.wire)
@@ -115,5 +117,6 @@ data class VisionAlert(
         put("freeDirections", JSArray().apply { freeDirections.forEach { put(it) } })
         put("objectClass", objectClass?.wire ?: JSONObject.NULL)
         put("direction", direction ?: JSONObject.NULL)
+        put("moving", moving ?: JSONObject.NULL)
     }
 }

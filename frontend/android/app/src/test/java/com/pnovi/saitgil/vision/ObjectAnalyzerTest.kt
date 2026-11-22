@@ -40,6 +40,9 @@ class ObjectAnalyzerTest {
     private fun note8Frame(vararg objects: ObjectBox) =
         DetectionFrame(0, emptyList(), widthPx, heightPx, focalLengthPx = note8FocalPx, objects = objects.toList())
 
+    /** 실기기 추론 간격(약 0.7초)으로 index 번째 노트8 프레임 */
+    private fun walkFrame(index: Int, vararg objects: ObjectBox) = note8Frame(*objects).copy(timeMs = index * 700L)
+
     /** 100ms 간격 프레임들을 차례로 판단한다. 프레임마다 보일 박스를 준다(없으면 빈 프레임) */
     private fun run(
         analyzer: ObjectAnalyzer,
@@ -91,7 +94,7 @@ class ObjectAnalyzerTest {
 
         val results = run(ObjectAnalyzer(config), repeat(listOf(wide), 3))
 
-        assertEquals(labels[sectorOf(wide.centerX)], results[0].alerts.single().direction)
+        assertEquals(labels[sectorOf(wide.centerX)], results[0].seen.single().direction)
     }
 
     @Test
@@ -102,7 +105,7 @@ class ObjectAnalyzerTest {
 
         val result = ObjectAnalyzer(config).analyze(frame(0, car))
 
-        assertEquals(12, result.alerts.single().direction)
+        assertEquals(12, result.seen.single().direction)
     }
 
     @Test
@@ -148,40 +151,69 @@ class ObjectAnalyzerTest {
 
     @Test
     fun eachClassAlertsOnItsOwn() {
-        val both = listOf(box(DetectedClass.POLE, sector = 1), box(DetectedClass.CAR, sector = 3))
+        val both = listOf(box(DetectedClass.POLE, sector = 1), box(DetectedClass.STAIRS, sector = 3))
 
         val results = run(ObjectAnalyzer(config), repeat(both, 3))
 
-        assertEquals(listOf(DetectedClass.CAR), results[0].alerts.map { it.objectClass })
-        assertEquals(listOf(DetectedClass.POLE), results[2].alerts.map { it.objectClass })
+        assertEquals(setOf(DetectedClass.POLE, DetectedClass.STAIRS), results[2].alerts.map { it.objectClass }.toSet())
     }
 
     @Test
-    fun fastObstaclesAlertOnFirstFrame() {
-        // 차·이륜차는 빨리 지나가 여러 프레임 연달아 잡히기 전에 알린다.
-        val results = run(
-            ObjectAnalyzer(config),
-            listOf(listOf(box(DetectedClass.CAR, sector = 1)), emptyList(), listOf(box(DetectedClass.TWO_WHEELER))),
-        )
+    fun veryNearApproachingVehicleAlertsOnSecondFrame() {
+        // 걷는 길 위 vehicleImmediateM 안에서 두 프레임 사이 약 3.6m/s 로 다가오는 차는 세 프레임을 기다리지 않는다.
+        val analyzer = ObjectAnalyzer(config)
 
-        assertEquals(listOf(DetectedClass.CAR), results[0].alerts.map { it.objectClass })
-        assertEquals(listOf(DetectedClass.TWO_WHEELER), results[2].alerts.map { it.objectClass })
+        val results = listOf(9.0, 6.5).mapIndexed { index, distance ->
+            analyzer.analyze(walkFrame(index, boxAt(DetectedClass.CAR, config.carHeightM, distance)))
+        }
+
+        assertTrue(results[0].alerts.isEmpty())
+        assertEquals(true, results[1].alerts.single().moving)
     }
 
     @Test
-    fun fastObstacleSeenAgainAfterGapWaitsForRepeatTime() {
-        val car = listOf(box(DetectedClass.CAR))
-        val gap = repeat(emptyList(), config.obstacleMaxMissedFrames + 1)
-        // 기록이 지워진 뒤 다시 잡혀도 반복 시간 안이면 알리지 않고, 지나면 알린다.
-        val afterRepeat = (config.obstacleRepeatMs / 100).toInt()
+    fun veryNearParkedCarIsNeverWarnedAsMoving() {
+        // 걷는 길 위 10m 안에서 처음 보인 서 있는 차. 한 프레임만 보고 "조심" 하지 않고, 서 있는 차로 알린다.
+        val analyzer = ObjectAnalyzer(config)
 
-        val results = run(
-            ObjectAnalyzer(config),
-            listOf(car) + gap + listOf(car) + repeat(emptyList(), afterRepeat) + listOf(car),
-        )
+        val results = (0 until 3).map { index ->
+            analyzer.analyze(walkFrame(index, boxAt(DetectedClass.CAR, config.carHeightM, 9.0 - index * 0.84)))
+        }
 
-        val alertedAt = results.indices.filter { results[it].alerts.isNotEmpty() }
-        assertEquals(listOf(0, results.lastIndex), alertedAt)
+        assertTrue(results.take(2).all { it.alerts.isEmpty() })
+        assertEquals(false, results[2].alerts.single().moving)
+    }
+
+    @Test
+    fun cutOffParkedCarIsJudgedByBoxWidth() {
+        // 바로 옆 주차된 차라 박스 아래가 잘렸다. 폭으로 거리를 재 서 있는 차로 본다.
+        val analyzer = ObjectAnalyzer(config)
+
+        val results = (0 until 3).map { index ->
+            val width = note8FocalPx * config.carWidthM / (4.0 - index * 0.84) / widthPx
+            val car = ObjectBox(DetectedClass.CAR, 0.5 - width / 2, 0.6, width, 0.4, score = 0.9)
+            analyzer.analyze(walkFrame(index, car))
+        }
+
+        assertTrue(results.take(2).all { it.alerts.isEmpty() })
+        assertEquals(false, results[2].alerts.single().moving)
+        assertEquals(4.0 - 2 * 0.84, results[2].alerts.single().distanceM!!, 0.01)
+    }
+
+    @Test
+    fun vehicleSeenAgainAfterGapWaitsForWarnRepeatTime() {
+        // 다가오는 차(두 프레임에 9m → 6.5m)가 추적이 끊겨 새 차로 잡혀도 반복 시간 안이면 알리지 않고, 지나면 알린다.
+        val approach = listOf(9.0, 6.5).map { boxAt(DetectedClass.CAR, config.carHeightM, it) }
+        val gap = List(config.obstacleMaxMissedFrames + 1) { null }
+        val boxes = approach + gap + approach + List(10) { null } + approach
+        // 0.7초 간격으로는 추적에서 빠지는 데만 4초 넘게 걸려, 반복 시간을 늘려 확인한다.
+        val analyzer = ObjectAnalyzer(config.copy(vehicleWarnRepeatMs = 8_000))
+
+        val alertedAt = boxes.indices.filter { index ->
+            analyzer.analyze(walkFrame(index, *listOfNotNull(boxes[index]).toTypedArray())).alerts.isNotEmpty()
+        }
+
+        assertEquals(listOf(1, boxes.lastIndex), alertedAt)
     }
 
     @Test
@@ -202,15 +234,33 @@ class ObjectAnalyzerTest {
     }
 
     @Test
-    fun vehiclesAreNearByDistanceFromBoxHeightNotBoxBottom() {
+    fun vehiclesAreSeenByDistanceFromBoxHeightNotBoxBottom() {
         // 박스 아래 끝(0.6)은 obstacleNearBottom(0.7) 보다 위라 바닥 기준으로는 먼 차·이륜차
         val car = boxAt(DetectedClass.CAR, config.carHeightM, config.carNearM - 1)
         val twoWheeler = boxAt(DetectedClass.TWO_WHEELER, config.twoWheelerHeightM, config.twoWheelerNearM - 1)
 
         val result = ObjectAnalyzer(config).analyze(note8Frame(car, twoWheeler))
 
-        assertEquals(setOf(DetectedClass.CAR, DetectedClass.TWO_WHEELER), result.alerts.map { it.objectClass }.toSet())
         assertEquals(setOf(DetectedClass.CAR, DetectedClass.TWO_WHEELER), result.seen.map { it.kind }.toSet())
+        // 화면에는 바로 보이지만, 먼 차는 움직이는지 판단한 뒤에 알린다(VehicleTrackerTest).
+        assertTrue(result.alerts.isEmpty())
+    }
+
+    @Test
+    fun parkedCarAlertSaysItIsStillWithDistance() {
+        val analyzer = ObjectAnalyzer(config)
+
+        // 서 있는 차로 약 1.2m/s 로 걸어간다(0.7초 간격 프레임).
+        val results = (0 until 13).map { index ->
+            val car = boxAt(DetectedClass.CAR, config.carHeightM, 15.0 - index * 0.84)
+            analyzer.analyze(note8Frame(car).copy(timeMs = index * 700L))
+        }
+
+        val alert = results.flatMap { it.alerts }.single()
+        assertEquals(AlertKind.OBSTACLE, alert.kind)
+        assertEquals(false, alert.moving)
+        assertTrue(alert.distanceM!! <= config.vehicleStillNearM)
+        assertTrue(results.last().vehicles.single().motion == VehicleMotion.STILL)
     }
 
     @Test
@@ -226,19 +276,20 @@ class ObjectAnalyzerTest {
     }
 
     @Test
-    fun vehicleCutOffAtBottomIsNear() {
-        // 바퀴가 영상 아래로 잘려 박스 높이로는 멀게 나오는 차
+    fun vehicleCutOffAtBottomIsSeenAsNear() {
+        // 바퀴가 영상 아래로 잘려 박스 높이로는 멀게 나오는 차. 화면에는 가깝게 보이지만 한 프레임으로는 알리지 않는다.
         val car = ObjectBox(DetectedClass.CAR, 0.45, 0.95, 0.1, 0.05, score = 0.9)
 
         val result = ObjectAnalyzer(config).analyze(note8Frame(car))
 
-        assertEquals(listOf(DetectedClass.CAR), result.alerts.map { it.objectClass })
+        assertEquals(listOf(DetectedClass.CAR), result.seen.map { it.kind })
+        assertTrue(result.alerts.isEmpty())
     }
 
     @Test
     fun otherObstaclesStillUseBoxBottom() {
         // 높이로 재면 가깝지만 아래 끝이 높은 기둥과, 작지만 아래 끝이 가까운 바닥 장애물
-        val pole = boxAt(DetectedClass.POLE, 1.0, 2.0, bottom = 0.6)
+        val pole = boxAt(DetectedClass.POLE, 1.0, 2.0, bottom = 0.5)
         val low = boxAt(DetectedClass.OBSTACLE, 0.3, 20.0, bottom = 0.9)
 
         val result = ObjectAnalyzer(config).analyze(note8Frame(pole, low))
