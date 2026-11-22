@@ -323,6 +323,37 @@ class ObjectAnalyzerTest {
     }
 
     @Test
+    fun leavingVehicleIsNotSeen() {
+        // 약 1.4m/s 로 멀어지는 차. 멀어지는 것으로 판단한 뒤에는 화면의 앞 장애물에서도 뺀다.
+        val analyzer = ObjectAnalyzer(config)
+        val results = listOf(6.0, 7.0, 8.0, 9.0).mapIndexed { index, distance ->
+            analyzer.analyze(walkFrame(index, boxAt(DetectedClass.CAR, config.carHeightM, distance)))
+        }
+
+        assertEquals(listOf(DetectedClass.CAR), results[0].seen.map { it.kind })
+        // results[1] 은 확인하지 않는다. 세 프레임을 보기 전에는 움직임을 몰라 아직 보이는 것이 의도된 동작이다.
+        assertTrue(results[2].seen.isEmpty())
+        assertTrue(results[3].seen.isEmpty())
+    }
+
+    @Test
+    fun leavingVehicleDoesNotHideOtherNearbyVehicle() {
+        // 멀어지는 차 옆의 이륜차는 박스 단위로 거르므로 계속 보인다. 종류 단위로 거르면 이 테스트가 깨진다.
+        val analyzer = ObjectAnalyzer(config)
+        val results = listOf(6.0, 7.0, 8.0, 9.0).mapIndexed { index, distance ->
+            analyzer.analyze(
+                walkFrame(
+                    index,
+                    boxAt(DetectedClass.CAR, config.carHeightM, distance),
+                    boxAt(DetectedClass.TWO_WHEELER, config.twoWheelerHeightM, config.twoWheelerNearM - 1),
+                ),
+            )
+        }
+
+        assertEquals(listOf(DetectedClass.TWO_WHEELER), results.last().seen.map { it.kind })
+    }
+
+    @Test
     fun parkedCarAlertSaysItIsStillWithDistanceAndAgainWhenClose() {
         val analyzer = ObjectAnalyzer(config)
 

@@ -40,6 +40,8 @@ data class VehicleState(
     /** 걷는 길 가운데로 들어오는 옆 속도(m/s). 지켜본 시간이 짧으면 null */
     val inwardMps: Double?,
     val motion: VehicleMotion,
+    /** 이번 프레임의 박스. 멀어지는 차를 화면에 보이는 장애물에서 거를 때 쓴다 */
+    val box: ObjectBox,
 )
 
 /** 박스 높이로 잰 차·이륜차 거리(m). 차 클래스가 아니거나 높이가 0 이면 null */
@@ -164,7 +166,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
             approach = (first.distanceM - last.distanceM) / spanS
             inward = (abs(first.lateralM) - abs(last.lateralM)) / spanS
         }
-        return VehicleState(track.id, track.kind, distance, lateral, approach, inward, motionOf(track, approach, inward))
+        return VehicleState(track.id, track.kind, distance, lateral, approach, inward, motionOf(track, approach, inward), track.box)
     }
 
     /**

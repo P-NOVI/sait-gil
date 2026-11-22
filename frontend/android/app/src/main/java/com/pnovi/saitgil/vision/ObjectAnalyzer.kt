@@ -84,14 +84,16 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
 
     fun analyze(frame: DetectionFrame): ObjectAnalysis {
         val labels = clockLabels(frame, config)
+        val vehicleAnalysis = vehicles.analyze(frame, labels)
+        // 멀어지는 차는 음성뿐 아니라 화면의 앞 장애물에서도 뺀다.
+        val leaving = vehicleAnalysis.states.filter { it.motion == VehicleMotion.LEAVING }.map { it.box }
         val seen = OBSTACLE_CLASSES.mapNotNull { kind ->
             // 같은 클래스가 여럿이면 가장 가까운(아래 끝이 가장 아래인) 것을 본다.
             frame.objects
-                .filter { it.kind == kind && isNear(it, frame) && overlapsAhead(it) }
+                .filter { it.kind == kind && isNear(it, frame) && overlapsAhead(it) && it !in leaving }
                 .maxByOrNull { it.bottom }
                 ?.let { ObstacleSighting(kind, directionOf(it, labels)) }
         }
-        val vehicleAnalysis = vehicles.analyze(frame, labels)
         val warnings = vehicleAnalysis.alerts.map {
             VisionAlert(
                 kind = AlertKind.OBSTACLE,
