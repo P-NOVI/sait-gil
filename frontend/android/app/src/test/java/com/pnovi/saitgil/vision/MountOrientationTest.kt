@@ -62,6 +62,29 @@ class MountOrientationTest {
     }
 
     @Test
+    fun unknownAngleRestartsHold() {
+        val mount = MountOrientation(config)
+        // 0ms 에 거꾸로가 한 번 보이고, 2000ms 까지 각도를 모른다.
+        mount.feed(listOf(180) + List(20) { null })
+
+        // 2100ms 부터 다시 거꾸로. 처음 본 0ms 가 아니라 2100ms 부터 1초를 센다.
+        val changes = mount.feed(List(11) { 180 }, startMs = 2_100)
+
+        assertFalse(changes.take(10).any { it })
+        assertTrue(changes[10])
+    }
+
+    @Test
+    fun sidewaysRestartsHold() {
+        val mount = MountOrientation(config)
+
+        // 거꾸로 0~400ms, 옆으로 500~900ms, 다시 거꾸로 1000~1500ms. 이어진 거꾸로는 500ms 뿐이다.
+        mount.feed(List(5) { 180 } + List(5) { 90 } + List(6) { 180 })
+
+        assertFalse(mount.upsideDown)
+    }
+
+    @Test
     fun turnsBackUprightAfterHold() {
         val mount = MountOrientation(config)
         mount.feed(List(11) { 180 })

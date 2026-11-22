@@ -11,16 +11,17 @@ class MountOrientation(private val config: MountConfig = MountConfig()) {
     var upsideDown = false
         private set
 
-    // 지금과 다른 방향이 처음 보인 시각. 다른 방향이 안 보이면 null
+    // 지금과 다른 방향이 끊기지 않고 보이기 시작한 시각. 다른 방향이 안 보이면 null
     private var otherSinceMs: Long? = null
 
     /**
      * 방향 센서 각도(0~359)를 받아 판단을 고친다. 판단이 바뀌었으면 true 다.
-     * 폰이 누워 각도를 모르면(null) 또는 옆으로 기울어 판단할 수 없으면 지금 판단을 그대로 둔다.
+     * 폰이 누워 각도를 모르면(null) 또는 옆으로 기울어 판단할 수 없으면 지금 판단을 그대로 두고,
+     * 새 방향을 세던 시간도 버린다. 새 방향이 끊기지 않고 flipHoldMs 동안 이어져야 바꾼다.
      */
     fun update(degrees: Int?, nowMs: Long): Boolean {
-        val seen = classify(degrees) ?: return false
-        if (seen == upsideDown) {
+        val seen = classify(degrees)
+        if (seen == null || seen == upsideDown) {
             otherSinceMs = null
             return false
         }
