@@ -1,7 +1,8 @@
 package com.pnovi.saitgil.vision
 
 // 사람 밖의 클래스 박스로 가까운 장애물과 보행 신호등 상태를 판단한다.
-// 차·이륜차는 VehicleTracker 가 추적해 움직이는지 보고 알리고, 그 밖은 박스 아래 끝 위치로 가까운지만 본다. 읽을 문장은 화면이 만든다.
+// 차·이륜차는 VehicleTracker 가 박스 높이로 거리를 재고 움직이는지 보며, 기둥·장애물·계단은 ObstacleTracker 가 바닥 기준 거리를 잰다.
+// 움직이는 차는 바로 알리고, 장애물·서 있는 차는 가장 가까운 것부터 하나씩 알린다. 읽을 문장은 화면이 만든다.
 // Android 클래스를 쓰지 않아 가짜 박스로 JVM 단위 테스트를 할 수 있다.
 
 import kotlin.math.abs
@@ -33,6 +34,20 @@ val OBSTACLE_CLASSES: Set<DetectedClass> = setOf(
 internal val AHEAD_SECTORS: Set<Int> =
     CLOCK_SECTORS.indices.filter { CLOCK_SECTORS[it] in setOf(11, 12, 1) }.toSet()
 
+/** 박스가 앞쪽 칸(11~1시)에 걸치는지 */
+internal fun overlapsAhead(box: ObjectBox): Boolean =
+    (sectorOf(box.left)..sectorOf(box.right)).any { it in AHEAD_SECTORS }
+
+/**
+ * 읽을 시계 방향. 앞쪽 칸에 걸치면 그중 박스 가운데에 가장 가까운 칸, 아니면 박스 가운데 칸이다.
+ * 앞쪽에 걸쳐 알렸는데 가운데가 옆 칸이라 "10시 방향"이라고 읽지 않게 한다.
+ */
+internal fun directionOf(box: ObjectBox, labels: List<Int>): Int {
+    val center = sectorOf(box.centerX)
+    val ahead = (sectorOf(box.left)..sectorOf(box.right)).filter { it in AHEAD_SECTORS }
+    return labels[ahead.minByOrNull { abs(it - center) } ?: center]
+}
+
 /** 보행 신호등 클래스와 그 상태 */
 private val SIGNAL_STATES: Map<DetectedClass, SignalState> = mapOf(
     DetectedClass.PED_SIGNAL_RED to SignalState.RED,
@@ -45,7 +60,7 @@ data class ObstacleSighting(val kind: DetectedClass, val direction: Int)
 /**
  * 프레임 하나를 판단한 결과.
  * seen 은 이번 프레임에 보인 장애물(클래스마다 하나)로, 확인 없이 화면에 바로 보여 준다.
- * alerts 는 이번 프레임에 알릴 장애물이다. 차·이륜차를 앞에 둔다.
+ * alerts 는 이번 프레임에 알릴 장애물이다. 움직이는 차를 앞에, 장애물·서 있는 차는 많아야 하나를 뒤에 둔다.
  * vehicles 는 추적 중인 차의 거리·움직임으로, 실기기 로그로 기준을 맞출 때 쓴다.
  */
 data class ObjectAnalysis(
@@ -55,21 +70,13 @@ data class ObjectAnalysis(
     val vehicles: List<VehicleState> = emptyList(),
 )
 
-/** 클래스 하나의 가까운 장애물을 지켜본 기록 */
-private class ObstacleTrack {
-    var seenFrames = 0
-    var missedFrames = 0
-    var alertedAtMs: Long? = null
-}
-
 /** 안내를 시작할 때마다 새로 만든다. 앞 프레임들을 기억해 잘못 잡힌 박스와 반복 알림을 거른다. */
 class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
-    // 장애물은 클래스마다 하나로 기억한다. 기둥 A를 알린 뒤 잠깐(obstacleMaxMissedFrames 안) 사이에
-    // 기둥 B가 보이면 같은 기둥으로 보고 다시 알리지 않는다(obstacleRepeatMs 가 지나면 다시 알린다).
-    // 초당 1~2장 추론과 흔들리는 목걸이 카메라로는 박스를 이어 같은 물체인지 가리기 어려워 단순하게 둔다.
-    private val tracks = mutableMapOf<DetectedClass, ObstacleTrack>()
-
     private val vehicles = VehicleTracker(config)
+    private val obstacles = ObstacleTracker(config)
+
+    // 장애물·서 있는 차를 마지막으로 알린 시각. 앞 알림을 읽는 동안 다음 것을 보내지 않는다.
+    private var lastNoticeMs: Long? = null
 
     private var signal: SignalState? = null
     private var signalCandidate: SignalState? = null
@@ -80,86 +87,59 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val seen = OBSTACLE_CLASSES.mapNotNull { kind ->
             // 같은 클래스가 여럿이면 가장 가까운(아래 끝이 가장 아래인) 것을 본다.
             frame.objects
-                .filter { it.kind == kind && isNearAhead(it, frame) }
+                .filter { it.kind == kind && isNear(it, frame) && overlapsAhead(it) }
                 .maxByOrNull { it.bottom }
-                ?.let { ObstacleSighting(kind, labels[aheadSector(it)]) }
+                ?.let { ObstacleSighting(kind, directionOf(it, labels)) }
         }
-        val fixed = OBSTACLE_CLASSES - VEHICLE_CLASSES
-        fixed.filter { kind -> seen.none { it.kind == kind } }.forEach(::miss)
-        val obstacleAlerts = seen
-            .filter { it.kind in fixed && seenAndDue(it.kind, frame.timeMs) }
-            .map {
-                VisionAlert(
-                    kind = AlertKind.OBSTACLE,
-                    message = it.kind.wire,
-                    objectClass = it.kind,
-                    direction = it.direction,
-                )
-            }
         val vehicleAnalysis = vehicles.analyze(frame, labels)
-        val vehicleAlerts = vehicleAnalysis.alerts.map {
+        val warnings = vehicleAnalysis.alerts.map {
             VisionAlert(
                 kind = AlertKind.OBSTACLE,
                 message = it.kind.wire,
                 distanceM = it.distanceM,
                 objectClass = it.kind,
                 direction = it.direction,
-                moving = it.moving,
+                moving = true,
             )
         }
-        return ObjectAnalysis(followSignal(frame), vehicleAlerts + obstacleAlerts, seen, vehicleAnalysis.states)
+        val notice = nearestNotice(vehicleAnalysis.notices + obstacles.analyze(frame, labels), frame.timeMs)
+        return ObjectAnalysis(followSignal(frame), warnings + listOfNotNull(notice), seen, vehicleAnalysis.states)
     }
 
-    /** 가깝고 앞쪽 칸에 걸쳐 있는지 */
-    private fun isNearAhead(box: ObjectBox, frame: DetectionFrame): Boolean =
-        isNear(box, frame) && (sectorOf(box.left)..sectorOf(box.right)).any { it in AHEAD_SECTORS }
-
     /**
-     * 차·이륜차는 박스 높이로 잰 거리가 정한 거리 안인지, 그 밖은 박스 아래 끝이 가까운 바닥에 닿는지.
+     * 차·이륜차는 박스 높이로 잰 거리가 정한 거리 안인지, 그 밖은 바닥 기준 거리가 obstacleNearM 안인지.
      * 차·이륜차 박스 아래가 영상 끝에 닿아 잘렸으면 바퀴가 안 보일 만큼 가까운 것으로 본다.
      */
     private fun isNear(box: ObjectBox, frame: DetectionFrame): Boolean {
-        if (box.kind !in VEHICLE_CLASSES) return box.bottom >= config.obstacleNearBottom
+        if (box.kind !in VEHICLE_CLASSES) {
+            val distance = groundDistanceM(box, frame, config) ?: return false
+            return distance <= config.obstacleNearM
+        }
         if (isCutOffAtBottom(box, config)) return true
         val distance = vehicleDistanceM(box, frame, config) ?: return false
         return distance <= vehicleNearM(box.kind, config)
     }
 
     /**
-     * 읽을 방향의 칸. 박스가 걸친 앞쪽 칸 중 박스 가운데에 가장 가까운 칸이다.
-     * 앞쪽에 걸쳐 알렸는데 가운데가 옆 칸이라 "10시 방향"이라고 읽지 않게 한다. isNearAhead 를 통과한 박스만 넣는다.
+     * 알릴 수 있는 장애물·서 있는 차 중 가장 가까운 것 하나를 알림으로 바꾼다. 나머지는 다음 프레임에 다시 고른다.
+     * 화면은 읽는 중에 온 장애물 알림을 잠깐만 기다리므로, 앞 알림 뒤 noticeGapMs 안에는 고르지 않는다.
+     * 더 가까운 것이 나타나도 간격을 건너뛰지 않는다. 앞 말을 읽는 중에 보내면 화면이 obstacleMaxWaitMs 뒤 버리는데,
+     * 여기서는 알린 것으로 표시해 다시 알리지 않게 된다. 고르지 않은 후보는 간격이 지난 뒤 다시 고른다.
      */
-    private fun aheadSector(box: ObjectBox): Int {
-        val center = sectorOf(box.centerX)
-        return (sectorOf(box.left)..sectorOf(box.right))
-            .filter { it in AHEAD_SECTORS }
-            .minBy { abs(it - center) }
-    }
-
-    /**
-     * 이번 프레임에 안 보였다. 아직 알리지 않았으면 연달아 본 수를 처음부터 다시 센다.
-     * 알린 뒤 잠깐 안 보인 것은 그대로 두고, 오래 안 보이면 지나간 것으로 보고 지운다.
-     */
-    private fun miss(kind: DetectedClass) {
-        val track = tracks[kind] ?: return
-        if (track.alertedAtMs == null) track.seenFrames = 0
-        track.missedFrames += 1
-        if (track.missedFrames > config.obstacleMaxMissedFrames) tracks.remove(kind)
-    }
-
-    /**
-     * 이번 프레임에 보였다고 적고, 지금 알릴 때인지 돌려준다.
-     * 연달아 몇 프레임 보여야 처음 알리고, 계속 보이면 일정 시간마다 다시 알린다.
-     */
-    private fun seenAndDue(kind: DetectedClass, nowMs: Long): Boolean {
-        val track = tracks.getOrPut(kind, ::ObstacleTrack)
-        track.seenFrames += 1
-        track.missedFrames = 0
-        if (track.seenFrames < config.obstacleConfirmFrames) return false
-        val alertedAt = track.alertedAtMs
-        if (alertedAt != null && nowMs - alertedAt < config.obstacleRepeatMs) return false
-        track.alertedAtMs = nowMs
-        return true
+    private fun nearestNotice(notices: List<StillNotice>, nowMs: Long): VisionAlert? {
+        val last = lastNoticeMs
+        if (last != null && nowMs - last < config.noticeGapMs) return null
+        val nearest = notices.minByOrNull { it.distanceM } ?: return null
+        nearest.notified()
+        lastNoticeMs = nowMs
+        return VisionAlert(
+            kind = AlertKind.OBSTACLE,
+            message = nearest.kind.wire,
+            distanceM = nearest.distanceM,
+            objectClass = nearest.kind,
+            direction = nearest.direction,
+            moving = if (nearest.kind in VEHICLE_CLASSES) false else null,
+        )
     }
 
     /**

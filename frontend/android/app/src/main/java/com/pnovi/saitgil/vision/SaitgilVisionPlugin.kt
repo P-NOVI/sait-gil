@@ -130,7 +130,7 @@ class SaitgilVisionPlugin : Plugin() {
         emitCrowdState(crowd.frame.copy(signal = objects.signal, obstacles = objects.seen))
         crowd.alert?.let(::emitAlert)
         objects.alerts.forEach(::emitAlert)
-        // 실기기에서 차 움직임 기준을 맞추려고 추적 중인 차를 프레임마다 남긴다.
+        // 실기기에서 차 움직임 기준을 맞추려고 추적 중인 차를 프레임마다 남긴다. 튜닝용이라 릴리스 전에 지우거나 디버그 빌드에서만 남긴다.
         objects.vehicles.forEach { Log.d(TAG, vehicleLog(it)) }
     }
 
