@@ -159,7 +159,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
         track.samples.size < config.vehicleMotionSamples -> VehicleMotion.UNKNOWN
         approach >= config.vehicleMovingMps -> VehicleMotion.APPROACHING
         inward >= config.vehicleCrossingMps -> VehicleMotion.CROSSING
-        approach <= -config.vehicleMovingMps -> VehicleMotion.LEAVING
+        approach <= -config.vehicleLeavingMps -> VehicleMotion.LEAVING
         else -> VehicleMotion.STILL
     }
 
@@ -170,6 +170,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
      * - 세 프레임을 보기 전이라도 길 위 vehicleImmediateM 안에서 두 프레임 사이 vehicleMovingMps 넘게 다가오면 알린다.
      *   한 프레임만 보고는 알리지 않는다.
      * - 서 있는 차는 길 위 vehicleStillNearM 안일 때 장애물처럼 알린다.
+     * - 멀어지는 차(LEAVING)는 알리지 않는다.
      */
     private fun decide(
         track: VehicleTrack,
