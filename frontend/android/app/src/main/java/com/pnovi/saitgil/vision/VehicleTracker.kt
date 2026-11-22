@@ -159,7 +159,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
         track.samples.size < config.vehicleMotionSamples -> VehicleMotion.UNKNOWN
         approach >= config.vehicleMovingMps -> VehicleMotion.APPROACHING
         inward >= config.vehicleCrossingMps -> VehicleMotion.CROSSING
-        approach <= -config.vehicleMovingMps -> VehicleMotion.LEAVING
+        approach <= -config.vehicleLeavingMps -> VehicleMotion.LEAVING
         else -> VehicleMotion.STILL
     }
 

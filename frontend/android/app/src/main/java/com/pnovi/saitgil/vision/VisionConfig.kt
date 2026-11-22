@@ -88,6 +88,11 @@ data class VisionConfig(
     val vehicleMotionSamples: Int = 3,
     /** 거리가 이 속도(m/s) 이상으로 줄면 다가오는 차로 본다. 걷는 사람이 서 있는 차로 다가가는 속도(약 1.2m/s)보다 확실히 크게 둔다 */
     val vehicleMovingMps: Double = 3.0,
+    /**
+     * 거리가 이 속도(m/s) 이상으로 늘면(박스가 작아지면) 멀어지는 차로 보고 알리지 않는다.
+     * 서 있는 차에서 걸어 멀어져도 해당하며, 느리게 멀어지는 차가 서 있는 차로 잡혀 알리는 일을 막는다.
+     */
+    val vehicleLeavingMps: Double = 0.5,
     /** 거리가 이 속도(m/s) 이상으로 줄면 두 프레임만 보고 바로 다가오는 차로 본다 */
     val vehicleFastMps: Double = 5.0,
     /** 옆에서 걷는 길 가운데 쪽으로 이 속도(m/s) 이상 들어오면 건너오는 차로 본다 */
