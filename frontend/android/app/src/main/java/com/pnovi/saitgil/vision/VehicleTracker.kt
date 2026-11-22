@@ -35,7 +35,7 @@ data class VehicleState(
     val distanceM: Double?,
     /** 박스 가운데의 옆 위치(m). 오른쪽이 + 다. 거리를 모르면 null */
     val lateralM: Double?,
-    /** 거리가 줄어드는 속도(m/s). 지켜본 시간이 짧으면 null */
+    /** 차가 다가오는 속도(m/s). 거리가 줄어드는 속도에서 내 걸음 속도를 뺀 값이다. 지켜본 시간이 짧으면 null */
     val approachMps: Double?,
     /** 걷는 길 가운데로 들어오는 옆 속도(m/s). 지켜본 시간이 짧으면 null */
     val inwardMps: Double?,
@@ -163,7 +163,8 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
         val last = track.samples.lastOrNull()
         if (first != null && last != null && last.timeMs - first.timeMs >= config.vehicleMinSpanMs) {
             val spanS = (last.timeMs - first.timeMs) / 1_000.0
-            approach = (first.distanceM - last.distanceM) / spanS
+            // 거리가 줄어드는 속도는 카메라(사용자) 기준이라 내 걸음이 섞여 있다. 빼서 차 자체의 접근 속도로 만든다.
+            approach = (first.distanceM - last.distanceM) / spanS - frame.walkSpeedMps
             inward = (abs(first.lateralM) - abs(last.lateralM)) / spanS
         }
         return VehicleState(track.id, track.kind, distance, lateral, approach, inward, motionOf(track, approach, inward), track.box)

@@ -41,6 +41,8 @@ data class DetectionFrame(
     /** 카메라 초점거리(px). 모르면 null 이고 기본 화각으로 계산한다 */
     val focalLengthPx: Double? = null,
     val objects: List<ObjectBox> = emptyList(),
+    /** 사용자가 걷는 속도(m/s). GPS 로 받으며 모르면 0 이다. 차의 움직임을 잴 때 내 걸음을 뺀다 */
+    val walkSpeedMps: Double = 0.0,
 )
 
 /** 프레임 하나를 판단한 결과. alert 는 정면 접근이 있을 때만 있다. */

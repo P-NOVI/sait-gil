@@ -35,6 +35,10 @@ class SaitgilVisionPlugin : Plugin() {
     private var analyzer = CrowdAnalyzer()
     private var objectAnalyzer = ObjectAnalyzer()
 
+    // 화면이 GPS 로 알려 주는 사용자 걸음 속도(m/s). 카메라 분석 스레드가 읽으므로 @Volatile 이다.
+    @Volatile
+    private var walkSpeedMps = 0.0
+
     // 마지막으로 로그에 남긴 인파 단계·신호등 상태
     private var loggedState: Pair<CrowdLevel, SignalState?>? = null
 
@@ -96,8 +100,17 @@ class SaitgilVisionPlugin : Plugin() {
     @PluginMethod
     fun stop(call: PluginCall) {
         running = false
+        walkSpeedMps = 0.0
         camera?.stop()
         activity.runOnUiThread { preview?.hide() }
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun setWalkSpeed(call: PluginCall) {
+        val speed = call.getDouble("speedMps")
+        if (speed == null || !speed.isFinite()) return call.reject("걸음 속도가 올바르지 않습니다: $speed")
+        walkSpeedMps = speed.coerceAtLeast(0.0)
         call.resolve()
     }
 
@@ -123,21 +136,22 @@ class SaitgilVisionPlugin : Plugin() {
      * 사람은 인파·정면 접근으로, 그 밖의 클래스는 장애물 알림과 신호등 상태로 보낸다.
      */
     @Synchronized
-    private fun onDetections(frame: DetectionFrame) {
+    private fun onDetections(detected: DetectionFrame) {
         if (!running) return
+        val frame = detected.copy(walkSpeedMps = walkSpeedMps)
         val crowd = analyzer.analyze(frame)
         val objects = objectAnalyzer.analyze(frame)
         emitCrowdState(crowd.frame.copy(signal = objects.signal, obstacles = objects.seen))
         crowd.alert?.let(::emitAlert)
         objects.alerts.forEach(::emitAlert)
         // 실기기에서 차 움직임 기준을 맞추려고 추적 중인 차를 프레임마다 남긴다. 튜닝용이라 릴리스 전에 지우거나 디버그 빌드에서만 남긴다.
-        objects.vehicles.forEach { Log.d(TAG, vehicleLog(it)) }
+        objects.vehicles.forEach { Log.d(TAG, vehicleLog(it, frame.walkSpeedMps)) }
     }
 
-    private fun vehicleLog(state: VehicleState): String {
+    private fun vehicleLog(state: VehicleState, walkSpeedMps: Double): String {
         fun fmt(value: Double?) = value?.let { "%.1f".format(it) } ?: "-"
         return "차 #${state.id} ${state.kind.wire} 거리 ${fmt(state.distanceM)}m 옆 ${fmt(state.lateralM)}m " +
-            "다가옴 ${fmt(state.approachMps)}m/s 안쪽 ${fmt(state.inwardMps)}m/s ${state.motion.wire}"
+            "내 걸음 ${fmt(walkSpeedMps)}m/s 다가옴 ${fmt(state.approachMps)}m/s 안쪽 ${fmt(state.inwardMps)}m/s ${state.motion.wire}"
     }
 
     private fun emitCrowdState(frame: CrowdFrame) {

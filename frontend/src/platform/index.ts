@@ -21,6 +21,7 @@ export {
     type CrowdLevel,
     type ObstacleKind,
     type PedSignal,
+    setVisionWalkSpeed,
     startVision,
     VISION_NOT_READY,
     visionAvailable,

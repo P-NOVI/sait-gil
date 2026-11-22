@@ -18,6 +18,7 @@ import {
 import { INITIAL_VISION_CONTROL, visionControl } from '../lib/visionControl';
 import {
     type CrowdLevel,
+    setVisionWalkSpeed,
     startVision,
     visionAvailable,
     type VisionApproach,
@@ -37,6 +38,8 @@ type Options = {
     atCrosswalk: boolean;
     /** 신호를 기다리느라 서 있는지. 서 있을 때 앞에 사람이 서도 "앞에 사람이 있습니다"만 한 번 알린다. */
     waiting: boolean;
+    /** 사용자가 걷는 속도(m/s). 모르면 0. 차의 움직임을 잴 때 내 걸음을 뺀다. */
+    walkSpeedMps: number;
     report: (alert: Alert, whenBusy?: WhenBusy) => void;
     buzz: (pattern: readonly number[]) => void;
 };
@@ -115,6 +118,7 @@ export function useVision({
     minLevel,
     atCrosswalk,
     waiting,
+    walkSpeedMps,
     report,
     buzz,
 }: Options): VisionState {
@@ -129,6 +133,13 @@ export function useVision({
         latest.current = { minLevel, atCrosswalk, waiting, report, buzz };
     });
     const running = active && enabled;
+
+    // 걸음 속도가 바뀌거나 인식을 켤 때마다 플러그인에 알린다. 멈추면 플러그인이 0으로 되돌린다.
+    useEffect(() => {
+        if (running && visionAvailable()) {
+            setVisionWalkSpeed(walkSpeedMps);
+        }
+    }, [running, walkSpeedMps]);
 
     useEffect(() => {
         if (!running || !visionAvailable()) {

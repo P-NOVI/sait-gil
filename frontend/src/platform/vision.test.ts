@@ -4,6 +4,7 @@ const native = vi.hoisted(() => ({ value: false }));
 const plugin = vi.hoisted(() => ({
     start: vi.fn(),
     stop: vi.fn(),
+    setWalkSpeed: vi.fn(),
     addListener: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ import { connectVision } from '../hooks/useVision';
 import { freeDirectionText, visionReader } from '../lib/visionAlerts';
 
 import {
+    setVisionWalkSpeed,
     startVision,
     VISION_NOT_READY,
     type VisionFrame,
@@ -483,5 +485,40 @@ describe('visionFailure', () => {
         await flush();
 
         expect(onFailure).toHaveBeenCalledWith('denied');
+    });
+});
+
+describe('setVisionWalkSpeed', () => {
+    beforeEach(() => {
+        plugin.setWalkSpeed.mockReset().mockResolvedValue(undefined);
+    });
+
+    it('앱에서는 걸음 속도를 플러그인에 보낸다', () => {
+        native.value = true;
+
+        setVisionWalkSpeed(1.2);
+
+        expect(plugin.setWalkSpeed).toHaveBeenCalledWith({ speedMps: 1.2 });
+    });
+
+    it('음수는 0으로, 숫자가 아닌 값은 보내지 않는다', () => {
+        native.value = true;
+
+        setVisionWalkSpeed(-1);
+        setVisionWalkSpeed(Number.NaN);
+
+        expect(plugin.setWalkSpeed).toHaveBeenCalledTimes(1);
+        expect(plugin.setWalkSpeed).toHaveBeenCalledWith({ speedMps: 0 });
+    });
+
+    it('웹에서는 보내지 않고, 보내기가 실패해도 오류를 던지지 않는다', async () => {
+        native.value = false;
+        setVisionWalkSpeed(1.2);
+        expect(plugin.setWalkSpeed).not.toHaveBeenCalled();
+
+        native.value = true;
+        plugin.setWalkSpeed.mockRejectedValue(new Error('실패'));
+        expect(() => setVisionWalkSpeed(1.2)).not.toThrow();
+        await flush();
     });
 });
