@@ -139,7 +139,7 @@ class VehicleTrackerTest {
         }
 
         assertEquals(VehicleMotion.LEAVING, states[2].states.single().motion)
-        assertTrue(states.all { it.alerts.isEmpty() })
+        assertTrue(states.all { it.alerts.isEmpty() && it.notices.isEmpty() })
     }
 
     @Test
@@ -153,7 +153,8 @@ class VehicleTrackerTest {
         }
 
         assertEquals(VehicleMotion.STILL, states[2].states.single().motion)
-        assertFalse(states[2].alerts.single().moving)
+        assertTrue(states[2].alerts.isEmpty())
+        assertEquals(DetectedClass.CAR, states[2].notices.single().kind)
     }
 
     @Test

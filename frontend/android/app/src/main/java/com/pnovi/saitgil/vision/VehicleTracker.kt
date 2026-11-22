@@ -112,7 +112,8 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
 
     // 클래스마다 마지막으로 알린 시각. 추적이 끊겨 같은 차가 새 차로 잡혀도 곧바로 다시 알리지 않게 한다.
     private val lastWarnMs = mutableMapOf<DetectedClass, Long>()
-    private val lastNoticeMs = mutableMapOf<DetectedClass, Long>()
+    // 서 있는 차를 처음 알린 시각(종류별). 추적이 끊겨 같은 차가 새 차로 잡혀도 stillVehicleRepeatMs 안에는 다시 알리지 않는다.
+    private val firstNoticeMsByKind = mutableMapOf<DetectedClass, Long>()
 
     fun analyze(frame: DetectionFrame, labels: List<Int>): VehicleAnalysis {
         val focalPx = focalLengthPx(frame, config)
@@ -219,9 +220,9 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
         if (state.motion != VehicleMotion.STILL || !inPath || distance > config.vehicleStillNearM) return null
         if (!track.notice.due(distance, config.obstacleCloseM)) return null
         val first = !track.notice.noticed
-        if (first && !elapsed(track.kind, lastNoticeMs, config.stillVehicleRepeatMs, nowMs)) return null
+        if (first && !elapsed(track.kind, firstNoticeMsByKind, config.stillVehicleRepeatMs, nowMs)) return null
         return StillNotice(track.kind, directionOf(track.box, labels), distance) {
-            if (first) lastNoticeMs[track.kind] = nowMs
+            if (first) firstNoticeMsByKind[track.kind] = nowMs
             track.notice.mark(distance)
         }
     }

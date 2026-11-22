@@ -123,6 +123,8 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
     /**
      * 알릴 수 있는 장애물·서 있는 차 중 가장 가까운 것 하나를 알림으로 바꾼다. 나머지는 다음 프레임에 다시 고른다.
      * 화면은 읽는 중에 온 장애물 알림을 잠깐만 기다리므로, 앞 알림 뒤 noticeGapMs 안에는 고르지 않는다.
+     * 더 가까운 것이 나타나도 간격을 건너뛰지 않는다. 앞 말을 읽는 중에 보내면 화면이 obstacleMaxWaitMs 뒤 버리는데,
+     * 여기서는 알린 것으로 표시해 다시 알리지 않게 된다. 고르지 않은 후보는 간격이 지난 뒤 다시 고른다.
      */
     private fun nearestNotice(notices: List<StillNotice>, nowMs: Long): VisionAlert? {
         val last = lastNoticeMs
