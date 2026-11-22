@@ -27,7 +27,11 @@ const EVENTS = [CROWD, TURN, CROSSWALK];
 
 describe('dueEvents', () => {
     it('알림 거리 안에 들어온 이벤트만 가까운 것부터', () => {
-        expect(dueEvents(EVENTS, 95, new Set())).toEqual([TURN, CROSSWALK]);
+        expect(dueEvents(EVENTS, 100, new Set())).toEqual([
+            TURN,
+            CROSSWALK,
+            CROWD,
+        ]);
     });
 
     it('혼잡 구간은 더 멀리서 알린다', () => {
