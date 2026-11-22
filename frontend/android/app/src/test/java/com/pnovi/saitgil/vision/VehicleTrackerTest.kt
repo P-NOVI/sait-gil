@@ -120,6 +120,20 @@ class VehicleTrackerTest {
     }
 
     @Test
+    fun carLeavingSlowerThanThresholdIsStillNoticed() {
+        // 약 0.3m/s 로 멀어지는 6m 앞 차는 멀어진다고 보지 않고 서 있는 차로 알린다.
+        val states = VehicleTracker(config).let { tracker ->
+            listOf(6.0, 6.2, 6.4, 6.6).mapIndexed { index, distance ->
+                val frame = frame(index, car(distance))
+                tracker.analyze(frame, clockLabels(frame, config))
+            }
+        }
+
+        assertEquals(VehicleMotion.STILL, states[2].states.single().motion)
+        assertFalse(states[2].alerts.single().moving)
+    }
+
+    @Test
     fun twoWheelerUsesItsOwnNearDistance() {
         // 이륜차는 twoWheelerNearM(15m) 안에서만 알린다. 약 4.3m/s 로 다가와 세 프레임째 거리 16m 는 아직 멀다.
         val far = run(listOf(22.0, 19.0, 16.0).map { car(it, kind = DetectedClass.TWO_WHEELER) })
