@@ -3,12 +3,18 @@ import { describe, expect, it } from 'vitest';
 import type { LocationFix } from '../platform';
 import { VISION } from '../settings';
 
-import { walkSpeedOf } from './walkSpeed';
+import { isStandingStill, walkSpeedOf } from './walkSpeed';
 
-const fix = (speed: number | null, accuracy = 5): LocationFix => ({
+/** speed 가 null 이면 속력이 안 온 위치, withHeading 이 false 면 방향 없이 속력만 온 위치 */
+const fix = (
+    speed: number | null,
+    accuracy = 5,
+    withHeading = true,
+): LocationFix => ({
     position: [127, 37],
     accuracy,
-    ...(speed === null ? {} : { course: { heading: 0, speed } }),
+    ...(speed === null ? {} : { speedMps: speed }),
+    ...(speed !== null && withHeading ? { course: { heading: 0, speed } } : {}),
 });
 
 describe('walkSpeedOf', () => {
@@ -16,8 +22,16 @@ describe('walkSpeedOf', () => {
         expect(walkSpeedOf(fix(1.2))).toBe(1.2);
     });
 
-    it('멈춰 있어 속력이 안 오면 0 이다', () => {
-        expect(walkSpeedOf(fix(null))).toBe(0);
+    it('방향 없이 속력만 와도 그 속력을 쓴다', () => {
+        expect(walkSpeedOf(fix(1.2, 5, false))).toBe(1.2);
+    });
+
+    it('멈춘 것으로 거른 위치(속력 0)는 0 이다', () => {
+        expect(walkSpeedOf(fix(0))).toBe(0);
+    });
+
+    it('속력이 안 오면 모른다(null)', () => {
+        expect(walkSpeedOf(fix(null))).toBeNull();
     });
 
     it('위치가 없으면 모른다(null)', () => {
@@ -40,5 +54,30 @@ describe('walkSpeedOf', () => {
 
     it('음수 속력은 0 으로 본다', () => {
         expect(walkSpeedOf(fix(-1))).toBe(0);
+    });
+});
+
+describe('isStandingStill', () => {
+    it('속력이 기준보다 느리면 서 있다', () => {
+        expect(isStandingStill(fix(VISION.waitingSpeedMps - 0.1))).toBe(true);
+        expect(isStandingStill(fix(0))).toBe(true);
+    });
+
+    it('속력이 기준 이상이면 걷는 중이다', () => {
+        expect(isStandingStill(fix(VISION.waitingSpeedMps))).toBe(false);
+        expect(isStandingStill(fix(1.2))).toBe(false);
+    });
+
+    it('방향 없이 속력만 와도 속력으로 본다', () => {
+        expect(isStandingStill(fix(1.2, 5, false))).toBe(false);
+        expect(isStandingStill(fix(0, 5, false))).toBe(true);
+    });
+
+    it('속력이 안 오면 서 있는 것으로 본다', () => {
+        expect(isStandingStill(fix(null))).toBe(true);
+    });
+
+    it('위치가 없으면 서 있는지 모른다(false)', () => {
+        expect(isStandingStill(null)).toBe(false);
     });
 });

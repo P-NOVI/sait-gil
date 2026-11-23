@@ -34,6 +34,16 @@ describe('filterFix', () => {
         expect(fix!.accuracy).toBe(10);
     });
 
+    it('멈춘 것으로 거른 위치도 기기가 준 속력은 그대로 둔다', () => {
+        const first = filterFix(NEW_LOCATION_FILTER, at(0, 10), 0);
+        const walking: LocationFix = { ...at(4, 10), speedMps: WALKING.speed };
+
+        const { fix } = filterFix(first.state, walking, 1_000);
+
+        expect(fix!.course).toBeUndefined();
+        expect(fix!.speedMps).toBe(WALKING.speed);
+    });
+
     it('오차가 작은 위치일수록 평균에 더 많이 반영한다', () => {
         const first = filterFix(NEW_LOCATION_FILTER, at(0, 10), 0);
 

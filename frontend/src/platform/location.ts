@@ -36,8 +36,13 @@ export type LocationFix = {
     position: LngLat;
     /** 오차 반경(m). 실제 위치는 이 원 안에 있을 가능성이 높다. */
     accuracy: number;
-    /** GPS 진행 방향·속력. 움직일 때만 온다. */
+    /** GPS 진행 방향·속력. 방향과 속력이 모두 올 때만 온다. */
     course?: Course;
+    /**
+     * GPS 속력(m/s). 방향이 없어도 속력이 오면 있다. 속력이 안 오면 없다(모름).
+     * 걷는 중에도 방향 없이 속력만 올 수 있어, 걸음 속도는 course 가 아니라 이 값으로 본다.
+     */
+    speedMps?: number;
     /** 앱에서 대략적인 위치만 허용해 받은 위치. 오차가 커 경로 이탈·도착을 판단하지 못한다. */
     approximate?: true;
 };
@@ -84,6 +89,9 @@ function toFix(coords: Coords): LocationFix {
         position: [coords.longitude, coords.latitude],
         accuracy: coords.accuracy,
     };
+    if (isNumber(coords.speed)) {
+        fix.speedMps = coords.speed;
+    }
     if (isNumber(coords.heading) && isNumber(coords.speed)) {
         fix.course = { heading: coords.heading, speed: coords.speed };
     }

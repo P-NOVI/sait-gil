@@ -95,6 +95,8 @@ export function filterFix(
         lng + ((fix.position[0] - lng) * weight) / total,
         lat + ((fix.position[1] - lat) * weight) / total,
     ];
+    // 멈춘 것으로 본 위치는 방향을 뺀다. 속력(speedMps)은 기기가 준 값을 그대로 둔다.
+    // 걷기 시작해도 stillRadiusM 안에서는 멈춘 것으로 거르므로, 속력을 0 으로 덮으면 걷는 중에 멈춤으로 잡힌다.
     const still: LocationFix = { ...fix, position };
     delete still.course;
     return {
