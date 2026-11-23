@@ -25,30 +25,52 @@ export type RouteProgress = {
 export type Judgement = 'on_route' | 'off_route' | 'arrived' | 'uncertain';
 
 export type RerouteTracker = {
-    /** 연달아 경로를 벗어난 위치 수 */
-    offRouteFixes: number;
+    /** 경로를 벗어나기 시작한 때. 판단하지 못한 동안만큼 늦춰 둔다. 벗어나지 않았으면 null */
+    offRouteSince: number | null;
+    /** 벗어난 중에 오차가 큰 위치를 받기 시작한 때. 그런 위치가 아니면 null */
+    pausedAt: number | null;
     /** 마지막으로 경로를 다시 찾은 곳 */
     reroutedAt: LngLat | null;
 };
 
 export const NEW_TRACKER: RerouteTracker = {
-    offRouteFixes: 0,
+    offRouteSince: null,
+    pausedAt: null,
     reroutedAt: null,
 };
 
-/** 내 위치를 경로 선 위 가장 가까운 점에 맞춰 진행 정도를 계산한다. */
+/** 경로에서 내 위치를 찾을 누적 거리 범위(m) */
+export type SearchRange = { fromM: number; toM: number };
+
+/**
+ * 내 위치를 경로 선 위 가장 가까운 점에 맞춰 진행 정도를 계산한다.
+ * range 를 주면 그 누적 거리 범위 안에서만 찾는다. 범위 안에 경로가 없으면 전체에서 찾는다.
+ */
 export function progressAlong(
     route: RouteLine,
     position: LngLat,
+    range?: SearchRange,
 ): RouteProgress {
     const { coordinates, distances_m: distances } = route;
     const total = distances[distances.length - 1];
-    let best = {
-        snapped: coordinates[0],
-        travelledM: 0,
-        offRouteM: distanceM(position, coordinates[0]),
-    };
+    const fromM = range?.fromM ?? -Infinity;
+    const toM = range?.toM ?? Infinity;
+    let best: Omit<RouteProgress, 'remainingM'> | null =
+        fromM <= 0
+            ? {
+                  snapped: coordinates[0],
+                  travelledM: 0,
+                  offRouteM: distanceM(position, coordinates[0]),
+              }
+            : null;
     for (let i = 0; i + 1 < coordinates.length; i += 1) {
+        if (distances[i + 1] < fromM || distances[i] > toM) {
+            continue;
+        }
+        // 범위가 구간 일부만 덮으면 그 부분에서만 찾는다.
+        const span = distances[i + 1] - distances[i];
+        const tMin = span > 0 ? Math.max(0, (fromM - distances[i]) / span) : 0;
+        const tMax = span > 0 ? Math.min(1, (toM - distances[i]) / span) : 1;
         // 내 위치를 원점으로 두고 구간 AB 위 가장 가까운 점 A + t(B - A) 를 찾는다.
         const [ax, ay] = toLocal(coordinates[i], position);
         const [bx, by] = toLocal(coordinates[i + 1], position);
@@ -57,13 +79,13 @@ export function progressAlong(
         const lengthSquared = dx * dx + dy * dy;
         const t =
             lengthSquared === 0
-                ? 0
+                ? tMin
                 : Math.min(
-                      1,
-                      Math.max(0, -(ax * dx + ay * dy) / lengthSquared),
+                      tMax,
+                      Math.max(tMin, -(ax * dx + ay * dy) / lengthSquared),
                   );
         const offRouteM = Math.hypot(ax + t * dx, ay + t * dy);
-        if (offRouteM < best.offRouteM) {
+        if (!best || offRouteM < best.offRouteM) {
             const [lng1, lat1] = coordinates[i];
             const [lng2, lat2] = coordinates[i + 1];
             best = {
@@ -73,6 +95,9 @@ export function progressAlong(
                 offRouteM,
             };
         }
+    }
+    if (!best) {
+        return progressAlong(route, position);
     }
     return { ...best, remainingM: total - best.travelledM };
 }
@@ -89,29 +114,77 @@ export function judge(
     if (progress.offRouteM > Math.max(settings.offRouteM, accuracy)) {
         return 'off_route';
     }
-    return progress.remainingM <= settings.arrivalM ? 'arrived' : 'on_route';
+    const arrivalM = Math.min(
+        Math.max(accuracy, settings.arrivalM),
+        settings.arrivalMaxM,
+    );
+    return progress.remainingM <= arrivalM ? 'arrived' : 'on_route';
 }
 
-/** 새 위치의 판단을 반영하고, 지금 경로를 다시 찾아야 하는지 알려 준다. */
+/** 벗어난 시간을 잴 시작 시각. 판단하지 못하고 멈춰 있던 동안만큼 늦춘다. */
+function offRouteStart(tracker: RerouteTracker, nowMs: number): number {
+    if (tracker.offRouteSince === null) {
+        return nowMs;
+    }
+    const pausedMs = tracker.pausedAt === null ? 0 : nowMs - tracker.pausedAt;
+    return tracker.offRouteSince + pausedMs;
+}
+
+export type OffRouteCheck = {
+    tracker: RerouteTracker;
+    /** 지금 경로를 다시 찾아야 하는지 */
+    reroute: boolean;
+    /**
+     * 이탈이 확정됐는지. 벗어난 채로 offRouteMs 가 지났다. 다시 찾은 곳 근처라
+     * 경로를 또 찾지 않을 때도 true 다.
+     */
+    offRoute: boolean;
+};
+
+/**
+ * 새 위치의 판단을 반영하고, 이탈이 확정됐는지와 지금 경로를 다시 찾아야 하는지 알려 준다.
+ * 경로로 돌아오면 처음부터 다시 잰다. 오차가 큰 위치(uncertain)를 받는 동안은 시계를 멈춰,
+ * 판단하지 못한 시간은 빼고 그 전까지 벗어나 있던 시간은 남긴다.
+ */
 export function trackOffRoute(
     tracker: RerouteTracker,
     judgement: Judgement,
     position: LngLat,
+    nowMs: number,
     settings: NavigationSettings = NAVIGATION,
-): { tracker: RerouteTracker; reroute: boolean } {
+): OffRouteCheck {
     if (judgement === 'uncertain') {
-        return { tracker, reroute: false };
+        if (tracker.offRouteSince === null) {
+            return { tracker, reroute: false, offRoute: false };
+        }
+        const pausedAt = tracker.pausedAt ?? nowMs;
+        return {
+            tracker: { ...tracker, pausedAt },
+            reroute: false,
+            offRoute: pausedAt - tracker.offRouteSince >= settings.offRouteMs,
+        };
     }
-    const offRouteFixes =
-        judgement === 'off_route' ? tracker.offRouteFixes + 1 : 0;
+    const offRouteSince =
+        judgement === 'off_route' ? offRouteStart(tracker, nowMs) : null;
+    const offRoute =
+        offRouteSince !== null && nowMs - offRouteSince >= settings.offRouteMs;
     const movedAway =
         !tracker.reroutedAt ||
         distanceM(tracker.reroutedAt, position) >= settings.rerouteMinMoveM;
-    if (offRouteFixes >= settings.offRouteFixes && movedAway) {
+    if (offRoute && movedAway) {
         return {
-            tracker: { offRouteFixes: 0, reroutedAt: position },
+            tracker: {
+                offRouteSince: null,
+                pausedAt: null,
+                reroutedAt: position,
+            },
             reroute: true,
+            offRoute,
         };
     }
-    return { tracker: { ...tracker, offRouteFixes }, reroute: false };
+    return {
+        tracker: { ...tracker, offRouteSince, pausedAt: null },
+        reroute: false,
+        offRoute,
+    };
 }

@@ -1,4 +1,5 @@
 import { SpeechRecognition as NativeRecognition } from '@capacitor-community/speech-recognition';
+import { startBluetoothMic, stopBluetoothMic } from './bluetoothMic';
 import { isNativeApp, SPEECH_LANG } from './runtime';
 
 interface WebRecognitionResult {
@@ -29,6 +30,9 @@ function webRecognition(): WebRecognitionConstructor | undefined {
 // 지금 듣고 있는 것을 멈추는 함수. 듣고 있지 않으면 null
 let stopCurrent: (() => void) | null = null;
 
+// 앱에서 들을 때마다 늘린다. 앞선 듣기가 늦게 끝나며 새 듣기의 블루투스 마이크를 끄지 않게 한다.
+let nativeRun = 0;
+
 /** 이 기기에서 말을 알아들을 수 있는지 */
 export function canListen(): boolean {
     return isNativeApp() || webRecognition() !== undefined;
@@ -52,7 +56,12 @@ async function listenNative(): Promise<string | null> {
         void NativeRecognition.stop();
     };
     stopCurrent = stop;
+    nativeRun += 1;
+    const run = nativeRun;
     try {
+        // 블루투스 이어폰을 끼고 있으면 그 마이크로 듣는다. 못 바꾸면 폰 마이크로 듣는다.
+        await startBluetoothMic();
+        if (stopped) return null;
         const { matches } = await NativeRecognition.start({
             language: SPEECH_LANG,
             maxResults: 1,
@@ -62,6 +71,8 @@ async function listenNative(): Promise<string | null> {
         return stopped ? null : (matches?.[0] ?? null);
     } finally {
         if (stopCurrent === stop) stopCurrent = null;
+        // 들은 말에 답하는 음성은 미디어 소리라, 통화용 연결을 끈 뒤에 읽어야 음질이 떨어지지 않는다.
+        if (run === nativeRun) await stopBluetoothMic();
     }
 }
 

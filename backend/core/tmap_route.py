@@ -3,7 +3,8 @@
 응답 형식: https://tmapapi.tmapmobility.com/main.html#webservice/docs/tmapRoutePedestrianDoc
 - Point 는 안내점(turnType, pointType)이다.
 - LineString 은 안내점 사이 구간(facilityType)이다.
-- totalDistance, totalTime 은 출발지(pointType=SP) Point 에만 온다.
+- totalTime 은 어떤 걸음 속도로 잰 값인지 몰라 읽지 않는다.
+  걷는 시간은 거리 ÷ walking_speed_mps 로 계산한다.
 """
 
 from bisect import bisect_right
@@ -16,7 +17,6 @@ from core.geo import LngLat, distance_m
 # 구간 시설물(facilityType) 중 지면 높이와 다른 곳. DEM 은 이 위·아래 높이를 모른다.
 # 1 교량, 2 터널, 3 고가도로, 12 육교, 14 지하보도, 18 지하철지하보도
 STRUCTURE_FACILITY_TYPES = frozenset({1, 2, 3, 12, 14, 18})
-START_POINT_TYPE = "SP"
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,6 @@ class TmapRoute:
     distances_m: list[float]
     segments: list[Segment]
     guide_points: list[GuidePoint]
-    total_time_s: int | None
 
     @property
     def length_m(self) -> float:
@@ -69,7 +68,6 @@ def parse_route(response: Mapping[str, Any]) -> TmapRoute:
     distances: list[float] = []
     segments: list[Segment] = []
     guide_points: list[GuidePoint] = []
-    total_time_s: int | None = None
 
     for feature in features:
         geometry, properties = feature["geometry"], feature["properties"]
@@ -96,10 +94,8 @@ def parse_route(response: Mapping[str, Any]) -> TmapRoute:
                     description=str(properties.get("description", "")).strip(),
                 )
             )
-            if properties.get("pointType") == START_POINT_TYPE:
-                total_time_s = _as_int(properties.get("totalTime"))
 
-    return TmapRoute(line, distances, segments, guide_points, total_time_s)
+    return TmapRoute(line, distances, segments, guide_points)
 
 
 def _as_int(value: Any) -> int | None:

@@ -13,9 +13,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(create_app())
 
 
-@pytest.mark.parametrize(
-    "origin", ["https://localhost", "capacitor://localhost", "http://localhost:5173"]
-)
+@pytest.mark.parametrize("origin", ["https://localhost", "capacitor://localhost"])
 def test_app_origins_can_post_json(client: TestClient, origin: str) -> None:
     response = client.options(
         "/api/routes",
@@ -38,11 +36,17 @@ def test_app_response_has_cors_header(client: TestClient) -> None:
     assert response.headers["access-control-allow-origin"] == "https://localhost"
 
 
-def test_unlisted_origin_is_not_allowed(client: TestClient) -> None:
+@pytest.mark.parametrize(
+    # 개발 웹 주소는 /api 를 프록시로 같은 주소에서 불러 CORS 가 필요 없으므로
+    # 허용하지 않는다.
+    "origin",
+    ["https://unlisted.example.com", "http://localhost:5173"],
+)
+def test_unlisted_origin_is_not_allowed(client: TestClient, origin: str) -> None:
     response = client.options(
         "/api/routes",
         headers={
-            "Origin": "https://unlisted.example.com",
+            "Origin": origin,
             "Access-Control-Request-Method": "POST",
         },
     )

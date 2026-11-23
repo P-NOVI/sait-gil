@@ -16,6 +16,8 @@ type NavigationPanelProps = {
     onRepeat: (text: string) => void;
     onWhereAmI: () => void;
     onStop: () => void;
+    /** 한 번 듣고 명령("카메라 꺼")을 따른다. 말로 할 수 없으면 null 이고 버튼을 숨긴다. */
+    onSpeak: (() => void) | null;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
     /** 카메라 인파 인식 자리 */
@@ -34,13 +36,16 @@ function situation(
     if (!step) {
         return error ?? '내 위치를 찾는 중입니다.';
     }
+    if (step.offRoute) {
+        return '경로를 벗어났습니다.';
+    }
     switch (step.judgement) {
         case 'arrived':
             return ARRIVED_TEXT;
-        case 'off_route':
-            return '경로를 벗어났습니다.';
         case 'uncertain':
             return '위치가 정확하지 않아 잠시 기다립니다.';
+        // 이탈이 확정되기 전에는 위치가 잠깐 튄 것으로 보고 경로 안내를 그대로 둔다.
+        case 'off_route':
         case 'on_route':
             return (
                 upcomingText(route.events, step.progress.travelledM) ??
@@ -59,6 +64,7 @@ export default function NavigationPanel({
     onRepeat,
     onWhereAmI,
     onStop,
+    onSpeak,
     voice,
     vision,
 }: NavigationPanelProps) {
@@ -97,6 +103,15 @@ export default function NavigationPanel({
             {vision}
 
             <div className="navigation-panel__actions">
+                {onSpeak && (
+                    <button
+                        type="button"
+                        className="navigation-panel__speak"
+                        onClick={onSpeak}
+                    >
+                        말하기
+                    </button>
+                )}
                 <button type="button" onClick={() => onRepeat(now)}>
                     다시 듣기
                 </button>

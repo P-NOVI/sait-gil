@@ -36,6 +36,35 @@ export function routeAnswerHint(count: number): string {
 export const NOT_HEARD_TEXT =
     '대답을 알아듣지 못했습니다. 화면의 버튼을 눌러 고르세요.';
 
+/** 안내를 시작할 때 카메라 인식을 켤지 묻는 말 */
+export const VISION_QUESTION = '카메라를 켤까요?';
+/** 대답이 없거나 못 알아들었을 때. 안전을 위해 켜고 끄는 방법을 알려 준다. */
+export const VISION_DEFAULT_ON_TEXT =
+    '카메라를 켭니다. 끄려면 두 번 누르고 카메라 꺼라고 하세요.';
+/** 안내 중 말하기 버튼을 누르거나 화면을 두 번 눌렀을 때 묻는 말 */
+export const SPEAK_PROMPT = '말씀하세요.';
+/** 안내 중 명령을 못 알아들었을 때 */
+export const NAVIGATION_COMMAND_HINT =
+    '못 알아들었습니다. 카메라 꺼, 또는 카메라 켜라고 하세요.';
+
+/** 위치 권한이 꺼져 있을 때 켤지 묻는 말 */
+export const LOCATION_PERMISSION_QUESTION =
+    '위치 권한이 꺼져 있어 내 위치를 찾을 수 없습니다. 위치 권한을 켤까요?';
+/** 위치 권한을 켜지 않았을 때. 나중에 켜는 방법을 알려 준다. */
+export const LOCATION_PERMISSION_LATER_TEXT =
+    '위치 권한을 켜지 않았습니다. 켜려면 화면 오른쪽 위의 내 위치 찾기 버튼을 누르세요.';
+/** Android 가 권한을 더 묻지 않아 설정 화면을 열기 전에 읽는 말 */
+export const OPEN_SETTINGS_TEXT =
+    '설정 화면을 엽니다. 권한에서 위치를 허용으로 바꾼 뒤 뒤로 가기로 돌아오세요.';
+/** 권한을 켜고 위치를 찾았을 때 */
+export const LOCATION_FOUND_TEXT = '내 위치를 찾았습니다.';
+
+/** 카메라 인식을 켤지에 대한 대답. on: 켬, off: 끔 */
+export type CameraAnswer = 'on' | 'off';
+
+/** 안내 중 말하기 버튼으로 받은 명령 */
+export type NavigationCommand = { action: 'camera'; answer: CameraAnswer };
+
 // "네", "응" 처럼 대답만 한 말. 다른 말 속의 "어", "네" 와 헷갈리지 않게 말 전체와 맞춘다.
 const SHORT_YES = /^(?:네|예|응|어|웅|그래|좋아|맞아|오케이|확인)+요?$/;
 // "말고", "안 가" 처럼 거절하는 말. 승낙하는 말("가요")이 섞여 있어도 먼저 본다.
@@ -46,6 +75,12 @@ const YES_WORDS =
     /갈게|가자|갈래|가요|여기로|거기로|이곳으로|그곳으로|이리로|맞아|좋아|그래/;
 const START_WORDS = /안내|시작|출발|이경로|그경로|이길|그길|갈게|가자|가요/;
 const REPEAT_WORDS = /다시|한번더|뭐라고/;
+// 카메라를 끄라는 말. "켜지 마", "안 켜" 처럼 켜는 말이 섞여 있어도 먼저 본다.
+const CAMERA_OFF_WORDS = /꺼|끄|끌|끈|그만|지마|안켜|안킬|필요없/;
+const CAMERA_ON_WORDS = /켜|켤|킬|키자|틀어/;
+const CAMERA_WORDS = /카메라|인식/;
+const ALLOW_WORDS = /허용/;
+const DONT_ALLOW_WORDS = /안해|안할|안함|허용안/;
 // "2번", "두 번째", "둘째"
 const NUMBERED = /(\d+)번/;
 const ORDINAL = /(첫|두|둘|세|셋)(?:번)?째/;
@@ -82,6 +117,48 @@ export function placeAnswer(heard: string): PlaceAnswer | null {
         START_WORDS.test(said)
     ) {
         return 'yes';
+    }
+    return null;
+}
+
+/** "카메라 인식을 켤까요?"에 대한 대답. "네", "켜 줘" 는 켬, "아니요", "꺼 줘" 는 끔 */
+export function cameraAnswer(heard: string): CameraAnswer | null {
+    const said = compact(heard);
+    if (REFUSE_WORDS.test(said) || CAMERA_OFF_WORDS.test(said)) {
+        return 'off';
+    }
+    if (SHORT_YES.test(said) || CAMERA_ON_WORDS.test(said)) {
+        return 'on';
+    }
+    return null;
+}
+
+/**
+ * "위치 권한을 켤까요?"에 대한 대답. 카메라와 같은 말("응", "켜 줘", "아니")에 "허용"을 더 받는다.
+ * "허용 안 해" 처럼 허용하지 않는 말을 먼저 본다.
+ */
+export function permissionAnswer(heard: string): CameraAnswer | null {
+    const said = compact(heard);
+    if (DONT_ALLOW_WORDS.test(said)) {
+        return 'off';
+    }
+    return cameraAnswer(heard) ?? (ALLOW_WORDS.test(said) ? 'on' : null);
+}
+
+/**
+ * 안내 중 말하기 버튼으로 들은 명령. 다른 명령과 헷갈리지 않게 "카메라"나 "인식"이 있어야 한다.
+ * "네" 같은 짧은 대답은 명령이 아니므로 받지 않는다.
+ */
+export function navigationCommand(heard: string): NavigationCommand | null {
+    const said = compact(heard);
+    if (!CAMERA_WORDS.test(said)) {
+        return null;
+    }
+    if (CAMERA_OFF_WORDS.test(said)) {
+        return { action: 'camera', answer: 'off' };
+    }
+    if (CAMERA_ON_WORDS.test(said)) {
+        return { action: 'camera', answer: 'on' };
     }
     return null;
 }

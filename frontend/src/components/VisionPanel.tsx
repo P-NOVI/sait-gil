@@ -2,11 +2,17 @@ import {
     type ClockDirection,
     type CrowdLevel,
     VISION_NOT_READY,
+    type VisionFailure,
     type VisionFrame,
     type VisionLevel,
 } from '../platform';
 import { distanceLabel } from '../lib/routeApi';
-import { UNKNOWN_TEXT } from '../lib/visionAlerts';
+import {
+    obstacleName,
+    UNKNOWN_TEXT,
+    VISION_OFF_STATUS,
+    visionFailureText,
+} from '../lib/visionAlerts';
 
 const LEVEL_LABELS: Record<VisionLevel, string> = {
     clear: '여유',
@@ -40,6 +46,20 @@ function statusText(frame: VisionFrame): string {
     return `${nearest}${free}`;
 }
 
+/** 이 프레임에 보인 장애물. 음성 알림과 달리 여러 프레임 확인 없이 바로 보여 준다. */
+function obstaclesText(frame: VisionFrame): string {
+    if (frame.obstacles.length === 0) {
+        return '';
+    }
+    const seen = frame.obstacles
+        .map(
+            ({ kind, direction }) =>
+                `${clockLabel(direction)} ${obstacleName(kind)}`,
+        )
+        .join(', ');
+    return ` 앞 장애물: ${seen}.`;
+}
+
 function clockLabel(direction: ClockDirection): string {
     return `${direction}시`;
 }
@@ -47,14 +67,47 @@ function clockLabel(direction: ClockDirection): string {
 type VisionPanelProps = {
     available: boolean;
     frame: VisionFrame | null;
+    /** 사용자가 카메라 인식을 켜 두었는지 */
+    enabled: boolean;
+    /** 카메라를 켜지 못한 이유. 없으면 null */
+    failure: VisionFailure | null;
+    onToggle: () => void;
 };
+
+/** 결과 자리에 보일 문장 */
+function panelStatus(
+    available: boolean,
+    enabled: boolean,
+    failure: VisionFailure | null,
+    frame: VisionFrame | null,
+): string {
+    if (!available) {
+        return VISION_NOT_READY;
+    }
+    if (!enabled) {
+        return VISION_OFF_STATUS;
+    }
+    if (failure) {
+        return visionFailureText(failure);
+    }
+    return frame
+        ? `${LEVEL_LABELS[frame.level]}. ${statusText(frame)}${obstaclesText(frame)}`
+        : VISION_NOT_READY;
+}
 
 /**
  * 카메라 인파 인식 결과 자리. 모델(YOLO26n)과 Kotlin 플러그인이 붙기 전에는 준비 중으로 보인다.
  * 결과 문장은 화면에만 두고, 음성 알림은 알림 중재를 거쳐 따로 읽는다.
+ * 인식을 쓸 수 있으면 카메라 인식을 끄고 켜는 버튼을 둔다.
  */
-export default function VisionPanel({ available, frame }: VisionPanelProps) {
-    const level = frame?.level ?? null;
+export default function VisionPanel({
+    available,
+    frame,
+    enabled,
+    failure,
+    onToggle,
+}: VisionPanelProps) {
+    const level = enabled ? (frame?.level ?? null) : null;
     const lit = meterSteps(level);
     return (
         <section
@@ -75,12 +128,19 @@ export default function VisionPanel({ available, frame }: VisionPanelProps) {
                     </li>
                 ))}
             </ol>
-            {!available || !frame ? (
-                <p className="vision-panel__status">{VISION_NOT_READY}</p>
-            ) : (
-                <p className="vision-panel__status">
-                    {LEVEL_LABELS[frame.level]}. {statusText(frame)}
-                </p>
+            <p className="vision-panel__status">
+                {panelStatus(available, enabled, failure, frame)}
+            </p>
+            {available && (
+                <button
+                    type="button"
+                    className="vision-panel__toggle"
+                    aria-pressed={enabled}
+                    onClick={onToggle}
+                >
+                    {/* 상태는 aria-pressed 와 위 문장이 알려 글자는 고정한다. 화면낭독기가 두 번 읽지 않게 한다. */}
+                    카메라 인식
+                </button>
             )}
         </section>
     );

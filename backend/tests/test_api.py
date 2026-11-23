@@ -71,7 +71,8 @@ def test_routes_returns_recommended_first(client: TestClient, tmap: FakeTmap) ->
     assert route["coordinates"][0] == [127.0, 37.5]
     assert route["distances_m"][0] == 0
     assert route["distance_m"] == pytest.approx(222.4, abs=0.1)
-    assert route["time_s"] == 150
+    # Tmap totalTime(150초)이 아니라 거리 ÷ 걸음 속도(0.9m/s)다.
+    assert route["time_s"] == 247
     assert route["events"][0]["kind"] == "turn"
     assert route["events"][0]["direction"] == "right"
     assert tmap.route_options == [0, 10]

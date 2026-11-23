@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { Alert, AlertLevel } from '../lib/alertArbiter';
-import { pickAlert } from '../lib/alertArbiter';
+import type { Alert, AlertLevel, WhenBusy } from '../lib/alertArbiter';
+import { pickAlert, stillTimely } from '../lib/alertArbiter';
 import type { LngLat } from '../lib/geo';
 import {
     APPROXIMATE_KEY,
@@ -13,6 +13,7 @@ import {
     markAnnounced,
     NEW_GUIDANCE,
 } from '../lib/guidance';
+import { filterFix, NEW_LOCATION_FILTER } from '../lib/locationFilter';
 import {
     allowScreenOff,
     APPROXIMATE_TEXT,
@@ -50,12 +51,10 @@ type Options = {
 export type GuidanceControl = Guidance & {
     /**
      * 안내 중 생긴 알림(오류·인파 등)을 알림 중재의 쿨다운을 거쳐 읽는다.
-     * 읽던 말을 끊지 못하면 wait 는 끝날 때까지 기다리고, drop 은 버린다(곧 다시 알릴 때).
+     * 읽던 말을 끊지 못하면 whenBusy 에 따라 기다리거나 버린다.
      */
     report: (alert: Alert, whenBusy?: WhenBusy) => void;
 };
-
-export type WhenBusy = 'wait' | 'drop';
 
 const IDLE: Guidance = { fix: null, step: null, lastAlert: null, error: null };
 
@@ -100,17 +99,21 @@ export function useGuidance({
 
     const report = useCallback((alert: Alert, whenBusy: WhenBusy = 'wait') => {
         const mine = session.current;
+        const reportedAt = Date.now();
         const tell = () => {
             if (session.current !== mine) {
                 return;
             }
             const current = latest.current;
             const now = Date.now();
-            if (!pickAlert([alert], spokenAt.current, now)) {
+            if (
+                !stillTimely(whenBusy, now - reportedAt) ||
+                !pickAlert([alert], spokenAt.current, now)
+            ) {
                 return;
             }
             if (current.busyFor(alert.level)) {
-                if (whenBusy === 'wait') {
+                if (whenBusy !== 'drop') {
                     void current.whenIdle().then(tell);
                 }
                 return;
@@ -126,12 +129,21 @@ export function useGuidance({
             return;
         }
         let state = NEW_GUIDANCE;
+        let filter = NEW_LOCATION_FILTER;
         spokenAt.current = new Map();
         session.current += 1;
         void keepScreenOn().catch(() => false);
 
         const stop = watchLocation(
-            (fix) => {
+            (received) => {
+                const now = Date.now();
+                const filtered = filterFix(filter, received, now);
+                filter = filtered.state;
+                const { fix } = filtered;
+                // 튄 위치는 지도와 안내에 쓰지 않고 다음 위치를 기다린다.
+                if (!fix) {
+                    return;
+                }
                 const current = latest.current;
                 // 대략적인 위치로는 판단을 계속 보류해 말없이 멈추므로, 이유를 안내마다 한 번 읽는다.
                 // 읽는 중이면 버리고 다음 위치에서 다시 넘긴다.
@@ -160,9 +172,9 @@ export function useGuidance({
                     state,
                     fix.position,
                     fix.accuracy,
+                    now,
                 );
                 state = step.state;
-                const now = Date.now();
                 const picked = pickAlert(step.alerts, spokenAt.current, now);
                 // 읽는 중이라 미룬 알림은 표시하지 않아 다음 위치에서 다시 고른다.
                 const alert =

@@ -24,8 +24,17 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    buildFeatures {
+        buildConfig = true
+    }
     buildTypes {
+        // 개발 중 인식이 잘 되는지 보려고 디버그 빌드에서만 카메라 화면을 띄운다(손으로 크기 조절·이동).
+        // 개발 중에도 끄려면 debug 의 값을 false 로 바꾼다. 배포(release)에서는 띄우지 않는다.
+        debug {
+            buildConfigField "boolean", "VISION_PREVIEW", "true"
+        }
         release {
+            buildConfigField "boolean", "VISION_PREVIEW", "false"
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -44,6 +53,11 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    implementation "androidx.camera:camera-core:$cameraxVersion"
+    implementation "androidx.camera:camera-camera2:$cameraxVersion"
+    implementation "androidx.camera:camera-lifecycle:$cameraxVersion"
+    implementation "androidx.camera:camera-view:$cameraxVersion"
+    implementation "com.google.ai.edge.litert:litert:$litertVersion"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

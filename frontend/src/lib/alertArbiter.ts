@@ -51,3 +51,14 @@ export function shouldInterrupt(
 ): boolean {
     return PRIORITY[next] > PRIORITY[current];
 }
+
+/**
+ * 읽던 말을 끊지 못할 때 할 일. wait 는 끝날 때까지 기다리고, drop 은 버린다(곧 다시 알릴 때).
+ * maxWaitMs 를 주면 그만큼만 기다리고 더 늦어지면 버린다(늦게 읽으면 소용없는 알림).
+ */
+export type WhenBusy = 'wait' | 'drop' | { maxWaitMs: number };
+
+/** 알린 지 waitedMs 가 지난 지금도 읽을 만한지. 기다림에 한도가 있는 알림만 한도를 넘으면 버린다. */
+export function stillTimely(whenBusy: WhenBusy, waitedMs: number): boolean {
+    return typeof whenBusy !== 'object' || waitedMs <= whenBusy.maxWaitMs;
+}

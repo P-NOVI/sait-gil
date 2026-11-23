@@ -1,10 +1,15 @@
 // 현재 위치. 웹은 navigator.geolocation, 앱은 Capacitor Geolocation 플러그인을 쓴다.
 // 좌표는 저장하지 않고 요청한 곳에만 돌려준다. 배리어프리 lib/geolocation.ts 에서 가져왔다.
 
-import { Geolocation, type Position } from '@capacitor/geolocation';
+import {
+    Geolocation,
+    type Position,
+    type PositionOptions as NativePositionOptions,
+} from '@capacitor/geolocation';
 
 import type { LngLat } from '../lib/geo';
 import type { Course } from '../lib/heading';
+import { LOCATION_WATCH_INTERVAL_MS } from '../settings';
 import { isNativeApp } from './runtime';
 
 // 정확한 위치(GPS)를 먼저 기다리고, 실패하면 Wi-Fi·기지국 기반 위치로 다시 묻는다.
@@ -16,6 +21,12 @@ const COARSE: PositionOptions = {
 };
 // 안내 중에는 GPS 위치를 계속 받는다. 다음 위치가 늦어도 오류로 끊지 않는다.
 const WATCH: PositionOptions = { enableHighAccuracy: true, maximumAge: 0 };
+// 앱(Android)은 간격을 주지 않으면 timeout(10초)마다, 빨라도 5초마다 위치를 준다. 웹은 이 값을 무시한다.
+const NATIVE_WATCH: NativePositionOptions = {
+    ...WATCH,
+    interval: LOCATION_WATCH_INTERVAL_MS,
+    minimumUpdateInterval: LOCATION_WATCH_INTERVAL_MS,
+};
 
 // GeolocationPositionError 코드
 const PERMISSION_DENIED = 1;
@@ -25,17 +36,31 @@ export type LocationFix = {
     position: LngLat;
     /** 오차 반경(m). 실제 위치는 이 원 안에 있을 가능성이 높다. */
     accuracy: number;
-    /** GPS 진행 방향·속력. 움직일 때만 온다. */
+    /** GPS 진행 방향·속력. 방향과 속력이 모두 올 때만 온다. */
     course?: Course;
+    /**
+     * GPS 속력(m/s). 방향이 없어도 속력이 오면 있다. 속력이 안 오면 없다(모름).
+     * 걷는 중에도 방향 없이 속력만 올 수 있어, 걸음 속도는 course 가 아니라 이 값으로 본다.
+     */
+    speedMps?: number;
     /** 앱에서 대략적인 위치만 허용해 받은 위치. 오차가 커 경로 이탈·도착을 판단하지 못한다. */
     approximate?: true;
 };
 
 export class LocationError extends Error {
-    constructor(message: string) {
+    /** 위치 권한이 꺼져 있어 실패했는지. 권한을 다시 묻거나 설정을 열어 켤 수 있다. */
+    readonly denied: boolean;
+
+    constructor(message: string, denied = false) {
         super(message);
         this.name = 'LocationError';
+        this.denied = denied;
     }
+}
+
+/** 위치 권한이 꺼져 있어 실패한 오류인지 */
+export function isLocationDenied(error: unknown): boolean {
+    return error instanceof LocationError && error.denied;
 }
 
 const UNSUPPORTED = '이 기기는 위치 찾기를 지원하지 않습니다.';
@@ -64,6 +89,9 @@ function toFix(coords: Coords): LocationFix {
         position: [coords.longitude, coords.latitude],
         accuracy: coords.accuracy,
     };
+    if (isNumber(coords.speed)) {
+        fix.speedMps = coords.speed;
+    }
     if (isNumber(coords.heading) && isNumber(coords.speed)) {
         fix.course = { heading: coords.heading, speed: coords.speed };
     }
@@ -84,7 +112,9 @@ function isPermissionDenied(error: unknown): boolean {
 }
 
 function toLocationError(error: unknown): LocationError {
-    return new LocationError(isPermissionDenied(error) ? DENIED : FAILED);
+    return isPermissionDenied(error)
+        ? new LocationError(DENIED, true)
+        : new LocationError(FAILED);
 }
 
 function locateWeb(
@@ -104,7 +134,7 @@ function locateWeb(
 async function ensureNativePermission(): Promise<boolean> {
     const { location, coarseLocation } = await Geolocation.requestPermissions();
     if (location !== 'granted' && coarseLocation !== 'granted') {
-        throw new LocationError(DENIED);
+        throw new LocationError(DENIED, true);
     }
     return location === 'granted';
 }
@@ -184,7 +214,7 @@ function watchNative(
     const startWatch = async () => {
         const allowPrecise = precise;
         const watchId = await Geolocation.watchPosition(
-            { ...WATCH, enableHighAccuracy: allowPrecise },
+            { ...NATIVE_WATCH, enableHighAccuracy: allowPrecise },
             (position, error) => {
                 if (position) {
                     onFix(toNativeFix(position.coords, allowPrecise));

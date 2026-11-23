@@ -1,7 +1,17 @@
 // 미리 알림 이벤트를 읽어 줄 문장으로 바꾼다.
 
-import { NEAR_M } from '../settings';
-import type { Direction, EventKind, RouteEvent } from './routeEvents';
+import {
+    ALERT_DISTANCE_M,
+    BLOCK,
+    type BlockSettings,
+    NEAR_M,
+} from '../settings';
+import {
+    type Direction,
+    type EventKind,
+    isBlockEnd,
+    type RouteEvent,
+} from './routeEvents';
 
 export const ARRIVED_TEXT = '목적지에 도착했습니다.';
 // 도착하면 이 말을 끝으로 안내를 끝낸다.
@@ -40,7 +50,21 @@ export function spokenDistance(meters: number): string {
     return `${Math.max(10, Math.round(meters / 10) * 10)}미터`;
 }
 
-/** 남은 거리가 remainingM 인 이벤트의 안내 문장 */
+// 다음 교차로가 멀 때(BLOCK.maxM 보다 멀 때)는 미터·방향 없이 직진만 알린다.
+export const STRAIGHT_TEXT = '다음 안내까지 직진입니다.';
+
+/** 이 블럭이 끝나는 교차로 이벤트의 블럭 안내 문장 */
+export function blockText({ kind, direction }: RouteEvent): string {
+    if (kind === 'turn') {
+        const label = direction ? DIRECTION_LABELS[direction] : '방향 전환';
+        return `이번 블럭에서 ${label}입니다.`;
+    }
+    const [name, particle] = PLACE_NAMES.crosswalk;
+    const place = direction ? `${DIRECTION_LABELS[direction]} ${name}` : name;
+    return `이번 블럭 끝에 ${place}${particle} 있습니다.`;
+}
+
+/** 남은 거리가 remainingM 인 이벤트의 안내 문장. 회전·횡단보도는 거리 없이 "곧"으로 읽는다. */
 export function eventText(
     { kind, direction }: RouteEvent,
     remainingM: number,
@@ -50,7 +74,7 @@ export function eventText(
     const ahead = spokenDistance(remainingM);
     if (kind === 'turn') {
         const label = direction ? DIRECTION_LABELS[direction] : '방향 전환';
-        return near ? `곧 ${label}입니다.` : `${ahead} 앞에서 ${label}입니다.`;
+        return `곧 ${label}입니다.`;
     }
     if (kind === 'crowd') {
         return near
@@ -59,7 +83,7 @@ export function eventText(
     }
     const [name, particle] = PLACE_NAMES[kind];
     const place = direction ? `${DIRECTION_LABELS[direction]} ${name}` : name;
-    return near
+    return near || kind === 'crosswalk'
         ? `곧 ${place}입니다.`
         : `${ahead} 앞에 ${place}${particle} 있습니다.`;
 }
@@ -68,6 +92,8 @@ export function eventText(
 export function upcomingText(
     events: readonly RouteEvent[],
     travelledM: number,
+    blockSettings: BlockSettings = BLOCK,
+    alertDistanceM: Readonly<Record<EventKind, number>> = ALERT_DISTANCE_M,
 ): string | null {
     const next = events
         .filter((event) => event.distance_m >= travelledM)
@@ -78,5 +104,13 @@ export function upcomingText(
                     : nearest,
             null,
         );
-    return next ? eventText(next, next.distance_m - travelledM) : null;
+    if (!next) {
+        return null;
+    }
+    const remainingM = next.distance_m - travelledM;
+    if (!isBlockEnd(next) || remainingM <= alertDistanceM[next.kind]) {
+        return eventText(next, remainingM);
+    }
+    // 교차로는 음성과 같게 거리에 따라 블럭 문장·미터 문장으로 보인다.
+    return remainingM <= blockSettings.maxM ? blockText(next) : STRAIGHT_TEXT;
 }

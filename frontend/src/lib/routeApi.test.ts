@@ -102,9 +102,9 @@ describe('routeSummary', () => {
         ).toBe('1.2km, 약 15분, 붐비는 구간 없음');
     });
 
-    it('시간이 없으면 빼고, 붐비는 구간이 없으면 없음이라 쓴다', () => {
-        expect(routeSummary(route({ distance_m: 420, time_s: null }))).toBe(
-            '420m, 붐비는 구간 없음',
+    it('붐비는 구간이 없으면 없음이라 쓴다', () => {
+        expect(routeSummary(route({ distance_m: 420, time_s: 467 }))).toBe(
+            '420m, 약 8분, 붐비는 구간 없음',
         );
     });
 });
@@ -117,7 +117,7 @@ describe('routesAnnouncement', () => {
     it('번호 순서로 시간과 붐비는 곳·가파른 곳만 짧게 알린다', () => {
         const text = routesAnnouncement([
             route(),
-            route({ kinds: ['less_crowded'], time_s: null, distance_m: 980 }),
+            route({ kinds: ['less_crowded'], time_s: 1089, distance_m: 980 }),
             route({
                 kinds: ['gentle'],
                 time_s: 1020,
@@ -127,20 +127,10 @@ describe('routesAnnouncement', () => {
         ]);
 
         expect(text).toBe(
-            '경로 3개. 1번 추천 경로, 15분. 2번 덜 붐비는 길, 980미터. ' +
+            '경로 3개. 1번 추천 경로, 15분. 2번 덜 붐비는 길, 18분. ' +
                 '3번 완만한 길, 17분, 붐비는 곳 1곳, 가파른 곳 40미터. ' +
                 '원하는 경로를 고르고 안내 시작을 누르세요.',
         );
-    });
-
-    it('시간이 없으면 거리를 읽는 말로 알린다', () => {
-        const text = routesAnnouncement([
-            route({ time_s: null, distance_m: 1234 }),
-            route({ kinds: ['gentle'], time_s: null, distance_m: 984 }),
-        ]);
-
-        expect(text).toContain('1번 추천 경로, 1.2킬로미터.');
-        expect(text).toContain('2번 완만한 길, 980미터.');
     });
 
     it('경로가 하나면 번호 없이 알리고 시작하는 방법만 말한다', () => {
