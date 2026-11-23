@@ -16,8 +16,10 @@ import {
     visionReader,
 } from '../lib/visionAlerts';
 import { INITIAL_VISION_CONTROL, visionControl } from '../lib/visionControl';
+import { walkSpeedOf } from '../lib/walkSpeed';
 import {
     type CrowdLevel,
+    type LocationFix,
     setVisionWalkSpeed,
     startVision,
     visionAvailable,
@@ -38,8 +40,8 @@ type Options = {
     atCrosswalk: boolean;
     /** 신호를 기다리느라 서 있는지. 서 있을 때 앞에 사람이 서도 "앞에 사람이 있습니다"만 한 번 알린다. */
     waiting: boolean;
-    /** 사용자가 걷는 속도(m/s). 모르면 0. 차의 움직임을 잴 때 내 걸음을 뺀다. */
-    walkSpeedMps: number;
+    /** GPS 위치. 새 위치가 올 때마다 걸음 속도를 플러그인에 알린다. 차의 움직임을 잴 때 내 걸음을 뺀다. */
+    walkFix: LocationFix | null;
     report: (alert: Alert, whenBusy?: WhenBusy) => void;
     buzz: (pattern: readonly number[]) => void;
 };
@@ -118,7 +120,7 @@ export function useVision({
     minLevel,
     atCrosswalk,
     waiting,
-    walkSpeedMps,
+    walkFix,
     report,
     buzz,
 }: Options): VisionState {
@@ -134,12 +136,12 @@ export function useVision({
     });
     const running = active && enabled;
 
-    // 걸음 속도가 바뀌거나 인식을 켤 때마다 플러그인에 알린다. 멈추면 플러그인이 0으로 되돌린다.
+    // 새 위치가 올 때마다(속도가 같아도) 플러그인에 알린다. 위치가 끊겨 알림이 멈추면 플러그인이 일정 시간 뒤 0 으로 본다.
     useEffect(() => {
         if (running && visionAvailable()) {
-            setVisionWalkSpeed(walkSpeedMps);
+            setVisionWalkSpeed(walkSpeedOf(walkFix));
         }
-    }, [running, walkSpeedMps]);
+    }, [running, walkFix]);
 
     useEffect(() => {
         if (!running || !visionAvailable()) {

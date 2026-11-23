@@ -183,6 +183,14 @@ class VehicleTrackerTest {
     }
 
     @Test
+    fun slowlyApproachingCarIsNotMissedWhileWalking() {
+        // 내가 1.2m/s 로 걷는 동안 차가 약 2.4m/s 로 다가와 거리는 3.6m/s 로 줄어든다. 걸음을 빼도 다가오는 차로 본다.
+        val motions = motionsWhileWalking(1.2, listOf(14.0, 11.5, 9.0, 6.5))
+
+        assertEquals(VehicleMotion.APPROACHING, motions[2])
+    }
+
+    @Test
     fun walkSpeedIsSubtractedFromReportedApproach() {
         val tracker = VehicleTracker(config)
         val states = listOf(14.0, 11.0, 8.0).mapIndexed { index, distance ->

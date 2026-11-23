@@ -1,6 +1,7 @@
 package com.pnovi.saitgil.vision
 
 import android.Manifest
+import android.os.SystemClock
 import android.util.Log
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
@@ -31,13 +32,18 @@ class SaitgilVisionPlugin : Plugin() {
     private var mode = VisionMode.CROWD
     private var sensitivity = CrowdSensitivity.NORMAL
 
+    private val visionConfig = VisionConfig()
+
     // 안내마다 새로 만들어 지난 안내의 사람 추적·장애물·신호등 기록을 이어 쓰지 않는다.
     private var analyzer = CrowdAnalyzer()
     private var objectAnalyzer = ObjectAnalyzer()
 
-    // 화면이 GPS 로 알려 주는 사용자 걸음 속도(m/s). 카메라 분석 스레드가 읽으므로 @Volatile 이다.
+    // 화면이 GPS 로 알려 주는 사용자 걸음 속도(m/s)와 받은 시각. 카메라 분석 스레드가 읽으므로 @Volatile 이다.
     @Volatile
     private var walkSpeedMps = 0.0
+
+    @Volatile
+    private var walkSpeedAtMs = 0L
 
     // 마지막으로 로그에 남긴 인파 단계·신호등 상태
     private var loggedState: Pair<CrowdLevel, SignalState?>? = null
@@ -101,6 +107,7 @@ class SaitgilVisionPlugin : Plugin() {
     fun stop(call: PluginCall) {
         running = false
         walkSpeedMps = 0.0
+        walkSpeedAtMs = 0L
         camera?.stop()
         activity.runOnUiThread { preview?.hide() }
         call.resolve()
@@ -111,8 +118,13 @@ class SaitgilVisionPlugin : Plugin() {
         val speed = call.getDouble("speedMps")
         if (speed == null || !speed.isFinite()) return call.reject("걸음 속도가 올바르지 않습니다: $speed")
         walkSpeedMps = speed.coerceAtLeast(0.0)
+        walkSpeedAtMs = SystemClock.elapsedRealtime()
         call.resolve()
     }
+
+    /** 걸음 속도를 받은 지 walkSpeedStaleMs 가 지났으면 위치가 끊긴 것으로 보고 0 이다 */
+    private fun currentWalkSpeedMps(): Double =
+        if (SystemClock.elapsedRealtime() - walkSpeedAtMs > visionConfig.walkSpeedStaleMs) 0.0 else walkSpeedMps
 
     @PluginMethod
     fun setMode(call: PluginCall) {
@@ -138,7 +150,7 @@ class SaitgilVisionPlugin : Plugin() {
     @Synchronized
     private fun onDetections(detected: DetectionFrame) {
         if (!running) return
-        val frame = detected.copy(walkSpeedMps = walkSpeedMps)
+        val frame = detected.copy(walkSpeedMps = currentWalkSpeedMps())
         val crowd = analyzer.analyze(frame)
         val objects = objectAnalyzer.analyze(frame)
         emitCrowdState(crowd.frame.copy(signal = objects.signal, obstacles = objects.seen))

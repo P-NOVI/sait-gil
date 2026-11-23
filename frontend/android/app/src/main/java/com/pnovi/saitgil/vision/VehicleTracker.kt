@@ -164,6 +164,8 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
         if (first != null && last != null && last.timeMs - first.timeMs >= config.vehicleMinSpanMs) {
             val spanS = (last.timeMs - first.timeMs) / 1_000.0
             // 거리가 줄어드는 속도는 카메라(사용자) 기준이라 내 걸음이 섞여 있다. 빼서 차 자체의 접근 속도로 만든다.
+            // 거리는 박스 높이로 잰 카메라 축 방향 깊이라, 서 있는 차는 옆 위치와 관계없이 내 걸음만큼 줄어든다(걸음 × cosθ 가 아니다).
+            // 폰이 걷는 방향을 본다고 가정한다. 옆을 보면 걸음이 덜 섞이므로 서 있는 차를 멀어지는 차로 볼 수 있다.
             approach = (first.distanceM - last.distanceM) / spanS - frame.walkSpeedMps
             inward = (abs(first.lateralM) - abs(last.lateralM)) / spanS
         }

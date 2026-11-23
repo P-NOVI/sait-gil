@@ -473,8 +473,7 @@ export default function App() {
             gpsLocation !== null &&
             (gpsLocation.course === undefined ||
                 gpsLocation.course.speed < VISION.waitingSpeedMps),
-        // 멈춰 있거나 위치가 끊기면 속력이 오지 않으므로 0으로 본다.
-        walkSpeedMps: gpsLocation?.course?.speed ?? 0,
+        walkFix: gpsLocation,
         report: guidance.report,
         buzz,
     });
