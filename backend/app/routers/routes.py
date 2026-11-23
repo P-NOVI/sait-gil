@@ -54,7 +54,7 @@ class RouteOut(BaseModel):
     coordinates: list[tuple[float, float]]
     distances_m: list[float]
     distance_m: float
-    time_s: int | None
+    time_s: int
     congestion_score: float
     slope: SlopeOut
     events: list[RouteEventOut]
@@ -94,17 +94,20 @@ async def find_routes(
     planned = await run_in_threadpool(plan_routes, responses, timeline, settings)
     if not planned:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "경로를 찾지 못했습니다.")
-    return RoutesResponse(routes=[_route_out(route) for route in planned])
+    return RoutesResponse(
+        routes=[_route_out(route, settings.walking_speed_mps) for route in planned]
+    )
 
 
-def _route_out(planned: PlannedRoute) -> RouteOut:
+def _route_out(planned: PlannedRoute, walking_speed_mps: float) -> RouteOut:
     route = planned.route
     return RouteOut(
         kinds=list(planned.kinds),
         coordinates=route.line,
         distances_m=[round(d, DISTANCE_DIGITS) for d in route.distances_m],
         distance_m=round(route.length_m, DISTANCE_DIGITS),
-        time_s=route.total_time_s,
+        # Tmap totalTime 은 어떤 걸음 속도로 잰 값인지 몰라 쓰지 않는다.
+        time_s=round(route.length_m / walking_speed_mps),
         congestion_score=round(planned.congestion_score, DISTANCE_DIGITS),
         slope=SlopeOut(
             moderate_m=round(planned.slope.moderate_m, DISTANCE_DIGITS),
