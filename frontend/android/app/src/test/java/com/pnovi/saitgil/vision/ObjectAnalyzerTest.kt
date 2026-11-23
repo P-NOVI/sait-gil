@@ -31,9 +31,15 @@ class ObjectAnalyzerTest {
     private val note8FocalPx = 4.3 / 5.645 * heightPx
 
     /** 실제 높이 heightM 인 물체가 distanceM 앞에 있을 때의 박스. 칸(0~4) 가운데에, 아래 끝을 bottom 에 둔다 */
-    private fun boxAt(kind: DetectedClass, heightM: Double, distanceM: Double, bottom: Double = 0.6): ObjectBox {
+    private fun boxAt(
+        kind: DetectedClass,
+        heightM: Double,
+        distanceM: Double,
+        bottom: Double = 0.6,
+        sector: Int = 2,
+    ): ObjectBox {
         val height = note8FocalPx * heightM / distanceM / heightPx
-        val centerX = (2 + 0.5) / CLOCK_SECTORS.size
+        val centerX = (sector + 0.5) / CLOCK_SECTORS.size
         return ObjectBox(kind, centerX - 0.05, bottom - height, 0.1, height, score = 0.9)
     }
 
@@ -320,6 +326,39 @@ class ObjectAnalyzerTest {
         assertEquals(setOf(DetectedClass.CAR, DetectedClass.TWO_WHEELER), result.seen.map { it.kind }.toSet())
         // 화면에는 바로 보이지만, 먼 차는 움직이는지 판단한 뒤에 알린다(VehicleTrackerTest).
         assertTrue(result.alerts.isEmpty())
+    }
+
+    @Test
+    fun leavingVehicleIsNotSeen() {
+        // 약 1.4m/s 로 멀어지는 차. 멀어지는 것으로 판단한 뒤에는 화면의 앞 장애물에서도 뺀다.
+        val analyzer = ObjectAnalyzer(config)
+        val results = listOf(6.0, 7.0, 8.0, 9.0).mapIndexed { index, distance ->
+            analyzer.analyze(walkFrame(index, boxAt(DetectedClass.CAR, config.carHeightM, distance)))
+        }
+
+        assertEquals(listOf(DetectedClass.CAR), results[0].seen.map { it.kind })
+        // results[1] 은 확인하지 않는다. 세 프레임을 보기 전에는 움직임을 몰라 아직 보이는 것이 의도된 동작이다.
+        assertTrue(results[2].seen.isEmpty())
+        assertTrue(results[3].seen.isEmpty())
+    }
+
+    @Test
+    fun leavingVehicleDoesNotHideOtherNearbyVehicle() {
+        // 멀어지는 차 옆에 서 있는 다른 차는 박스 단위로 거르므로 계속 보인다. 종류(CAR) 단위로 거르면 이 테스트가 깨진다.
+        val analyzer = ObjectAnalyzer(config)
+        val results = listOf(6.0, 7.0, 8.0, 9.0).mapIndexed { index, distance ->
+            analyzer.analyze(
+                walkFrame(
+                    index,
+                    boxAt(DetectedClass.CAR, config.carHeightM, distance),
+                    boxAt(DetectedClass.CAR, config.carHeightM, config.carNearM - 1, sector = 1),
+                ),
+            )
+        }
+
+        // 남은 차는 옆 칸(sector 1)에 서 있는 차다.
+        val labels = clockLabels(walkFrame(0), config)
+        assertEquals(listOf(ObstacleSighting(DetectedClass.CAR, labels[1])), results.last().seen)
     }
 
     @Test
