@@ -136,7 +136,7 @@ export function useVision({
     });
     const running = active && enabled;
 
-    // 새 위치가 올 때마다(속도가 같아도) 플러그인에 알린다. 위치가 끊겨 알림이 멈추면 플러그인이 일정 시간 뒤 0 으로 본다.
+    // 새 위치가 올 때마다(속도가 같아도) 플러그인에 알린다. 위치가 끊겨 알림이 멈추면 플러그인이 일정 시간 뒤 모르는 것(null)으로 본다.
     useEffect(() => {
         if (running && visionAvailable()) {
             setVisionWalkSpeed(walkSpeedOf(walkFix));

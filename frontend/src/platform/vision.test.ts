@@ -501,6 +501,14 @@ describe('setVisionWalkSpeed', () => {
         expect(plugin.setWalkSpeed).toHaveBeenCalledWith({ speedMps: 1.2 });
     });
 
+    it('모르면 null 로 보낸다', () => {
+        native.value = true;
+
+        setVisionWalkSpeed(null);
+
+        expect(plugin.setWalkSpeed).toHaveBeenCalledWith({ speedMps: null });
+    });
+
     it('음수는 0으로, 숫자가 아닌 값은 보내지 않는다', () => {
         native.value = true;
 

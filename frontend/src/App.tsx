@@ -473,7 +473,8 @@ export default function App() {
             gpsLocation !== null &&
             (gpsLocation.course === undefined ||
                 gpsLocation.course.speed < VISION.waitingSpeedMps),
-        walkFix: gpsLocation,
+        // 안내 전에 찾은 오래된 위치(myLocation)의 속력이 새 값처럼 들어가지 않게 계속 갱신되는 안내 위치만 쓴다.
+        walkFix: guidance.fix,
         report: guidance.report,
         buzz,
     });

@@ -79,7 +79,7 @@ export function visionFailure(error: unknown): VisionFailure {
 type SaitgilVisionPlugin = {
     start(): Promise<void>;
     stop(): Promise<void>;
-    setWalkSpeed(options: { speedMps: number }): Promise<void>;
+    setWalkSpeed(options: { speedMps: number | null }): Promise<void>;
     addListener(
         eventName: 'crowdState' | 'alert',
         listener: (state: unknown) => void,
@@ -186,14 +186,17 @@ export function visionAvailable(): boolean {
 
 /**
  * 사용자가 걷는 속도(m/s)를 플러그인에 알린다. 플러그인은 차의 움직임을 잴 때 내 걸음을 뺀다.
+ * 멈춰 있으면 0, 모르면 null 이다. 모를 때 플러그인은 걸음을 빼지 않고 예전 기준으로 판단한다.
  * 앱에서만 보내고, 보내지 못해도 인식은 계속되므로 실패는 무시한다.
  */
-export function setVisionWalkSpeed(speedMps: number): void {
-    if (!isNativeApp() || !Number.isFinite(speedMps)) {
+export function setVisionWalkSpeed(speedMps: number | null): void {
+    if (!isNativeApp() || (speedMps !== null && !Number.isFinite(speedMps))) {
         return;
     }
     void visionPlugin()
-        .setWalkSpeed({ speedMps: Math.max(0, speedMps) })
+        .setWalkSpeed({
+            speedMps: speedMps === null ? null : Math.max(0, speedMps),
+        })
         .catch(() => undefined);
 }
 

@@ -107,6 +107,11 @@ data class VisionConfig(
      */
     val vehicleMovingMps: Double = 1.8,
     /**
+     * 걸음 속도를 모를 때(위치 오차가 크거나 위치가 끊김) 다가오는 차로 보는 속도(m/s). 걸음을 못 빼 걷는 속도(약 1.2m/s)가
+     * 그대로 섞이므로 서 있는 차로 걸어 다가가는 것과 구분되게 크게 둔다. 걸음을 빼기 전 기준이다.
+     */
+    val vehicleMovingUnknownWalkMps: Double = 3.0,
+    /**
      * 내 걸음을 뺀 차 자체의 속도가 이 이상으로 멀어지면 멀어지는 차로 보고 알리지 않는다.
      * 느리게 멀어지는 차가 서 있는 차로 잡혀 알리는 일을 막는다. GPS 걸음 속도 오차가 이 값 가까이 되면 서 있는 차가 멀어지는 차로 잡히므로,
      * 프론트에서 걸음 속도 상한과 위치 정확도 조건을 둔다(settings.ts VISION.walkSpeed*).

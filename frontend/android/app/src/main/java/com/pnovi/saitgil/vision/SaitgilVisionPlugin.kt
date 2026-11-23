@@ -38,9 +38,10 @@ class SaitgilVisionPlugin : Plugin() {
     private var analyzer = CrowdAnalyzer()
     private var objectAnalyzer = ObjectAnalyzer()
 
-    // 화면이 GPS 로 알려 주는 사용자 걸음 속도(m/s)와 받은 시각. 카메라 분석 스레드가 읽으므로 @Volatile 이다.
+    // 화면이 GPS 로 알려 주는 사용자 걸음 속도(m/s)와 받은 시각. 멈춰 있으면 0, 모르면 null 이다.
+    // 카메라 분석 스레드가 읽으므로 @Volatile 이다.
     @Volatile
-    private var walkSpeedMps = 0.0
+    private var walkSpeedMps: Double? = null
 
     @Volatile
     private var walkSpeedAtMs = 0L
@@ -106,7 +107,7 @@ class SaitgilVisionPlugin : Plugin() {
     @PluginMethod
     fun stop(call: PluginCall) {
         running = false
-        walkSpeedMps = 0.0
+        walkSpeedMps = null
         walkSpeedAtMs = 0L
         camera?.stop()
         activity.runOnUiThread { preview?.hide() }
@@ -115,16 +116,17 @@ class SaitgilVisionPlugin : Plugin() {
 
     @PluginMethod
     fun setWalkSpeed(call: PluginCall) {
+        // speedMps 가 없거나 null 이면 걸음 속도를 모르는 것이다(위치 오차가 크거나 위치가 없음).
         val speed = call.getDouble("speedMps")
-        if (speed == null || !speed.isFinite()) return call.reject("걸음 속도가 올바르지 않습니다: $speed")
-        walkSpeedMps = speed.coerceAtLeast(0.0)
+        if (speed != null && !speed.isFinite()) return call.reject("걸음 속도가 올바르지 않습니다: $speed")
+        walkSpeedMps = speed?.coerceAtLeast(0.0)
         walkSpeedAtMs = SystemClock.elapsedRealtime()
         call.resolve()
     }
 
-    /** 걸음 속도를 받은 지 walkSpeedStaleMs 가 지났으면 위치가 끊긴 것으로 보고 0 이다 */
-    private fun currentWalkSpeedMps(): Double =
-        if (SystemClock.elapsedRealtime() - walkSpeedAtMs > visionConfig.walkSpeedStaleMs) 0.0 else walkSpeedMps
+    /** 걸음 속도를 받은 지 walkSpeedStaleMs 가 지났으면 위치가 끊긴 것으로 보고 모르는 것(null)으로 본다 */
+    private fun currentWalkSpeedMps(): Double? =
+        if (SystemClock.elapsedRealtime() - walkSpeedAtMs > visionConfig.walkSpeedStaleMs) null else walkSpeedMps
 
     @PluginMethod
     fun setMode(call: PluginCall) {
@@ -160,7 +162,7 @@ class SaitgilVisionPlugin : Plugin() {
         objects.vehicles.forEach { Log.d(TAG, vehicleLog(it, frame.walkSpeedMps)) }
     }
 
-    private fun vehicleLog(state: VehicleState, walkSpeedMps: Double): String {
+    private fun vehicleLog(state: VehicleState, walkSpeedMps: Double?): String {
         fun fmt(value: Double?) = value?.let { "%.1f".format(it) } ?: "-"
         return "차 #${state.id} ${state.kind.wire} 거리 ${fmt(state.distanceM)}m 옆 ${fmt(state.lateralM)}m " +
             "내 걸음 ${fmt(walkSpeedMps)}m/s 다가옴 ${fmt(state.approachMps)}m/s 안쪽 ${fmt(state.inwardMps)}m/s ${state.motion.wire}"
