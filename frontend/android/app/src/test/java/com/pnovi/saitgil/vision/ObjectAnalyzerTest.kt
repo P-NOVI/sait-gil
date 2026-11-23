@@ -31,9 +31,15 @@ class ObjectAnalyzerTest {
     private val note8FocalPx = 4.3 / 5.645 * heightPx
 
     /** 실제 높이 heightM 인 물체가 distanceM 앞에 있을 때의 박스. 칸(0~4) 가운데에, 아래 끝을 bottom 에 둔다 */
-    private fun boxAt(kind: DetectedClass, heightM: Double, distanceM: Double, bottom: Double = 0.6): ObjectBox {
+    private fun boxAt(
+        kind: DetectedClass,
+        heightM: Double,
+        distanceM: Double,
+        bottom: Double = 0.6,
+        sector: Int = 2,
+    ): ObjectBox {
         val height = note8FocalPx * heightM / distanceM / heightPx
-        val centerX = (2 + 0.5) / CLOCK_SECTORS.size
+        val centerX = (sector + 0.5) / CLOCK_SECTORS.size
         return ObjectBox(kind, centerX - 0.05, bottom - height, 0.1, height, score = 0.9)
     }
 
@@ -338,19 +344,21 @@ class ObjectAnalyzerTest {
 
     @Test
     fun leavingVehicleDoesNotHideOtherNearbyVehicle() {
-        // 멀어지는 차 옆의 이륜차는 박스 단위로 거르므로 계속 보인다. 종류 단위로 거르면 이 테스트가 깨진다.
+        // 멀어지는 차 옆에 서 있는 다른 차는 박스 단위로 거르므로 계속 보인다. 종류(CAR) 단위로 거르면 이 테스트가 깨진다.
         val analyzer = ObjectAnalyzer(config)
         val results = listOf(6.0, 7.0, 8.0, 9.0).mapIndexed { index, distance ->
             analyzer.analyze(
                 walkFrame(
                     index,
                     boxAt(DetectedClass.CAR, config.carHeightM, distance),
-                    boxAt(DetectedClass.TWO_WHEELER, config.twoWheelerHeightM, config.twoWheelerNearM - 1),
+                    boxAt(DetectedClass.CAR, config.carHeightM, config.carNearM - 1, sector = 1),
                 ),
             )
         }
 
-        assertEquals(listOf(DetectedClass.TWO_WHEELER), results.last().seen.map { it.kind })
+        // 남은 차는 옆 칸(sector 1)에 서 있는 차다.
+        val labels = clockLabels(walkFrame(0), config)
+        assertEquals(listOf(ObstacleSighting(DetectedClass.CAR, labels[1])), results.last().seen)
     }
 
     @Test
