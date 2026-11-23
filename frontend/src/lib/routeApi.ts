@@ -3,7 +3,6 @@
 
 import type { LngLat } from './geo';
 import type { GuidedRoute } from './guidance';
-import { spokenDistance } from './guidanceText';
 import { postJson } from './http';
 
 /** 경로가 뽑힌 기준. 한 경로가 여러 기준에 뽑히면 함께 온다. */
@@ -20,8 +19,8 @@ export type RouteSlope = {
 export type PlannedRoute = GuidedRoute & {
     kinds: RouteKind[];
     distance_m: number;
-    /** Tmap 예상 시간(초). 없을 수 있다. */
-    time_s: number | null;
+    /** 걷는 시간(초). 서버가 거리 ÷ 걸음 속도로 계산한다. */
+    time_s: number;
     congestion_score: number;
     slope: RouteSlope;
 };
@@ -127,10 +126,10 @@ function hardSlopeM(route: PlannedRoute): number {
 
 /** 화면에 보일 경로 한 줄 요약 */
 export function routeSummary(route: PlannedRoute): string {
-    const parts = [distanceLabel(route.distance_m)];
-    if (route.time_s !== null) {
-        parts.push(`약 ${minutes(route.time_s)}분`);
-    }
+    const parts = [
+        distanceLabel(route.distance_m),
+        `약 ${minutes(route.time_s)}분`,
+    ];
     const crowded = crowdedSpots(route);
     parts.push(crowded > 0 ? `붐비는 구간 ${crowded}곳` : '붐비는 구간 없음');
     const hard = hardSlopeM(route);
@@ -141,15 +140,11 @@ export function routeSummary(route: PlannedRoute): string {
 }
 
 /**
- * 음성으로 읽을 경로 한 줄. 짧게 듣도록 거리 대신 시간을 읽고(시간이 없으면 거리),
+ * 음성으로 읽을 경로 한 줄. 짧게 듣도록 거리 대신 시간을 읽고,
  * 붐비는 곳·가파른 곳은 있을 때만 읽는다.
  */
 function spokenSummary(route: PlannedRoute): string {
-    const parts = [
-        route.time_s !== null
-            ? `${minutes(route.time_s)}분`
-            : spokenDistance(route.distance_m),
-    ];
+    const parts = [`${minutes(route.time_s)}분`];
     const crowded = crowdedSpots(route);
     if (crowded > 0) {
         parts.push(`붐비는 곳 ${crowded}곳`);

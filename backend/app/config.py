@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -110,9 +110,11 @@ class Settings(BaseSettings):
     citydata_match_window_minutes: float = 40.0
     # DB에서 읽은 구역 혼잡도를 다시 쓰는 시간(초)
     citydata_cache_ttl_s: float = 300.0
-    # 경로 위 점마다 도착 시각(출발 + 걸은 거리 ÷ 이 속도)의 혼잡도를 쓴다(m/s).
-    # 시각장애인 보행을 생각해 보통 걸음(약 1.2m/s)보다 조금 느리게 잡은 초안이다.
-    walking_speed_mps: float = 1.0
+    # 시각장애인 걸음 속도(m/s). 경로의 걷는 시간(거리 ÷ 이 속도)과
+    # 경로 위 점마다 도착 시각(출발 + 걸은 거리 ÷ 이 속도)의 혼잡도에 쓴다.
+    # 일반인 평균 보행 속도(약 1.29m/s)의 70%로 잡았다.
+    # 0 이하면 나눌 수 없어 서버를 켤 때 막는다.
+    walking_speed_mps: float = Field(0.9, gt=0)
     # 예측 유동인구(명/시간)를 10분 유동인구로 바꿀 때 나누는 값(한 시간의 10분
     # 구간 수). 그래서 예측도 congestion_full_count 와 같은 기준으로 혼잡도가 된다.
     forecast_bins_per_hour: int = 6
