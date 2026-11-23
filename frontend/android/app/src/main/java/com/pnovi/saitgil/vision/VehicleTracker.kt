@@ -42,6 +42,8 @@ data class VehicleState(
     val motion: VehicleMotion,
     /** 이번 프레임의 박스. 멀어지는 차를 화면에 보이는 장애물에서 거를 때 쓴다 */
     val box: ObjectBox,
+    /** 카메라에서 본 거리가 줄어드는 속도(m/s). 내 걸음을 빼지 않은 값이라 늘어나면 음수다. 지켜본 시간이 짧으면 null */
+    val cameraClosingMps: Double? = null,
 )
 
 /** 박스 높이로 잰 차·이륜차 거리(m). 차 클래스가 아니거나 높이가 0 이면 null */
@@ -158,6 +160,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
             }
         }
         var approach: Double? = null
+        var cameraClosing: Double? = null
         var inward: Double? = null
         val first = track.samples.firstOrNull()
         val last = track.samples.lastOrNull()
@@ -166,10 +169,12 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
             // 거리가 줄어드는 속도는 카메라(사용자) 기준이라 내 걸음이 섞여 있다. 빼서 차 자체의 접근 속도로 만든다.
             // 거리는 박스 높이로 잰 카메라 축 방향 깊이라, 서 있는 차는 옆 위치와 관계없이 내 걸음만큼 줄어든다(걸음 × cosθ 가 아니다).
             // 폰이 걷는 방향을 본다고 가정한다. 옆을 보면 걸음이 덜 섞이므로 서 있는 차를 멀어지는 차로 볼 수 있다.
-            approach = (first.distanceM - last.distanceM) / spanS - frame.walkSpeedMps
+            cameraClosing = (first.distanceM - last.distanceM) / spanS
+            approach = cameraClosing - frame.walkSpeedMps
             inward = (abs(first.lateralM) - abs(last.lateralM)) / spanS
         }
-        return VehicleState(track.id, track.kind, distance, lateral, approach, inward, motionOf(track, approach, inward), track.box)
+        val motion = motionOf(track, approach, inward)
+        return VehicleState(track.id, track.kind, distance, lateral, approach, inward, motion, track.box, cameraClosing)
     }
 
     /**
