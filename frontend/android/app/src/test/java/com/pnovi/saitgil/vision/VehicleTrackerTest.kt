@@ -157,6 +157,76 @@ class VehicleTrackerTest {
         assertEquals(DetectedClass.CAR, states[2].notices.single().kind)
     }
 
+    /** 내가 walkSpeedMps 로 걷는 동안 프레임마다 차 하나씩 넣어 본 움직임 */
+    private fun motionsWhileWalking(walkSpeedMps: Double?, distances: List<Double>): List<VehicleMotion> {
+        val tracker = VehicleTracker(config)
+        return distances.mapIndexed { index, distance ->
+            val frame = frame(index, car(distance)).copy(walkSpeedMps = walkSpeedMps)
+            tracker.analyze(frame, clockLabels(frame, config)).states.single().motion
+        }
+    }
+
+    @Test
+    fun carLeavingSlowerThanMyWalkIsStillLeaving() {
+        // 내가 1.2m/s 로 걷는 동안 앞 차가 약 1.5m/s 로 멀어져 거리는 0.3m/s 만 늘어난다.
+        val motions = motionsWhileWalking(1.2, listOf(6.0, 6.2, 6.4, 6.6))
+
+        assertEquals(VehicleMotion.LEAVING, motions[2])
+    }
+
+    @Test
+    fun walkingTowardParkedCarIsNotApproaching() {
+        // 내가 1.2m/s 로 걸어 서 있는 차에 다가가 거리가 1.2m/s 로 줄어도 차는 서 있다.
+        val motions = motionsWhileWalking(1.2, listOf(8.0, 7.2, 6.4, 5.6))
+
+        assertEquals(VehicleMotion.STILL, motions[2])
+    }
+
+    @Test
+    fun slowlyApproachingCarIsNotMissedWhileWalking() {
+        // 내가 1.2m/s 로 걷는 동안 차가 약 2.4m/s 로 다가와 거리는 3.6m/s 로 줄어든다. 걸음을 빼도 다가오는 차로 본다.
+        val motions = motionsWhileWalking(1.2, listOf(14.0, 11.5, 9.0, 6.5))
+
+        assertEquals(VehicleMotion.APPROACHING, motions[2])
+    }
+
+    @Test
+    fun walkingTowardParkedCarWithUnknownWalkSpeedIsNotApproaching() {
+        // 걸음 속도를 모르면(null) 걸음을 못 빼 걸음 1.2m/s 에 박스 크기 흔들림이 더해져 거리가 2.0m/s 로 줄어도
+        // 예전 기준(3.0)으로 본다. 걸음을 안 뺀 채 1.8 을 쓰면 서 있는 차가 다가오는 차로 잡힌다.
+        val motions = motionsWhileWalking(null, listOf(8.0, 6.6, 5.2, 3.8))
+
+        assertEquals(VehicleMotion.STILL, motions[2])
+    }
+
+    @Test
+    fun carApproachingFasterThanThresholdIsApproachingWithUnknownWalkSpeed() {
+        // 걸음 속도를 몰라도 거리가 3.6m/s 로 줄면 다가오는 차로 본다.
+        val motions = motionsWhileWalking(null, listOf(14.0, 11.5, 9.0, 6.5))
+
+        assertEquals(VehicleMotion.APPROACHING, motions[2])
+    }
+
+    @Test
+    fun slowlyApproachingCarIsApproachingWhenIAmStopped() {
+        // 멈춰 있음(0)은 아는 값이라 1.8 기준을 쓴다. 거리가 2.4m/s 로 줄면 다가오는 차다.
+        val motions = motionsWhileWalking(0.0, listOf(14.0, 12.3, 10.6, 8.9))
+
+        assertEquals(VehicleMotion.APPROACHING, motions[2])
+    }
+
+    @Test
+    fun walkSpeedIsSubtractedFromReportedApproach() {
+        val tracker = VehicleTracker(config)
+        val states = listOf(14.0, 11.0, 8.0).mapIndexed { index, distance ->
+            val frame = frame(index, car(distance)).copy(walkSpeedMps = 1.0)
+            tracker.analyze(frame, clockLabels(frame, config)).states.single()
+        }
+
+        // 거리가 약 4.29m/s 로 줄고 내 걸음 1m/s 를 빼면 차는 약 3.29m/s 로 다가온다.
+        assertEquals(3.0 / 0.7 - 1.0, states[2].approachMps!!, 0.01)
+    }
+
     @Test
     fun twoWheelerUsesItsOwnNearDistance() {
         // 이륜차는 twoWheelerNearM(15m) 안에서만 알린다. 약 4.3m/s 로 다가와 세 프레임째 거리 16m 는 아직 멀다.

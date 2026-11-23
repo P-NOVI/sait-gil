@@ -85,7 +85,18 @@ describe('getCurrentPosition (웹)', () => {
 
         expect(await getCurrentPosition(geolocation)).toEqual({
             ...FIX,
+            speedMps: 1.2,
             course: { heading: 45, speed: 1.2 },
+        });
+    });
+
+    it('방향 없이 속력만 오면 진행 방향은 빼고 속력은 준다', async () => {
+        const noHeading = { ...COORDS, heading: NaN, speed: 1.2 };
+        const { geolocation } = webGeolocation({ coords: noHeading });
+
+        expect(await getCurrentPosition(geolocation)).toEqual({
+            ...FIX,
+            speedMps: 1.2,
         });
     });
 
@@ -93,7 +104,10 @@ describe('getCurrentPosition (웹)', () => {
         const still = { ...COORDS, heading: NaN, speed: 0 };
         const { geolocation } = webGeolocation({ coords: still });
 
-        expect(await getCurrentPosition(geolocation)).toEqual(FIX);
+        expect(await getCurrentPosition(geolocation)).toEqual({
+            ...FIX,
+            speedMps: 0,
+        });
     });
 
     it('GPS 가 실패하면 대략적인 위치로 다시 묻는다', async () => {

@@ -54,6 +54,7 @@ import {
     VISION_QUESTION,
 } from './lib/voiceCommand';
 import { VISION_OFF_TEXT, VISION_ON_TEXT } from './lib/visionAlerts';
+import { isStandingStill } from './lib/walkSpeed';
 import {
     canListen,
     canOpenAppSettings,
@@ -65,7 +66,6 @@ import {
     requestCompassPermission,
     visionAvailable,
 } from './platform';
-import { VISION } from './settings';
 
 const SHEET_TITLES: Record<Exclude<Tab, 'search'>, string> = {
     route: '길찾기',
@@ -467,12 +467,10 @@ export default function App() {
         active: navigating,
         minLevel: CROWD_ALERT_FROM[settings.crowdSensitivity],
         atCrosswalk,
-        // 횡단보도 근처에서 서 있으면 신호를 기다리는 중이다. 멈춰 있으면 속력(course)이 오지 않는다.
-        waiting:
-            atCrosswalk &&
-            gpsLocation !== null &&
-            (gpsLocation.course === undefined ||
-                gpsLocation.course.speed < VISION.waitingSpeedMps),
+        // 횡단보도 근처에서 서 있으면 신호를 기다리는 중이다. 멈춰 있으면 속력이 오지 않을 수도 있다.
+        waiting: atCrosswalk && isStandingStill(gpsLocation),
+        // 안내 전에 찾은 오래된 위치(myLocation)의 속력이 새 값처럼 들어가지 않게 계속 갱신되는 안내 위치만 쓴다.
+        walkFix: guidance.fix,
         report: guidance.report,
         buzz,
     });

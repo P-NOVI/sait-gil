@@ -35,13 +35,15 @@ data class VehicleState(
     val distanceM: Double?,
     /** 박스 가운데의 옆 위치(m). 오른쪽이 + 다. 거리를 모르면 null */
     val lateralM: Double?,
-    /** 거리가 줄어드는 속도(m/s). 지켜본 시간이 짧으면 null */
+    /** 차가 다가오는 속도(m/s). 거리가 줄어드는 속도에서 내 걸음 속도를 뺀 값이다. 지켜본 시간이 짧으면 null */
     val approachMps: Double?,
     /** 걷는 길 가운데로 들어오는 옆 속도(m/s). 지켜본 시간이 짧으면 null */
     val inwardMps: Double?,
     val motion: VehicleMotion,
     /** 이번 프레임의 박스. 멀어지는 차를 화면에 보이는 장애물에서 거를 때 쓴다 */
     val box: ObjectBox,
+    /** 카메라에서 본 거리가 줄어드는 속도(m/s). 내 걸음을 빼지 않은 값이라 늘어나면 음수다. 지켜본 시간이 짧으면 null */
+    val cameraClosingMps: Double? = null,
 )
 
 /** 박스 높이로 잰 차·이륜차 거리(m). 차 클래스가 아니거나 높이가 0 이면 null */
@@ -85,6 +87,9 @@ private class VehicleTrack(val id: Int, kind: DetectedClass, box: ObjectBox) : B
 
     /** 움직이는 차로 알렸는지 */
     var warned = false
+
+    /** 이번 프레임에 다가오는 차로 보는 속도(m/s). 걸음 속도를 아는지에 따라 다르다 */
+    var movingMps = 0.0
 
     /** 서 있는 차로 알린 기록. 움직이는 차로 알렸어도 적는다 */
     val notice = NoticeRecord()
@@ -158,15 +163,24 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
             }
         }
         var approach: Double? = null
+        var cameraClosing: Double? = null
         var inward: Double? = null
         val first = track.samples.firstOrNull()
         val last = track.samples.lastOrNull()
         if (first != null && last != null && last.timeMs - first.timeMs >= config.vehicleMinSpanMs) {
             val spanS = (last.timeMs - first.timeMs) / 1_000.0
-            approach = (first.distanceM - last.distanceM) / spanS
+            // 거리가 줄어드는 속도는 카메라(사용자) 기준이라 내 걸음이 섞여 있다. 빼서 차 자체의 접근 속도로 만든다.
+            // 거리는 박스 높이로 잰 카메라 축 방향 깊이라, 서 있는 차는 옆 위치와 관계없이 내 걸음만큼 줄어든다(걸음 × cosθ 가 아니다).
+            // 폰이 걷는 방향을 본다고 가정한다. 옆을 보면 걸음이 덜 섞이므로 서 있는 차를 멀어지는 차로 볼 수 있다.
+            cameraClosing = (first.distanceM - last.distanceM) / spanS
+            approach = cameraClosing - (frame.walkSpeedMps ?: 0.0)
             inward = (abs(first.lateralM) - abs(last.lateralM)) / spanS
         }
-        return VehicleState(track.id, track.kind, distance, lateral, approach, inward, motionOf(track, approach, inward), track.box)
+        // 걸음 속도를 모르면(null) 걸음을 못 빼므로 예전 기준으로 판단한다. 멈춰 있음(0)과는 다르다.
+        track.movingMps =
+            if (frame.walkSpeedMps == null) config.vehicleMovingUnknownWalkMps else config.vehicleMovingMps
+        val motion = motionOf(track, approach, inward)
+        return VehicleState(track.id, track.kind, distance, lateral, approach, inward, motion, track.box, cameraClosing)
     }
 
     /**
@@ -177,7 +191,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
         approach == null || inward == null -> VehicleMotion.UNKNOWN
         approach >= config.vehicleFastMps -> VehicleMotion.APPROACHING
         track.samples.size < config.vehicleMotionSamples -> VehicleMotion.UNKNOWN
-        approach >= config.vehicleMovingMps -> VehicleMotion.APPROACHING
+        approach >= track.movingMps -> VehicleMotion.APPROACHING
         inward >= config.vehicleCrossingMps -> VehicleMotion.CROSSING
         approach <= -config.vehicleLeavingMps -> VehicleMotion.LEAVING
         else -> VehicleMotion.STILL
@@ -187,7 +201,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
      * 움직이는 차로 바로 알릴지. 같은 차는 한 번만 알린다.
      * - 걷는 길로 다가오거나 들어오는 차는 가까운 거리(carNearM·twoWheelerNearM) 안이면 알린다.
      * - 들어오는 차도 걷는 길에 걸쳐야 알린다. 몸을 돌리면 서 있는 차도 옆으로 움직인 것처럼 잡혀서다.
-     * - 세 프레임을 보기 전이라도 길 위 vehicleImmediateM 안에서 두 프레임 사이 vehicleMovingMps 넘게 다가오면 알린다.
+     * - 세 프레임을 보기 전이라도 길 위 vehicleImmediateM 안에서 두 프레임 사이 movingMps(vehicleMovingMps, 걸음 속도를 모르면 vehicleMovingUnknownWalkMps) 넘게 다가오면 알린다.
      *   한 프레임만 보고는 알리지 않는다.
      * - 멀어지는 차(LEAVING)는 알리지 않는다.
      */
@@ -199,7 +213,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
         val warn = when (state.motion) {
             VehicleMotion.APPROACHING -> near && inPath
             VehicleMotion.CROSSING -> near && inPath
-            VehicleMotion.UNKNOWN -> veryNear && inPath && (state.approachMps ?: 0.0) >= config.vehicleMovingMps
+            VehicleMotion.UNKNOWN -> veryNear && inPath && (state.approachMps ?: 0.0) >= track.movingMps
             else -> false
         }
         if (!warn || !elapsed(track.kind, lastWarnMs, config.vehicleWarnRepeatMs, nowMs)) return false

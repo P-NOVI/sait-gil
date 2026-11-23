@@ -342,6 +342,41 @@ class ObjectAnalyzerTest {
         assertTrue(results[3].seen.isEmpty())
     }
 
+    /** 내 걸음 walkSpeedMps 로 걷는 동안 프레임마다 차 하나를 넣어 본 마지막 프레임의 결과 */
+    private fun lastWhileWalking(walkSpeedMps: Double, distances: List<Double>): ObjectAnalysis {
+        val analyzer = ObjectAnalyzer(config)
+        return distances.mapIndexed { index, distance ->
+            val frame = walkFrame(index, boxAt(DetectedClass.CAR, config.carHeightM, distance))
+            analyzer.analyze(frame.copy(walkSpeedMps = walkSpeedMps))
+        }.last()
+    }
+
+    @Test
+    fun carKeepingPaceWithMeIsStillSeen() {
+        // 내가 1.2m/s 로 따라 걷는 동안 앞 차도 같은 속도로 가 거리는 그대로다. 차는 멀어지지만 화면에서는 빼지 않는다.
+        val result = lastWhileWalking(1.2, listOf(8.0, 8.0, 8.0, 8.0))
+
+        assertEquals(VehicleMotion.LEAVING, result.vehicles.single().motion)
+        assertEquals(listOf(DetectedClass.CAR), result.seen.map { it.kind })
+    }
+
+    @Test
+    fun parkedCarIsStillSeenWhenGpsOverestimatesMyWalk() {
+        // 서 있는 차로 1.2m/s 로 걸어 다가가는데 GPS 가 걸음을 2.0m/s 로 잡아 차가 -0.8m/s 로 멀어지는 것처럼 보인다.
+        val result = lastWhileWalking(2.0, listOf(8.0, 7.16, 6.32, 5.48))
+
+        assertEquals(VehicleMotion.LEAVING, result.vehicles.single().motion)
+        assertEquals(listOf(DetectedClass.CAR), result.seen.map { it.kind })
+    }
+
+    @Test
+    fun carLeavingWhileIWalkIsNotSeen() {
+        // 내가 1.2m/s 로 걷는데 앞 차가 더 빨라 거리가 1.4m/s 로 늘어난다. 실제로 멀어지므로 화면에서 뺀다.
+        val result = lastWhileWalking(1.2, listOf(6.0, 7.0, 8.0, 9.0))
+
+        assertTrue(result.seen.isEmpty())
+    }
+
     @Test
     fun leavingVehicleDoesNotHideOtherNearbyVehicle() {
         // 멀어지는 차 옆에 서 있는 다른 차는 박스 단위로 거르므로 계속 보인다. 종류(CAR) 단위로 거르면 이 테스트가 깨진다.

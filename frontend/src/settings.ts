@@ -120,6 +120,10 @@ export const VISION = {
     obstacleMaxWaitMs: 1_500,
     // 횡단보도 근처에서 GPS 속력이 이보다 느리면 신호를 기다리며 서 있는 것으로 본다(m/s). 멈춰 있으면 속력이 아예 안 올 수도 있다.
     waitingSpeedMps: 0.5,
+    // 차의 움직임에서 뺄 걸음 속도(GPS 속력)의 상한(m/s). 걸음으로 볼 수 없는 속력은 이 값으로 자른다.
+    walkSpeedMaxMps: 2,
+    // GPS 위치 오차가 이 반경(m)보다 크면 속력을 믿지 않고 걸음 속도를 0 으로 본다. 실기기에서 맞출 초안 값.
+    walkSpeedMaxAccuracyM: 20,
 } as const;
 
 export type VisionSettings = typeof VISION;

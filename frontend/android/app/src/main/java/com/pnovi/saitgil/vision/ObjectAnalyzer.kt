@@ -86,7 +86,11 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val labels = clockLabels(frame, config)
         val vehicleAnalysis = vehicles.analyze(frame, labels)
         // 멀어지는 차는 음성뿐 아니라 화면의 앞 장애물에서도 뺀다.
-        val leaving = vehicleAnalysis.states.filter { it.motion == VehicleMotion.LEAVING }.map { it.box }
+        // 걸음을 뺀 판단이 멀어짐이어도 카메라에서 본 거리가 실제로 늘지 않으면 뺀다. 따라 걸을 때나 GPS 걸음 속도 오차로
+        // 서 있는 차·나란히 가는 차가 화면에서 사라지지 않게 한다. 걸음 속도를 모르면(0) 두 판단이 같다.
+        val leaving = vehicleAnalysis.states
+            .filter { it.motion == VehicleMotion.LEAVING && (it.cameraClosingMps ?: 0.0) <= -config.vehicleLeavingMps }
+            .map { it.box }
         val seen = OBSTACLE_CLASSES.mapNotNull { kind ->
             // 같은 클래스가 여럿이면 가장 가까운(아래 끝이 가장 아래인) 것을 본다.
             frame.objects
