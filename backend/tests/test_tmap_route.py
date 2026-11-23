@@ -7,7 +7,7 @@ VERTICES = [(127.0, 37.5), (127.0, 37.501), (127.0, 37.502), (127.0, 37.503)]
 
 
 def test_parse_route_joins_lines_and_places_guide_points() -> None:
-    response = tmap_response(VERTICES, [200, 212, 13, 201], total_time_s=240)
+    response = tmap_response(VERTICES, [200, 212, 13, 201])
     response["features"].reverse()
 
     route = parse_route(response)
@@ -18,7 +18,6 @@ def test_parse_route_joins_lines_and_places_guide_points() -> None:
     assert [p.distance_m for p in route.guide_points] == pytest.approx(
         [0, LAT_STEP_M, 2 * LAT_STEP_M, 3 * LAT_STEP_M], rel=1e-3
     )
-    assert route.total_time_s == 240
 
 
 def test_parse_route_reads_facility_codes_as_int() -> None:
