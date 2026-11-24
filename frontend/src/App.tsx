@@ -498,6 +498,9 @@ export default function App() {
         try {
             // 실패 알림이 끊기지 않게 다 읽은 뒤 묻는다.
             await whenIdle();
+            if (stale()) {
+                return;
+            }
             const heard = await ask(CAMERA_PERMISSION_QUESTION);
             if (stale()) {
                 return;
@@ -527,6 +530,7 @@ export default function App() {
     });
     // 시스템 창이 다시 뜨지 않는 거부(blocked)만 묻는다. 그냥 거부(denied)는 카메라를 다시 켜면 창이 뜬다.
     // 브라우저는 설정 화면을 열 수 없고, 음성 안내가 꺼져 있으면 말로 물을 수 없어 실패 알림만 읽는다.
+    // blocked 인 채로 음성 안내를 켜면 새 실패가 없어도 그때 묻는다.
     const cameraBlocked = vision.failure === 'blocked';
     useEffect(() => {
         if (

@@ -1,6 +1,7 @@
 package com.pnovi.saitgil.vision
 
 import android.Manifest
+import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.ActivityCompat
@@ -47,6 +48,9 @@ class SaitgilVisionPlugin : Plugin() {
     @Volatile
     private var walkSpeedAtMs = 0L
 
+    // 권한을 요청하기 직전의 rationale 값. 요청 뒤 값과 비교해 "다시 묻지 않음"을 가린다.
+    private var rationaleBeforeRequest = false
+
     // 마지막으로 로그에 남긴 인파 단계·신호등 상태
     private var loggedState: Pair<CrowdLevel, SignalState?>? = null
 
@@ -65,21 +69,32 @@ class SaitgilVisionPlugin : Plugin() {
         if (getPermissionState(CAMERA) == PermissionState.GRANTED) {
             startCamera(call)
         } else {
+            rationaleBeforeRequest = shouldShowCameraRationale()
             requestPermissionForAlias(CAMERA, call, "cameraPermissionResult")
         }
     }
 
     @PermissionCallback
     private fun cameraPermissionResult(call: PluginCall) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (getPermissionState(CAMERA) == PermissionState.GRANTED) {
+            prefs.edit().remove(KEY_CAMERA_DENIED).apply()
             startCamera(call)
-        } else if (ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)) {
+        } else if (shouldShowCameraRationale()) {
+            // 사용자가 창에서 거부한 것이 기록됐다. 다시 켜면 시스템 창이 다시 뜬다.
+            prefs.edit().putBoolean(KEY_CAMERA_DENIED, true).apply()
             call.reject(CAMERA_DENIED, CAMERA_DENIED_CODE)
-        } else {
-            // 방금 요청했는데도 거부되고 더 묻지 않는 상태다. 시스템 창이 다시 뜨지 않으므로 설정 화면에서 켜야 한다.
+        } else if (rationaleBeforeRequest || prefs.getBoolean(KEY_CAMERA_DENIED, false)) {
+            // 거부가 이미 기록돼 있는데 설명 창이 더는 뜨지 않는다. 시스템 창이 다시 뜨지 않으므로 설정 화면에서 켜야 한다.
+            // 거부한 적 없이 rationale 이 false 인 것(Android 11 이상에서 창 바깥을 눌러 닫음, 정책 제한)은 여기에 오지 않는다.
             call.reject(CAMERA_BLOCKED, CAMERA_BLOCKED_CODE)
+        } else {
+            call.reject(CAMERA_DENIED, CAMERA_DENIED_CODE)
         }
     }
+
+    private fun shouldShowCameraRationale() =
+        ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)
 
     // 미리보기 뷰를 만들고 보여 주는 일이 있어 메인 스레드에서 처리한다.
     private fun startCamera(call: PluginCall) = activity.runOnUiThread {
@@ -197,6 +212,9 @@ class SaitgilVisionPlugin : Plugin() {
     companion object {
         const val CAMERA = "camera"
         private const val TAG = "SaitgilVision"
+        // 사용자가 카메라 권한 창에서 거부한 적이 있는지 적어 두는 저장소
+        private const val PREFS = "saitgil_vision"
+        private const val KEY_CAMERA_DENIED = "camera_denied"
         // 실패 설명. 로그·디버깅용이며 사용자에게 읽지 않는다.
         // 사용자에게 읽는 문장은 화면(visionAlerts.ts)이 아래 코드를 보고 정한다.
         private const val CAMERA_DENIED = "카메라 권한 거부"

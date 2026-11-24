@@ -64,6 +64,23 @@ describe('visionControl', () => {
         expect(stopped.failure).toBeNull();
     });
 
+    it('blocked 로 실패하고 다시 켜도 다음 blocked 가 새 실패로 바뀐다', () => {
+        let state = INITIAL_VISION_CONTROL;
+        const seen: (string | null)[] = [];
+        for (let i = 0; i < 2; i += 1) {
+            state = visionControl(state, {
+                type: 'failed',
+                failure: 'blocked',
+            });
+            seen.push(state.failure);
+            state = visionControl(state, { type: 'set', enabled: true });
+            seen.push(state.failure);
+        }
+
+        // 다시 켤 때마다 null 을 거쳐야 화면의 effect 가 다음 실패에서 다시 돈다.
+        expect(seen).toEqual(['blocked', null, 'blocked', null]);
+    });
+
     it('실패하고 다시 켤 때마다 횟수가 는다', () => {
         let state = INITIAL_VISION_CONTROL;
         for (let i = 0; i < 2; i += 1) {
