@@ -153,21 +153,47 @@ fun signalBoxesFromCrop(
 }
 
 /**
- * 자른 칸에서 찾은 신호등 박스를 프레임에 더한다. 전체 영상에서 찾은 같은 종류 신호등과 iouThreshold 이상 겹치면
- * 점수가 높은 쪽 하나만 남긴다. 신호등이 아닌 박스는 그대로 둔다.
+ * 자른 칸(crop)에서 찾은 신호등 박스를 프레임에 더한다. 신호등이 아닌 박스는 그대로 둔다.
+ * 신호등끼리는 종류와 상관없이 겹친 넓이가 작은 박스의 signalMergeOverlap 이상이면 같은 신호등으로 보고 하나만 남긴다.
+ * 전체 영상은 red, 칸은 other 처럼 다르게 본 두 박스가 남으면 SignalTracker 가 프레임마다 다른 쪽을 골라 상태가 오간다.
+ * 더 자세히 본 칸 박스, 전체 영상 박스, 칸 끝에 걸려 잘린 칸 박스 순으로 남기고, 같은 차례에서는 점수가 높은 것을 남긴다.
  */
-fun withCropSignals(frame: DetectionFrame, cropBoxes: List<ObjectBox>, iouThreshold: Float): DetectionFrame {
+fun withCropSignals(
+    frame: DetectionFrame,
+    cropBoxes: List<ObjectBox>,
+    crop: CropRegion,
+    config: DetectorConfig,
+): DetectionFrame {
     if (cropBoxes.isEmpty()) return frame
     val (signals, others) = frame.objects.partition { it.kind in SIGNAL_CLASSES }
+    val (cut, intact) = cropBoxes.partition {
+        cutByCrop(it, crop, frame.imageWidthPx, frame.imageHeightPx, config.signalCropEdgePx)
+    }
     val kept = mutableListOf<ObjectBox>()
-    for (box in (signals + cropBoxes).sortedByDescending { it.score }) {
-        val overlaps = kept.any { it.kind == box.kind && boxIou(it, box) >= iouThreshold }
-        if (!overlaps) kept += box
+    for (box in listOf(intact, signals, cut).flatMap { group -> group.sortedByDescending { it.score } }) {
+        if (kept.none { overlapOfSmaller(it, box) >= config.signalMergeOverlap }) kept += box
     }
     return frame.copy(objects = others + kept)
 }
 
-private fun boxIou(a: ObjectBox, b: ObjectBox): Double = iou(
-    PersonBox(a.left, a.top, a.width, a.height, a.score),
-    PersonBox(b.left, b.top, b.width, b.height, b.score),
-)
+/** 칸 안쪽 끝(영상 끝과 겹치지 않는 쪽)에 edgePx 안으로 닿아, 칸에 걸려 잘렸을 박스인지 */
+private fun cutByCrop(box: ObjectBox, crop: CropRegion, imageWidth: Int, imageHeight: Int, edgePx: Int): Boolean {
+    val left = box.left * imageWidth
+    val top = box.top * imageHeight
+    val right = left + box.width * imageWidth
+    val bottom = top + box.height * imageHeight
+    val cropRight = crop.left + crop.size
+    val cropBottom = crop.top + crop.size
+    return (crop.left > 0 && left - crop.left <= edgePx) ||
+        (cropRight < imageWidth && cropRight - right <= edgePx) ||
+        (crop.top > 0 && top - crop.top <= edgePx) ||
+        (cropBottom < imageHeight && cropBottom - bottom <= edgePx)
+}
+
+/** 두 박스가 겹친 넓이 ÷ 작은 박스 넓이. 칸 끝에 잘린 박스처럼 한쪽이 다른 쪽 안에 들면 1 이다 */
+private fun overlapOfSmaller(a: ObjectBox, b: ObjectBox): Double {
+    val width = min(a.left + a.width, b.left + b.width) - max(a.left, b.left)
+    val height = min(a.top + a.height, b.top + b.height) - max(a.top, b.top)
+    if (width <= 0.0 || height <= 0.0) return 0.0
+    return width * height / min(a.width * a.height, b.width * b.height)
+}

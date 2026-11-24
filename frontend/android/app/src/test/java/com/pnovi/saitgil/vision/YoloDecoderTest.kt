@@ -15,6 +15,11 @@ class YoloDecoderTest {
     private fun signalBox(left: Double, top: Double, score: Double, kind: DetectedClass = DetectedClass.PED_SIGNAL_RED) =
         ObjectBox(kind, left, top, 0.02, 0.04, score)
 
+    // 세운 960×1280 영상에서 자른 칸
+    private val crop = CropRegion(left = 160, top = 192, size = 640)
+
+    private fun frameWith(vararg objects: ObjectBox) = DetectionFrame(0, emptyList(), 960, 1280, objects = objects.toList())
+
     @Test
     fun signalCropSitsInUpperMiddleOfHighResImage() {
         // 세운 960×1280 영상에서 640 칸은 가로 가운데, 세로 0.4 를 가운데로 둔다.
@@ -66,23 +71,52 @@ class YoloDecoderTest {
     }
 
     @Test
-    fun cropSignalOverlappingWholeImageSignalKeepsHigherScore() {
+    fun cropSignalOverlappingWholeImageSignalKeepsCropBox() {
+        // 같은 신호등은 점수가 낮아도 더 자세히 본 칸 박스를 남긴다. 겹치지 않는 칸 박스와 신호등이 아닌 박스는 그대로 둔다.
         val car = ObjectBox(DetectedClass.CAR, 0.4, 0.6, 0.2, 0.2, 0.8)
-        val whole = signalBox(0.5, 0.3, score = 0.3)
-        val frame = DetectionFrame(0, emptyList(), 960, 1280, objects = listOf(car, whole))
-        val cropped = signalBox(0.5, 0.3, score = 0.6)
+        val whole = signalBox(0.5, 0.3, score = 0.6)
+        val cropped = signalBox(0.5, 0.3, score = 0.3)
         val far = signalBox(0.6, 0.35, score = 0.4, kind = DetectedClass.PED_SIGNAL_OTHER)
 
-        val merged = withCropSignals(frame, listOf(cropped, far), config.nmsIou)
+        val merged = withCropSignals(frameWith(car, whole), listOf(cropped, far), crop, config)
 
         assertEquals(setOf(car, cropped, far), merged.objects.toSet())
     }
 
     @Test
-    fun noCropSignalsLeaveFrameAsIs() {
-        val frame = DetectionFrame(0, emptyList(), 960, 1280, objects = listOf(signalBox(0.5, 0.3, score = 0.3)))
+    fun sameSignalSeenAsRedAndOtherKeepsOneBox() {
+        // 전체 영상은 red, 칸은 other 로 본 같은 신호등이다. 가로로 0.004(약 4px) 어긋나 IoU 는 nmsIou(0.7)보다 낮다.
+        val whole = signalBox(0.5, 0.3, score = 0.6)
+        val cropped = signalBox(0.504, 0.3, score = 0.5, kind = DetectedClass.PED_SIGNAL_OTHER)
 
-        assertEquals(frame, withCropSignals(frame, emptyList(), config.nmsIou))
+        val merged = withCropSignals(frameWith(whole), listOf(cropped), crop, config)
+
+        assertEquals(listOf(cropped), merged.objects)
+    }
+
+    @Test
+    fun signalCutByCropEdgeKeepsWholeImageBox() {
+        // 칸 왼쪽 끝(영상 x 160px)에 걸려 반만 잡힌 칸 박스보다 전체 영상 박스를 남긴다.
+        val whole = signalBox(0.16, 0.3, score = 0.5)
+        val cut = ObjectBox(DetectedClass.PED_SIGNAL_RED, 160.0 / 960, 0.3, 0.01, 0.04, score = 0.7)
+
+        val merged = withCropSignals(frameWith(whole), listOf(cut), crop, config)
+
+        assertEquals(listOf(whole), merged.objects)
+    }
+
+    @Test
+    fun signalCutByCropEdgeIsKeptWhenOnlyCropSeesIt() {
+        val cut = ObjectBox(DetectedClass.PED_SIGNAL_RED, 160.0 / 960, 0.3, 0.01, 0.04, score = 0.7)
+
+        assertEquals(listOf(cut), withCropSignals(frameWith(), listOf(cut), crop, config).objects)
+    }
+
+    @Test
+    fun noCropSignalsLeaveFrameAsIs() {
+        val frame = frameWith(signalBox(0.5, 0.3, score = 0.3))
+
+        assertEquals(frame, withCropSignals(frame, emptyList(), crop, config))
     }
 
     /** 모델 입력 기준 0~1 박스 하나와 클래스 점수 */

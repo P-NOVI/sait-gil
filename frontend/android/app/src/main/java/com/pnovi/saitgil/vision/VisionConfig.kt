@@ -121,6 +121,12 @@ data class VisionConfig(
     val vehicleFastMps: Double = 5.0,
     /** 걸음 속도를 받은 지 이 시간(ms)이 지나면 위치가 끊긴 것으로 보고 0 으로 되돌린다. 마지막 속도가 계속 빠지는 일을 막는다 */
     val walkSpeedStaleMs: Long = 3_000,
+    /**
+     * 횡단보도 근처를 벗어난 뒤 이 시간(ms) 동안 다시 근처가 되지 않아야 분석 해상도를 되돌린다(#134).
+     * GPS 진행 거리가 근처 경계에서 오가도 다시 묶기(그동안 프레임이 끊김)를 되풀이하지 않게 한다. 올리는 것은 바로 한다.
+     * 실기기에서 맞출 초안 값이다
+     */
+    val highResOffDelayMs: Long = 5_000,
     /** 옆에서 걷는 길 가운데 쪽으로 이 속도(m/s) 이상 들어오면 건너오는 차로 본다 */
     val vehicleCrossingMps: Double = 1.5,
     /** 걷는 길로 보는 통로의 반폭(m). 카메라 정면에서 좌우 이만큼(폭 2m)에 차가 걸치면 길 위로 본다 */
@@ -181,6 +187,14 @@ data class DetectorConfig(
      * 폰이 앞뒤로 기울어도 들어가게 위쪽으로 넉넉히 둔다. 실기기에서 맞출 초안 값이다
      */
     val signalCropCenterY: Double = 0.4,
+    /**
+     * 전체 영상과 자른 칸의 신호등 박스가 겹친 넓이가 작은 박스 넓이의 이 비율 이상이면 같은 신호등으로 보고 하나만 남긴다.
+     * 같은 신호등을 red·other 로 다르게 봐도 하나로 친다. 먼 신호등은 박스가 작아 몇 px 만 어긋나도 IoU 가 nmsIou 보다 낮아
+     * IoU 대신 작은 박스 기준으로 본다. 실기기에서 맞출 초안 값이다
+     */
+    val signalMergeOverlap: Double = 0.5,
+    /** 자른 칸의 끝(영상 끝이 아닌 쪽)에서 이 거리(px) 안까지 닿은 신호등 박스는 칸에 걸려 잘린 것으로 본다 */
+    val signalCropEdgePx: Int = 4,
 )
 
 /**

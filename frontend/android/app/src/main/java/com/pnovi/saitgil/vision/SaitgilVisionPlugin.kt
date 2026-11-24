@@ -2,6 +2,8 @@ package com.pnovi.saitgil.vision
 
 import android.Manifest
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
@@ -59,6 +61,10 @@ class SaitgilVisionPlugin : Plugin() {
     // 카메라 분석 스레드가 읽으므로 @Volatile 이다. 화면이 인식을 켤 때마다 다시 알려 주므로 멈출 때 지우지 않는다.
     @Volatile
     private var nearCrosswalk = false
+
+    // 근처를 벗어나면 highResOffDelayMs 뒤 해상도를 되돌린다. 그 안에 다시 근처가 되면 지워 다시 묶지 않는다.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val lowerResolution = Runnable { camera?.setHighRes(false) }
 
     // 권한을 요청하기 직전의 rationale 값. 요청 뒤 값과 비교해 "다시 묻지 않음"을 가린다.
     private var rationaleBeforeRequest = false
@@ -188,7 +194,12 @@ class SaitgilVisionPlugin : Plugin() {
     fun setNearCrosswalk(call: PluginCall) {
         val near = call.getBoolean("near") ?: return call.reject("횡단보도 근처인지(near)가 없습니다")
         nearCrosswalk = near
-        camera?.setHighRes(near)
+        mainHandler.removeCallbacks(lowerResolution)
+        if (near) {
+            camera?.setHighRes(true)
+        } else {
+            mainHandler.postDelayed(lowerResolution, visionConfig.highResOffDelayMs)
+        }
         call.resolve()
     }
 
@@ -206,6 +217,7 @@ class SaitgilVisionPlugin : Plugin() {
 
     override fun handleOnDestroy() {
         running = false
+        mainHandler.removeCallbacks(lowerResolution)
         camera?.close()
         camera = null
         preview?.remove()

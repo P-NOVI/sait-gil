@@ -104,7 +104,7 @@ class LiteRtDetector private constructor(
                 detections,
                 cropBoxes,
             )
-            return withCropSignals(frame, cropBoxes.orEmpty(), config.nmsIou)
+            return if (crop != null && cropBoxes != null) withCropSignals(frame, cropBoxes, crop, config) else frame
         } finally {
             bitmap.recycle()
         }
