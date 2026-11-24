@@ -33,9 +33,13 @@ import com.getcapacitor.annotation.PermissionCallback
 class SaitgilStepsPlugin : Plugin() {
     private var listener: SensorEventListener? = null
 
+    // 권한 창이 떠 있는 동안 stop 이 먼저 오면 true. 이후 권한을 허용해도 센서를 켜지 않는다.
+    private var stopped = false
+
     /** 걸음 센서를 쓸 수 있는지 돌려준다. 권한이 없으면 묻는다. */
     @PluginMethod
     fun start(call: PluginCall) {
+        stopped = false
         if (stepSensor() == null) {
             call.resolve(available(false))
             return
@@ -49,7 +53,7 @@ class SaitgilStepsPlugin : Plugin() {
 
     @PermissionCallback
     private fun onPermission(call: PluginCall) {
-        if (permitted()) {
+        if (!stopped && permitted()) {
             listen(call)
         } else {
             call.resolve(available(false))
@@ -58,6 +62,7 @@ class SaitgilStepsPlugin : Plugin() {
 
     @PluginMethod
     fun stop(call: PluginCall) {
+        stopped = true
         unlisten()
         call.resolve()
     }
