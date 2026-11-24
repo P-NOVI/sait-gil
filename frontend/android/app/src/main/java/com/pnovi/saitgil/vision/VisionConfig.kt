@@ -87,15 +87,21 @@ data class VisionConfig(
     /** 이 시간(ms)보다 오래 안 보인 장애물·차는 지나간 것으로 보고 추적에서 뺀다. 다시 보이면 새 물체다 */
     val objectLostMs: Long = 1_000,
     /**
-     * 장애물·서 있는 차는 같은 종류·방향을 이 시간(ms) 안에 한 번만 알린다. 추적이 끊겨 같은 물체가 새 물체로 잡힐 때다.
-     * 1.1m/s 로 걸으면 약 11m 를 가는 시간이라 줄지어 선 기둥도 한 번만 알린다
+     * 장애물·서 있는 차는 추적이 끊겨 같은 물체가 새 물체로 잡혀도 이 시간(ms) 안에는 다시 알리지 않는다.
+     * 같은 물체인지는 종류·방향과 거리(renoticeToleranceM)로 본다. 뒤따라 선 다른 기둥은 이 안에도 알린다
      */
     val stillRepeatMs: Long = 10_000,
+    /** 다시 잡힌 물체가 (알린 거리 − 그동안 걸은 거리)에서 이 거리(m) 안이면 같은 물체로 본다. 바닥 거리 오차를 넘길 만큼 둔 초안 값이다 */
+    val renoticeToleranceM: Double = 1.5,
+    /** 걸음 속도를 모를 때 같은 물체인지 볼 때 쓰는, 그동안 걸었을 수 있는 가장 빠른 속도(m/s) */
+    val renoticeMaxWalkMps: Double = 1.5,
     /**
-     * GPS 걸음 속도가 이보다 느리면(m/s) 서 있는 것으로 보고 장애물·서 있는 차를 알리지 않는다. 다가오는 차는 서 있어도 알린다.
-     * 화면의 VISION.waitingSpeedMps 와 같은 값이다. 걸음 속도를 모르면(null) 걷는 것으로 보고 알린다
+     * GPS 걸음 속도가 이보다 느린(m/s) 상태가 standingConfirmMs 이어지면 서 있는 것으로 보고 장애물·서 있는 차를 알리지 않는다.
+     * 다가오는 차는 서 있어도 알린다. 화면의 VISION.waitingSpeedMps 와 같은 값이다. 걸음 속도를 모르면(null) 걷는 것으로 보고 알린다
      */
     val standingSpeedMps: Double = 0.5,
+    /** 걸음 속도가 standingSpeedMps 보다 느린 상태가 이 시간(ms) 이어져야 서 있는 것으로 본다. GPS 속력이 잠깐 0 으로 튀는 것은 넘긴다 */
+    val standingConfirmMs: Long = 3_000,
     /** 앞 프레임 차·장애물 박스와 이만큼 이상 겹치면(IoU) 같은 물체로 본다 */
     val objectTrackIou: Double = 0.2,
     /**

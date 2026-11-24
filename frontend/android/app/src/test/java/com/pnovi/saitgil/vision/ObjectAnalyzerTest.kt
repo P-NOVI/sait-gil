@@ -84,6 +84,12 @@ class ObjectAnalyzerTest {
     private val gapFrames = (config.noticeGapMs / 100).toInt()
     private val lostFrames = (config.objectLostMs / 100).toInt()
 
+    /** 걸음 속도 0 인 빈 프레임을 넣고 standingConfirmMs 뒤 시각을 돌려준다. 그 시각부터는 서 있는 것으로 본다 */
+    private fun standStill(analyzer: ObjectAnalyzer): Long {
+        analyzer.analyze(note8Frame().copy(timeMs = 0, walkSpeedMps = 0.0))
+        return config.standingConfirmMs
+    }
+
     @Test
     fun alertsNearObstacleAheadAfterConfirmTime() {
         val results = run(ObjectAnalyzer(config), repeat(listOf(box(DetectedClass.POLE)), confirmAt + 1))
@@ -304,13 +310,16 @@ class ObjectAnalyzerTest {
 
     @Test
     fun standingStillDoesNotAlertObstaclesAndAlertsWhenWalkingAgain() {
-        // 신호를 기다리며 서 있는 동안 3m 앞 기둥·서 있는 차는 알리지 않는다. 걷기 시작하면 알린다.
+        // 신호를 기다리며 standingConfirmMs 넘게 서 있는 동안 3m 앞 기둥·서 있는 차는 알리지 않는다. 걷기 시작하면 알린다.
         val pole = groundBox(DetectedClass.POLE, 3.0, sector = 1)
         val car = boxAt(DetectedClass.CAR, config.carHeightM, 4.0, sector = 3)
         val analyzer = ObjectAnalyzer(config)
+        val start = standStill(analyzer)
 
-        val standing = runNote8(analyzer, repeat(listOf(pole, car), 30), walkSpeedMps = 0.0)
-        val walking = analyzer.analyze(note8Frame(pole, car).copy(timeMs = 3_000, walkSpeedMps = 1.0))
+        val standing = (0 until 30).map {
+            analyzer.analyze(note8Frame(pole, car).copy(timeMs = start + it * 100L, walkSpeedMps = 0.0))
+        }
+        val walking = analyzer.analyze(note8Frame(pole, car).copy(timeMs = start + 3_000, walkSpeedMps = 1.0))
 
         assertTrue(standing.all { it.alerts.isEmpty() })
         assertEquals(listOf(DetectedClass.POLE), walking.alerts.map { it.objectClass })
@@ -318,12 +327,59 @@ class ObjectAnalyzerTest {
     }
 
     @Test
+    fun briefZeroSpeedStillAlertsObstacles() {
+        // 천천히 걸을 때 GPS 속력이 standingConfirmMs 보다 짧게 0 으로 튀어도 장애물은 알린다.
+        val pole = listOf(groundBox(DetectedClass.POLE, 3.0))
+        val glitch = (config.standingConfirmMs / 100).toInt() - 1
+
+        val results = runNote8(ObjectAnalyzer(config), repeat(pole, glitch), walkSpeedMps = 0.0)
+
+        assertEquals(1, results.sumOf { it.alerts.size })
+    }
+
+    @Test
+    fun nextPoleWithinRepeatTimeIsAlerted() {
+        // 1.1m/s 로 걸으며 5m 간격으로 선 기둥 두 개를 지난다. 뒤 기둥은 앞 기둥을 알린 지 stillRepeatMs 안이어도 알린다.
+        val analyzer = ObjectAnalyzer(config)
+        val speed = 1.1
+        val alerts = (0 until 60).sumOf { index ->
+            val seconds = index / 10.0
+            val first = 5.0 - speed * seconds
+            val second = first + 5.0
+            val boxes = listOf(first, second)
+                .filter { it in 1.5..config.obstacleNearM }
+                .map { groundBox(DetectedClass.POLE, it) }
+            analyzer.analyze(note8Frame(*boxes.toTypedArray()).copy(timeMs = index * 100L, walkSpeedMps = speed)).alerts.size
+        }
+
+        assertEquals(2, alerts)
+    }
+
+    @Test
+    fun samePoleSeenAgainWhileWalkingIsNotAlertedAgain() {
+        // 걷는 동안 앞 기둥이 objectLostMs 넘게 가려졌다 그동안 걸은 만큼 가까워진 곳에 다시 보이면 같은 기둥이라 다시 알리지 않는다.
+        val analyzer = ObjectAnalyzer(config)
+        val speed = 1.1
+        val hiddenFrom = confirmAt + 2
+        val hiddenUntil = hiddenFrom + lostFrames + 2
+        val alerts = (0 until hiddenUntil + confirmAt + 3).sumOf { index ->
+            val distance = 5.0 - speed * index / 10.0
+            val boxes = if (index in hiddenFrom until hiddenUntil) emptyArray() else arrayOf(groundBox(DetectedClass.POLE, distance))
+            analyzer.analyze(note8Frame(*boxes).copy(timeMs = index * 100L, walkSpeedMps = speed)).alerts.size
+        }
+
+        assertEquals(1, alerts)
+    }
+
+    @Test
     fun approachingCarIsWarnedWhileStandingStill() {
         // 서 있어도 내 쪽으로 다가오는 차는 알린다.
         val analyzer = ObjectAnalyzer(config)
+        val start = standStill(analyzer)
 
         val results = listOf(9.0, 6.5).mapIndexed { index, distance ->
-            analyzer.analyze(walkFrame(index, boxAt(DetectedClass.CAR, config.carHeightM, distance)).copy(walkSpeedMps = 0.0))
+            val car = boxAt(DetectedClass.CAR, config.carHeightM, distance)
+            analyzer.analyze(walkFrame(index, car).copy(timeMs = start + index * 700L, walkSpeedMps = 0.0))
         }
 
         assertEquals(true, results[1].alerts.single().moving)

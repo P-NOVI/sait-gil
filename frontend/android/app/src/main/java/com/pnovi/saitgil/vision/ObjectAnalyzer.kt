@@ -98,8 +98,11 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
     // 장애물·서 있는 차를 마지막으로 알린 시각. 앞 알림을 읽는 동안 다음 것을 보내지 않는다.
     private var lastNoticeMs: Long? = null
 
-    // 장애물·서 있는 차를 종류·방향마다 마지막으로 알린 시각. 추적이 끊겨 같은 물체가 새로 잡혀도 stillRepeatMs 안에는 다시 알리지 않는다.
-    private val lastNoticeMsBy = mutableMapOf<Pair<DetectedClass, Int>, Long>()
+    // 장애물·서 있는 차를 종류·방향마다 마지막으로 알린 시각·거리. 추적이 끊겨 같은 물체가 새로 잡혀도 다시 알리지 않는다.
+    private val lastNoticeBy = mutableMapOf<Pair<DetectedClass, Int>, NoticeMark>()
+
+    // 걸음 속도가 standingSpeedMps 보다 느려지기 시작한 프레임 시각. 걷고 있거나 속도를 모르면 null
+    private var slowSinceMs: Long? = null
 
     private var signal: SignalState? = null
     private var signalCandidate: SignalState? = null
@@ -133,9 +136,28 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         }
         val stillNotices = vehicleAnalysis.notices + obstacles.analyze(frame, labels)
         // 서 있으면 장애물·서 있는 차는 알리지 않는다. 알리지 않은 것은 다시 걸을 때 알린다.
-        val notice = if (isStanding(frame)) null else nearestNotice(stillNotices, frame.timeMs)
+        val notice = if (isStanding(frame)) null else nearestNotice(stillNotices, frame)
         return ObjectAnalysis(followSignal(frame), warnings + listOfNotNull(notice), seen, vehicleAnalysis.states)
     }
+
+    /**
+     * 같은 종류·방향으로 알렸던 물체를 추적이 끊겨 다시 잡은 것인지. stillRepeatMs 안에, 알린 거리에서 그동안 걸은 만큼
+     * 가까워진 곳(± renoticeToleranceM)에 있으면 같은 물체로 본다. 그보다 멀리 있으면 뒤따라 선 다른 물체다.
+     * 걸음 속도를 모르면 0 ~ renoticeMaxWalkMps 로 걸었을 수 있다고 본다.
+     */
+    private fun isNoticedAgain(notice: StillNotice, frame: DetectionFrame): Boolean {
+        val mark = lastNoticeBy[notice.kind to notice.direction] ?: return false
+        val elapsedMs = frame.timeMs - mark.atMs
+        if (elapsedMs >= config.stillRepeatMs) return false
+        val elapsedS = elapsedMs / 1_000.0
+        val speed = frame.walkSpeedMps
+        val nearestM = mark.distanceM - (speed ?: config.renoticeMaxWalkMps) * elapsedS - config.renoticeToleranceM
+        val farthestM = mark.distanceM - (speed ?: 0.0) * elapsedS + config.renoticeToleranceM
+        return notice.distanceM in nearestM..farthestM
+    }
+
+    /** 알린 시각과 그때 거리 */
+    private class NoticeMark(val atMs: Long, val distanceM: Double)
 
     /**
      * 화면에 보일 앞쪽 가까운 장애물인지. 기둥·장애물·계단은 알릴 때처럼 걷는 길 앞 가까이(nearObstacleDistanceM) 있어야 한다.
@@ -150,29 +172,33 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         return distance <= vehicleNearM(box.kind, config)
     }
 
-    /** GPS 걸음 속도가 standingSpeedMps 보다 느린지. 걸음 속도를 모르면 걷는 것으로 본다 */
-    private fun isStanding(frame: DetectionFrame): Boolean =
-        frame.walkSpeedMps?.let { it < config.standingSpeedMps } ?: false
+    /**
+     * 서 있는지. GPS 걸음 속도가 standingSpeedMps 보다 느린 상태가 standingConfirmMs 이어져야 서 있는 것으로 본다.
+     * 붐비는 곳에서 잠깐 멈칫하거나 GPS 속력이 잠깐 0 으로 튀어도 장애물 알림을 끄지 않는다. 걸음 속도를 모르면 걷는 것으로 본다.
+     * 느려진 시각을 남기므로 프레임마다 부른다.
+     */
+    private fun isStanding(frame: DetectionFrame): Boolean {
+        val slow = frame.walkSpeedMps?.let { it < config.standingSpeedMps } ?: false
+        slowSinceMs = if (slow) slowSinceMs ?: frame.timeMs else null
+        val since = slowSinceMs ?: return false
+        return frame.timeMs - since >= config.standingConfirmMs
+    }
 
     /**
      * 알릴 수 있는 장애물·서 있는 차 중 가장 가까운 것 하나를 알림으로 바꾼다. 나머지는 다음 프레임에 다시 고른다.
      * 화면은 읽는 중에 온 장애물 알림을 잠깐만 기다리므로, 앞 알림 뒤 noticeGapMs 안에는 고르지 않는다.
      * 더 가까운 것이 나타나도 간격을 건너뛰지 않는다. 앞 말을 읽는 중에 보내면 화면이 obstacleMaxWaitMs 뒤 버리는데,
      * 여기서는 알린 것으로 표시해 다시 알리지 않게 된다. 고르지 않은 후보는 간격이 지난 뒤 다시 고른다.
-     * 같은 종류·방향을 stillRepeatMs 안에 알렸으면 고르지 않는다. 그 뒤에도 가까이 있으면 그때 알린다.
+     * 추적이 끊겨 다시 잡힌, 이미 알린 물체(isNoticedAgain)는 고르지 않는다.
      */
-    private fun nearestNotice(notices: List<StillNotice>, nowMs: Long): VisionAlert? {
+    private fun nearestNotice(notices: List<StillNotice>, frame: DetectionFrame): VisionAlert? {
+        val nowMs = frame.timeMs
         val last = lastNoticeMs
         if (last != null && nowMs - last < config.noticeGapMs) return null
-        val nearest = notices
-            .filter { notice ->
-                val at = lastNoticeMsBy[notice.kind to notice.direction]
-                at == null || nowMs - at >= config.stillRepeatMs
-            }
-            .minByOrNull { it.distanceM } ?: return null
+        val nearest = notices.filterNot { isNoticedAgain(it, frame) }.minByOrNull { it.distanceM } ?: return null
         nearest.notified()
         lastNoticeMs = nowMs
-        lastNoticeMsBy[nearest.kind to nearest.direction] = nowMs
+        lastNoticeBy[nearest.kind to nearest.direction] = NoticeMark(nowMs, nearest.distanceM)
         return VisionAlert(
             kind = AlertKind.OBSTACLE,
             message = nearest.kind.wire,
