@@ -33,7 +33,7 @@ class VehicleTrackerTest {
         val tracker = VehicleTracker(config)
         return cars.mapIndexed { index, box ->
             val frame = frame(index, box)
-            tracker.analyze(frame, clockLabels(frame, config)).alerts
+            tracker.analyze(frame).alerts
         }
     }
 
@@ -63,7 +63,7 @@ class VehicleTrackerTest {
                 focalLengthPx = focalPx,
                 objects = listOf(car(4.0 - index * 0.12)),
             )
-            tracker.analyze(frame, clockLabels(frame, config)).states.single().motion
+            tracker.analyze(frame).states.single().motion
         }
 
         val judgedAt = (config.vehicleMotionSpanMs / 100).toInt()
@@ -87,7 +87,7 @@ class VehicleTrackerTest {
 
         val analyses = distances.mapIndexed { index, distance ->
             val frame = frame(index, car(distance))
-            tracker.analyze(frame, clockLabels(frame, config)).also { it.notices.forEach(StillNotice::notified) }
+            tracker.analyze(frame).also { it.notices.forEach(StillNotice::notified) }
         }
 
         val noticed = analyses.indices.filter { analyses[it].notices.isNotEmpty() }
@@ -103,7 +103,7 @@ class VehicleTrackerTest {
         // obstacleNearM 밖에서 시작해 네 번째 프레임에 들어온다.
         val analyses = (0 until 7).map { index ->
             val frame = frame(index, car(7.0 - index * 0.84))
-            tracker.analyze(frame, clockLabels(frame, config))
+            tracker.analyze(frame)
         }
 
         assertTrue(analyses.take(3).all { it.notices.isEmpty() })
@@ -149,7 +149,7 @@ class VehicleTrackerTest {
         val states = VehicleTracker(config).let { tracker ->
             listOf(2.0, 3.0, 4.0, 5.0).mapIndexed { index, distance ->
                 val frame = frame(index, car(distance))
-                tracker.analyze(frame, clockLabels(frame, config))
+                tracker.analyze(frame)
             }
         }
 
@@ -163,7 +163,7 @@ class VehicleTrackerTest {
         val states = VehicleTracker(config).let { tracker ->
             listOf(4.0, 4.2, 4.4, 4.6).mapIndexed { index, distance ->
                 val frame = frame(index, car(distance))
-                tracker.analyze(frame, clockLabels(frame, config))
+                tracker.analyze(frame)
             }
         }
 
@@ -177,7 +177,7 @@ class VehicleTrackerTest {
         val tracker = VehicleTracker(config)
         return distances.mapIndexed { index, distance ->
             val frame = frame(index, car(distance)).copy(walkSpeedMps = walkSpeedMps)
-            tracker.analyze(frame, clockLabels(frame, config)).states.single().motion
+            tracker.analyze(frame).states.single().motion
         }
     }
 
@@ -235,7 +235,7 @@ class VehicleTrackerTest {
         val tracker = VehicleTracker(config)
         val states = listOf(14.0, 11.0, 8.0).mapIndexed { index, distance ->
             val frame = frame(index, car(distance)).copy(walkSpeedMps = 1.0)
-            tracker.analyze(frame, clockLabels(frame, config)).states.single()
+            tracker.analyze(frame).states.single()
         }
 
         // 거리가 약 4.29m/s 로 줄고 내 걸음 1m/s 를 빼면 차는 약 3.29m/s 로 다가온다.
@@ -259,7 +259,7 @@ class VehicleTrackerTest {
 
         val states = cars.mapIndexed { index, box ->
             val frame = frame(index, box)
-            tracker.analyze(frame, clockLabels(frame, config)).states.single()
+            tracker.analyze(frame).states.single()
         }
 
         assertEquals(VehicleMotion.UNKNOWN, states[0].motion)

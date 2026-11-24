@@ -1,6 +1,33 @@
 package com.pnovi.saitgil.vision
 
 /**
+ * 사람 박스로 거리를 재는 실측 보정값. 박스 높이·폭은 영상 크기로 나눈 0~1 비율이라 해상도와 상관없다.
+ * 거리(m) = heightK[박스 가운데가 속한 칸] ÷ 박스 높이, 위나 아래가 잘린 박스는 거리(m) = widthK ÷ 박스 폭.
+ * 왼쪽 가장자리 칸이 가운데보다 K 가 약 12% 커서 칸마다 따로 둔다(렌즈 가장자리 차이).
+ */
+data class DistanceK(
+    /** 왼쪽부터 칸마다(CLOCK_SECTORS 순서) 높이 기준 K */
+    val heightK: List<Double>,
+    /** 위나 아래가 잘린 박스의 폭 기준 K. 1m 사진에서 칸마다 같아 하나만 둔다 */
+    val widthK: Double,
+) {
+    init {
+        require(heightK.size == CLOCK_SECTORS.size) { "heightK 는 칸 수(${CLOCK_SECTORS.size})만큼 있어야 합니다" }
+    }
+}
+
+/**
+ * 1배 기본 렌즈(확대 1배, 세로, 4:3)로 1~5m 거리에서 찍은 사진 25장(5방향 × 5거리)으로 구한 값이다.
+ * 촬영자 한 명(키 약 1.7m, 두꺼운 패딩)과 한 기종으로 재서, 키가 다른 사람·다른 기종이면 값이 달라질 수 있다.
+ * widthK 는 패딩 때문에 어깨폭(0.5m)보다 넓게 잰 값이다. 높이 K 는 가운데 12시 칸 1.249 ~ 양 끝 칸 약 1.40 이다.
+ * 이 사진에서 거리 오차는 3~5m 에서 ±2% 안, 2m 에서 ±5% 안이다.
+ */
+val MEASURED_DISTANCE_K = DistanceK(
+    heightK = listOf(1.401, 1.296, 1.249, 1.286, 1.395),
+    widthK = 0.584,
+)
+
+/**
  * 사람 박스로 거리·빈 방향·정면 접근을 판단할 때 쓰는 기준값.
  * 실기기에서 맞춰 볼 초안 값이라 판단 코드에 직접 쓰지 않고 여기에 모은다.
  */
@@ -14,6 +41,11 @@ data class VisionConfig(
      * 앱은 후면 기본 렌즈를 확대 1배로 쓰고 광각(0.5배)은 쓰지 않는다. 노트8 기본 렌즈(4.3mm, 센서 긴 변 5.645mm) 값이다.
      */
     val defaultLongSideFovDeg: Double = 66.6,
+    /**
+     * 실측 사진으로 구한 사람 거리 보정값. 있으면 위의 사람 키·폭·화각 공식 대신 쓰고, null 이면 공식을 쓴다.
+     * 값은 ml/ 의 `python -m distance_calibration.fit` 으로 구한다(#145).
+     */
+    val distanceK: DistanceK? = MEASURED_DISTANCE_K,
     /** 이 거리(m) 안에 사람이 걸친 칸을 막힌 방향으로 본다 */
     val blockedDistanceM: Double = 4.0,
     /** 막힌 칸이 이만큼 이상이면 주의 */

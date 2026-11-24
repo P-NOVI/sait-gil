@@ -1,10 +1,8 @@
 package com.pnovi.saitgil.vision
 
 import kotlin.math.abs
-import kotlin.math.atan
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 import kotlin.math.tan
 
 // 사람 박스로 거리·막힌 방향·빈 방향·정면 접근을 판단한다.
@@ -49,28 +47,12 @@ data class DetectionFrame(
 data class CrowdAnalysis(val frame: CrowdFrame, val alert: VisionAlert?)
 
 /**
- * 영상 가로를 왼쪽부터 다섯 칸으로 나눈 칸의 기본 이름.
- * 실제로 부르는 이름은 clockLabels 가 칸의 각도로 정한다. 이 값은 각도를 따지지 않을 때 쓴다.
+ * 영상 가로를 왼쪽부터 다섯 칸으로 나눈 칸의 이름(시계 방향). 칸은 영상 가로를 같은 폭으로 나눈다.
+ * 이름은 칸 순서로 고정한다. 칸의 실제 각도로 이름을 붙이면 1배 기본 렌즈(세로, 좌우 약 ±26°)에서
+ * 가운데 세 칸이 모두 12시가 되어 방향이 12시로 쏠린다.
  */
 val CLOCK_SECTORS: List<Int> = listOf(10, 11, 12, 1, 2)
 private val FRONT_SECTOR = CLOCK_SECTORS.indexOf(12)
-
-// 시계 한 시간이 가리키는 각도(도)
-private const val DEGREES_PER_HOUR = 30.0
-
-/**
- * 칸마다 실제 시계 방향 이름. 칸 가운데의 각도를 재어 가장 가까운 시각으로 부른다.
- * 세로로 건 1배 기본 렌즈는 좌우 약 ±26°만 보여, 양 끝 칸은 11시·1시, 가운데 세 칸은 모두 12시가 된다.
- */
-fun clockLabels(frame: DetectionFrame, config: VisionConfig): List<Int> {
-    val focalPx = focalLengthPx(frame, config)
-    return CLOCK_SECTORS.indices.map { sector ->
-        val centerX = (sector + 0.5) / CLOCK_SECTORS.size
-        val degrees = Math.toDegrees(atan((centerX - 0.5) * frame.imageWidthPx / focalPx))
-        val hours = (degrees / DEGREES_PER_HOUR).roundToInt().coerceIn(-2, 2)
-        if (hours <= 0) 12 + hours else hours
-    }
-}
 
 /** 박스 가로 위치(0~1)가 속한 칸 번호(0~4) */
 fun sectorOf(x: Double): Int =
@@ -110,6 +92,7 @@ fun isClippedVertically(box: PersonBox, config: VisionConfig): Boolean =
  * 그래서 위나 아래가 잘린 박스는 키 대신 사람 폭으로 잰다.
  */
 fun estimateDistanceM(box: PersonBox, frame: DetectionFrame, config: VisionConfig): Double? {
+    config.distanceK?.let { return estimateDistanceByK(box, it, config) }
     val focalPx = focalLengthPx(frame, config)
     val (sizePx, sizeM) = if (isClippedVertically(box, config)) {
         box.width * frame.imageWidthPx to config.personWidthM
@@ -118,6 +101,20 @@ fun estimateDistanceM(box: PersonBox, frame: DetectionFrame, config: VisionConfi
     }
     if (sizePx <= 0.0) return null
     return focalPx * sizeM / sizePx
+}
+
+/**
+ * 실측 보정값(K)으로 거리를 잰다. 박스 가운데가 속한 칸의 높이 K 를 쓰고, 위나 아래가 잘렸으면 폭 K 를 쓴다.
+ * 높이·폭이 0 이면 null 이다.
+ */
+private fun estimateDistanceByK(box: PersonBox, k: DistanceK, config: VisionConfig): Double? {
+    val (ratio, kValue) = if (isClippedVertically(box, config)) {
+        box.width to k.widthK
+    } else {
+        box.height to k.heightK[sectorOf(box.centerX)]
+    }
+    if (ratio <= 0.0) return null
+    return kValue / ratio
 }
 
 /** 두 박스가 겹치는 정도(IoU, 0~1) */
@@ -133,9 +130,9 @@ fun iou(a: PersonBox, b: PersonBox): Double {
  * 비어 있는 방향을 갈 만한 순서로 돌려준다.
  * 이어진 빈 칸이 넓은 구간을 먼저, 같으면 12시에 가까운 구간을 먼저 둔다.
  * 구간 안에서는 가운데 칸을 먼저 둬 사람과 덜 스치는 쪽을 앞에 놓는다.
- * 여러 칸이 같은 이름(labels)이면 그 칸이 모두 비어 있어야 그 방향이 비었다고 말한다.
+ * 화면은 맨 앞 방향 하나만 읽는다.
  */
-fun freeDirections(blocked: Set<Int>, labels: List<Int> = CLOCK_SECTORS): List<Int> {
+fun freeDirections(blocked: Set<Int>): List<Int> {
     val runs = mutableListOf<List<Int>>()
     var run = mutableListOf<Int>()
     for (sector in CLOCK_SECTORS.indices) {
@@ -155,9 +152,7 @@ fun freeDirections(blocked: Set<Int>, labels: List<Int> = CLOCK_SECTORS): List<I
             val center = (sectors.first() + sectors.last()) / 2.0
             sectors.sortedWith(compareBy<Int> { abs(it - center) }.thenBy(::frontGap))
         }
-        .map { labels[it] }
-        .filter { label -> labels.indices.none { it in blocked && labels[it] == label } }
-        .distinct()
+        .map { CLOCK_SECTORS[it] }
 }
 
 /** 추적 중인 사람 하나. samples 는 (시각, 거리) 기록이다. */
@@ -207,7 +202,7 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val frontClipped = front.keys.any { track ->
             track.box.top <= config.clippedEdge && track.box.bottom >= 1 - config.clippedEdge
         }
-        val free = freeDirections(blocked, clockLabels(frame, config))
+        val free = freeDirections(blocked)
         recentFree.addLast(frame.timeMs to free)
         while (recentFree.first().first < frame.timeMs - config.freeConfirmMs) recentFree.removeFirst()
         // 넓은 순서는 지금 프레임을 따르고, 최근 프레임 내내 비어 있던 방향만 남긴다.

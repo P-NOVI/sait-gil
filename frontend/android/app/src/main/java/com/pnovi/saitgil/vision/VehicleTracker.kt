@@ -121,7 +121,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
     // 서 있는 차는 장애물과 함께 ObjectAnalyzer 가 종류·방향마다 stillRepeatMs 로 막는다.
     private val lastWarnMs = mutableMapOf<DetectedClass, Long>()
 
-    fun analyze(frame: DetectionFrame, labels: List<Int>): VehicleAnalysis {
+    fun analyze(frame: DetectionFrame): VehicleAnalysis {
         val focalPx = focalLengthPx(frame, config)
         val boxes = frame.objects.filter { it.kind in VEHICLE_CLASSES }
         val seen = updateTracks(tracks, boxes, frame.timeMs, config) { VehicleTrack(nextId++, it.kind, it) }
@@ -134,9 +134,9 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
             val inPath = distance?.let { inCorridor(track.box, it, frame, config, focalPx) } ?: overlapsAhead(track.box)
             if (shouldWarn(track, state, inPath, frame.timeMs)) {
                 track.warned = true
-                alerts += VehicleAlert(track.kind, directionOf(track.box, labels), distance)
+                alerts += VehicleAlert(track.kind, directionOf(track.box), distance)
             } else {
-                stillNotice(track, state, inPath, labels)?.let(notices::add)
+                stillNotice(track, state, inPath)?.let(notices::add)
             }
         }
         return VehicleAnalysis(alerts, states, notices)
@@ -223,11 +223,11 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
      * 서 있는 차가 길 위 obstacleNearM 안이면 장애물처럼 알릴 후보로 낸다.
      * 같은 차는 한 번만 내고, 움직이는 차로 알린 차는 내지 않는다.
      */
-    private fun stillNotice(track: VehicleTrack, state: VehicleState, inPath: Boolean, labels: List<Int>): StillNotice? {
+    private fun stillNotice(track: VehicleTrack, state: VehicleState, inPath: Boolean): StillNotice? {
         val distance = state.distanceM ?: return null
         if (state.motion != VehicleMotion.STILL || !inPath || distance > config.obstacleNearM) return null
         if (track.warned || track.noticed) return null
-        return StillNotice(track.kind, directionOf(track.box, labels), distance) { track.noticed = true }
+        return StillNotice(track.kind, directionOf(track.box), distance) { track.noticed = true }
     }
 
     /** 이 클래스를 마지막으로 알린 뒤 repeatMs 가 지났는지 */

@@ -9,7 +9,8 @@ import kotlin.math.tan
 
 // 모델 없이 가짜 사람 박스로 판단 로직을 확인한다. Android 클래스는 쓰지 않는다.
 class CrowdAnalyzerTest {
-    private val config = VisionConfig()
+    // 박스는 화각·키 공식으로 만들므로 이 파일의 판단 테스트는 실측 보정값(distanceK) 없이 공식으로 돌린다.
+    private val config = VisionConfig(distanceK = null)
 
     // 목걸이로 세워 건 휴대폰 영상(세운 화면 기준). 화각은 센서 긴 변(세로)에 맞춘다.
     private val widthPx = 480
@@ -43,6 +44,42 @@ class CrowdAnalyzerTest {
         val distance = estimateDistanceM(box, frame(0, box), config)
 
         assertEquals(2.5, distance!!, 1e-6)
+    }
+
+    @Test
+    fun measuredKGivesDistanceFromBoxHeightPerSector() {
+        val measured = VisionConfig()
+        val k = measured.distanceK!!
+        val distance = 3.0
+
+        CLOCK_SECTORS.indices.forEach { sector ->
+            val centerX = (sector + 0.5) / CLOCK_SECTORS.size
+            val height = k.heightK[sector] / distance
+            val box = PersonBox(centerX - 0.05, 0.5 - height / 2, 0.1, height, score = 0.9)
+
+            assertEquals(distance, estimateDistanceM(box, frame(0, box), measured)!!, 1e-6)
+        }
+    }
+
+    @Test
+    fun measuredKUsesBoxWidthWhenClippedVertically() {
+        val measured = VisionConfig()
+        val k = measured.distanceK!!
+        val box = PersonBox(0.2, 0.0, k.widthK / 1.5, 1.0, score = 0.9)
+
+        assertEquals(1.5, estimateDistanceM(box, frame(0, box), measured)!!, 1e-6)
+    }
+
+    @Test
+    fun edgeSectorsMeasureFartherThanCenterForSameBox() {
+        // 실측에서 양 끝 칸의 K 가 가운데보다 크다. 같은 높이의 박스라도 가장자리 사람이 더 멀다.
+        val measured = VisionConfig()
+        val center = PersonBox(0.45, 0.3, 0.1, 0.4, score = 0.9)
+        val edge = PersonBox(0.0, 0.3, 0.1, 0.4, score = 0.9)
+
+        assertTrue(
+            estimateDistanceM(edge, frame(0, edge), measured)!! > estimateDistanceM(center, frame(0, center), measured)!!,
+        )
     }
 
     @Test
@@ -133,18 +170,12 @@ class CrowdAnalyzerTest {
     }
 
     @Test
-    fun portraitMainCameraNamesMiddleThree12() {
-        // 세로로 건 1배 기본 렌즈는 좌우 약 ±26° 라 양 끝 칸(약 ±22°)은 11시·1시, 가운데 세 칸(±11° 안)은 12시다.
-        assertEquals(listOf(11, 12, 12, 12, 1), clockLabels(frame(0), config))
-    }
-
-    @Test
-    fun sharedNameIsFreeOnlyWhenAllItsSectorsAre() {
-        val labels = listOf(11, 12, 12, 12, 1)
-
-        // 12시 세 칸 중 오른쪽 칸이 막히면 나머지 두 칸이 비어도 12시가 비었다고 하지 않는다.
-        assertEquals(listOf(11, 1), freeDirections(setOf(3), labels))
-        assertEquals(listOf(12, 11, 1), freeDirections(emptySet(), labels))
+    fun everySectorKeepsItsOwnName() {
+        // 화각이 좁아도 칸 이름은 10·11·12·1·2시로 나뉜다. 12시 쏠림이 없다.
+        assertEquals(listOf(10, 11, 12, 1, 2), CLOCK_SECTORS)
+        // 12시 칸 하나가 막혀도 11시·1시 칸은 그대로 비었다고 말한다.
+        assertEquals(listOf(11, 10, 1, 2), freeDirections(setOf(2)))
+        assertEquals(listOf(12, 11, 1, 10, 2), freeDirections(emptySet()))
     }
 
     @Test
@@ -153,7 +184,7 @@ class CrowdAnalyzerTest {
 
         assertEquals(CrowdLevel.CLEAR, result.frame.level)
         assertNull(result.frame.nearestPersonM)
-        assertEquals(listOf(12, 11, 1), result.frame.freeDirections)
+        assertEquals(listOf(12, 11, 1, 10, 2), result.frame.freeDirections)
         assertNull(result.alert)
     }
 
@@ -175,8 +206,8 @@ class CrowdAnalyzerTest {
             ),
         )
         assertEquals(CrowdLevel.CROWDED, crowded.frame.level)
-        // 왼쪽 바깥 칸(11시)과 12시 세 칸 중 두 칸이 막혀 비어 있는 방향은 1시뿐이다.
-        assertEquals(listOf(1), crowded.frame.freeDirections)
+        // 10·11·1시 칸이 막혀 비어 있는 방향은 12시와 2시다. 12시에 가까운 12시를 먼저 둔다.
+        assertEquals(listOf(12, 2), crowded.frame.freeDirections)
         assertEquals(3.0, crowded.frame.nearestPersonM!!, 1e-6)
     }
 
@@ -245,7 +276,7 @@ class CrowdAnalyzerTest {
 
     @Test
     fun approachAlertOnlyNamesSteadilyFreeDirections() {
-        // 1시 칸(오른쪽 바깥 칸)을 막던 사람이 경고 직전 한 프레임만 사라진다. 그 1시는 아직 믿을 만한 빈 방향이 아니다.
+        // 2시 칸(오른쪽 바깥 칸)을 막던 사람이 경고 직전 한 프레임만 사라진다. 그 2시는 아직 믿을 만한 빈 방향이 아니다.
         val analyzer = CrowdAnalyzer(config)
         val results = List(12) { 3.6 - it * 0.12 }.mapIndexed { index, distance ->
             val side = if (index in 3..5) arrayOf(person(4, 3.0)) else emptyArray()
@@ -254,8 +285,8 @@ class CrowdAnalyzerTest {
 
         val index = results.indexOfFirst { it.alert != null }
         assertEquals(6, index)
-        assertEquals(true, 1 in results[index].frame.freeDirections)
-        assertEquals(false, 1 in results[index].alert!!.freeDirections)
+        assertEquals(true, 2 in results[index].frame.freeDirections)
+        assertEquals(false, 2 in results[index].alert!!.freeDirections)
     }
 
     @Test
@@ -282,7 +313,7 @@ class CrowdAnalyzerTest {
 
     @Test
     fun approachAlertNamesDirectionsFreeForConfirmTimeNotFrameCount() {
-        // 1시 칸을 막던 사람이 사라진 지 freeConfirmMs 가 안 됐으면, 그사이 프레임이 많이 와도 1시를 빈 방향으로 넣지 않는다.
+        // 2시 칸을 막던 사람이 사라진 지 freeConfirmMs 가 안 됐으면, 그사이 프레임이 많이 와도 2시를 빈 방향으로 넣지 않는다.
         val analyzer = CrowdAnalyzer(config)
         val step = 50L
         val clearAt = 8
@@ -295,8 +326,8 @@ class CrowdAnalyzerTest {
         // 사라진 뒤 세 프레임 넘게 왔지만 freeConfirmMs 는 아직 안 지났다.
         assertTrue(index - clearAt >= 3)
         assertTrue((index - clearAt + 1) * step <= config.freeConfirmMs)
-        assertEquals(true, 1 in results[index].frame.freeDirections)
-        assertEquals(false, 1 in results[index].alert!!.freeDirections)
+        assertEquals(true, 2 in results[index].frame.freeDirections)
+        assertEquals(false, 2 in results[index].alert!!.freeDirections)
     }
 
     @Test
