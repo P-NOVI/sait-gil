@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
@@ -35,6 +36,12 @@ class SaitgilVisionPlugin : Plugin() {
     private var sensitivity = CrowdSensitivity.NORMAL
 
     private val visionConfig = VisionConfig()
+    private val detectorConfig = DetectorConfig()
+
+    // 추론할 모델. 릴리스 빌드는 늘 기본 모델이고, 디버그 빌드는 미리보기를 길게 눌러 바꾼 모델을 기억해 쓴다(#128).
+    // 메인 스레드에서 바꾸고 카메라 분석 스레드가 읽으므로 @Volatile 이다.
+    @Volatile
+    private var modelAsset = detectorConfig.modelAsset
 
     // 안내마다 새로 만들어 지난 안내의 사람 추적·장애물·신호등 기록을 이어 쓰지 않는다.
     private var analyzer = CrowdAnalyzer()
@@ -99,13 +106,18 @@ class SaitgilVisionPlugin : Plugin() {
     // 미리보기 뷰를 만들고 보여 주는 일이 있어 메인 스레드에서 처리한다.
     private fun startCamera(call: PluginCall) = activity.runOnUiThread {
         if (BuildConfig.VISION_PREVIEW && preview == null) {
-            preview = DebugPreview(activity)
+            modelAsset = savedModelOrDefault(
+                modelPrefs().getString(MODEL_KEY, null),
+                availableModels(),
+                detectorConfig.modelAsset,
+            )
+            preview = DebugPreview(activity, ::switchModel)
         }
         val session = camera
             ?: CameraSession(
                 context,
                 activity,
-                LazyModelAnalyzer { LiteRtDetector.load(context) },
+                LazyModelAnalyzer({ modelAsset }) { asset -> LiteRtDetector.load(context, detectorConfig, asset) },
                 ::onDetections,
                 preview?.view,
             ).also { camera = it }
@@ -121,6 +133,27 @@ class SaitgilVisionPlugin : Plugin() {
                 call.reject(CAMERA_FAILED, CAMERA_FAILED_CODE)
             },
         )
+    }
+
+    /** 디버그 빌드에서 다음 비교 모델로 바꾸고 기억한다. 다음 프레임부터 새 모델로 추론한다. 메인 스레드에서 부른다 */
+    private fun switchModel() {
+        val next = nextModel(detectorConfig.compareModels, availableModels(), modelAsset)
+        if (next == null) {
+            Toast.makeText(context, "비교할 모델 파일이 없습니다", Toast.LENGTH_SHORT).show()
+            return
+        }
+        modelAsset = next.asset
+        modelPrefs().edit().putString(MODEL_KEY, next.asset).apply()
+        Log.i(TAG, "비교할 모델을 바꿨습니다: ${next.label} ${next.asset}")
+        Toast.makeText(context, "모델 ${next.label}", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun modelPrefs() = context.getSharedPreferences(MODEL_PREFS, Context.MODE_PRIVATE)
+
+    /** assets 에 실제로 있는 모델 경로. 가중치는 커밋하지 않아 빌드마다 다를 수 있다 */
+    private fun availableModels(): Set<String> {
+        val folder = detectorConfig.modelAsset.substringBeforeLast('/')
+        return context.assets.list(folder).orEmpty().map { "$folder/$it" }.toSet()
     }
 
     @PluginMethod
@@ -215,6 +248,9 @@ class SaitgilVisionPlugin : Plugin() {
         // 사용자가 카메라 권한 창에서 거부한 적이 있는지 적어 두는 저장소
         private const val PREFS = "saitgil_vision"
         private const val KEY_CAMERA_DENIED = "camera_denied"
+        // 디버그 빌드에서 고른 비교 모델을 기억하는 곳
+        private const val MODEL_PREFS = "saitgil_vision_debug"
+        private const val MODEL_KEY = "model_asset"
         // 실패 설명. 로그·디버깅용이며 사용자에게 읽지 않는다.
         // 사용자에게 읽는 문장은 화면(visionAlerts.ts)이 아래 코드를 보고 정한다.
         private const val CAMERA_DENIED = "카메라 권한 거부"

@@ -135,6 +135,9 @@ data class VisionConfig(
     val signalConfirmFrames: Int = 3,
 )
 
+/** 디버그 빌드에서 바꿔 가며 비교할 모델. label 은 로그·안내에 쓰는 짧은 이름이다 */
+data class DetectorModel(val label: String, val asset: String)
+
 /**
  * 모델(YOLO26n LiteRT) 추론과 후처리 기준값. 학습 노트북에서 내보낸 모델의 입출력에 맞춘다.
  * 점수 컷·NMS 기준은 Ultralytics 예측 기본값에서 시작해 실기기에서 맞춘다.
@@ -142,6 +145,15 @@ data class VisionConfig(
 data class DetectorConfig(
     /** assets 안 모델 파일 경로. 가중치는 커밋하지 않으므로 앱 빌드 전에 복사한다(ml/README.md) */
     val modelAsset: String = "models/sidewalk_yolo26n.tflite",
+    /**
+     * 디버그 빌드에서 개발용 미리보기를 길게 눌러 차례로 바꿔 가며 비교할 모델(#128). 앞의 것이 기본이다.
+     * assets 에 파일이 있는 것만 고른다. 릴리스 빌드는 modelAsset 하나만 쓴다
+     */
+    val compareModels: List<DetectorModel> = listOf(
+        DetectorModel("fp32", "models/sidewalk_yolo26n.tflite"),
+        DetectorModel("fp16", "models/sidewalk_yolo26n_fp16.tflite"),
+        DetectorModel("int8", "models/sidewalk_yolo26n_int8.tflite"),
+    ),
     /** 모델 입력 한 변(px). 내보낼 때 쓴 imgsz 와 같아야 한다 */
     val inputSize: Int = 640,
     /** 이 점수보다 낮은 박스는 버린다 */
@@ -152,6 +164,10 @@ data class DetectorConfig(
     val maxDetections: Int = 100,
     /** CPU 추론 스레드 수 */
     val threads: Int = 4,
+    /** 추론 시간을 로그로 볼 간격(프레임 수) */
+    val logEveryFrames: Int = 30,
+    /** 모델을 읽은 뒤 이 프레임 수는 준비 시간이라 추론 시간 평균에서 뺀다 */
+    val logWarmupFrames: Int = 5,
     /** 레터박스 여백 밝기(0~255). 학습 때 Ultralytics 가 채우는 회색과 같다 */
     val padGray: Int = 114,
 )
