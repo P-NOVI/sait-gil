@@ -44,6 +44,23 @@ export const LOCATION_FILTER = {
     // 멈춘 곳에서 이 거리(오차가 더 작으면 오차) 안에서만 흔들리면 멈춰 있는 것으로 본다(m).
     // 크면 걷기 시작해도 늦게 따라가고, 작으면 멈춰 있어도 움직이는 것으로 나온다.
     stillRadiusM: 5,
+    // 걸음 센서를 쓸 수 있을 때: 한 걸음의 길이(m). 시각장애인은 보폭이 짧다.
+    stepLengthM: 0.5,
+    // 마지막 위치 이후 GPS 이동량이 (걸음 수 × 보폭 × 이 배수 + 위치 오차)보다 크면 튄 위치로 본다.
+    // 크면 보폭 오차는 넘기지만 튄 위치를 놓치고, 작으면 멀쩡한 위치를 버린다.
+    stepReachMargin: 1.5,
+    // 튄 위치를 이 시간(ms) 넘게 믿지 않으면 현재 위치를 다시 믿고 이탈을 판단한다.
+    // 걸음 수로 추정한 위치에는 방향이 없어, 진짜 이탈을 영원히 놓치지 않게 두는 상한이다.
+    distrustLimitMs: 120_000,
+    // 튄 위치가 걸음 수로 추정한 경로 위 위치에서 (이 거리 + 걸은 거리 × 아래 비율) 안으로 돌아오면 다시 믿는다(m).
+    // 이 거리는 이탈 거리(NAVIGATION.offRouteM)보다 작게 둔다. 건너편 위치를 믿어 버리지 않게 한다.
+    resumeToleranceM: 15,
+    // 걸음 수 추정 오차가 걸은 거리에 비례해 쌓이는 비율(0~1)
+    stepDriftRatio: 0.15,
+    // 오차가 쌓여도 다시 믿는 거리는 이보다 커지지 않는다(m). 오래 걸어도 건너편 위치를 믿지 않게 한다.
+    resumeToleranceMaxM: 20,
+    // 걸음 수로 추정한 위치를 안내에 넘길 때의 오차 반경(m)
+    estimatedAccuracyM: 10,
 } as const;
 
 export type LocationFilterSettings = typeof LOCATION_FILTER;

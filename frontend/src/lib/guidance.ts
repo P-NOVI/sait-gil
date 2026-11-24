@@ -16,6 +16,7 @@ import {
     judge,
     type Judgement,
     NEW_TRACKER,
+    pointAt,
     progressAlong,
     type RerouteTracker,
     type RouteLine,
@@ -70,6 +71,21 @@ function reachable(
     const elapsedS = Math.max(0, nowMs - last.atMs) / 1000;
     const reachM = NAVIGATION.maxWalkSpeedMps * elapsedS + accuracy;
     return { fromM: last.travelledM - reachM, toM: last.travelledM + reachM };
+}
+
+/**
+ * 직전 진행 위치에서 walkedM 만큼 경로를 따라 더 간 경로 위 점. 걸음 수로 추정한 내 위치다.
+ * 직전 진행이 없거나 경로를 다시 찾았으면 추정할 수 없어 null 이다.
+ */
+export function deadReckon(
+    route: GuidedRoute,
+    last: GuidanceState['last'],
+    walkedM: number,
+): LngLat | null {
+    if (!last || last.route !== route) {
+        return null;
+    }
+    return pointAt(route, last.travelledM + Math.max(0, walkedM));
 }
 
 export type GuidanceStep = {

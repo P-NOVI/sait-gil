@@ -48,5 +48,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 걸음 수로 튄 GPS 위치를 거르기(SaitgilSteps). Android 10 이상에서 실행 중에 묻는다. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

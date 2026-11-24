@@ -126,3 +126,103 @@ describe('filterFix', () => {
         expect(filterFix(first.state, far, 20_000).fix).toBe(far);
     });
 });
+
+describe('filterFix (걸음 센서)', () => {
+    const motion = (steps: number, expectedM: number | null = null) => ({
+        steps,
+        expected: expectedM === null ? null : north(expectedM),
+    });
+    const run = (
+        state: ReturnType<typeof filterFix>['state'],
+        fix: LocationFix,
+        nowMs: number,
+        walked: ReturnType<typeof motion>,
+    ) => filterFix(state, fix, nowMs, LOCATION_FILTER, walked);
+    const first = () =>
+        filterFix(NEW_LOCATION_FILTER, at(0), 0, LOCATION_FILTER, motion(0));
+
+    it('걸음 수보다 훨씬 많이 옮겨 간 위치는 시간이 지나도 믿지 않는다', () => {
+        let state = first().state;
+        const results = [];
+        // 2초마다 걸음 수는 2걸음(1m)씩 늘지만 GPS 는 60m 앞에 머문다.
+        for (let second = 2; second <= 60; second += 2) {
+            const result = run(
+                state,
+                at(60),
+                second * 1_000,
+                motion(second, second / 2),
+            );
+            state = result.state;
+            results.push(result);
+        }
+
+        expect(results.every((result) => result.fix === null)).toBe(true);
+        expect(results.every((result) => result.distrusted)).toBe(true);
+    });
+
+    it('옆 길로 튄 위치가 이어져도 걸을수록 믿게 되지 않고, 추정한 위치로 돌아오면 다시 믿는다', () => {
+        let state = first().state;
+        // 오래 걸어 걸음으로 갈 수 있는 거리가 튄 거리(30m)보다 커진 뒤에도 믿지 않는다.
+        state = run(state, at(30), 1_000, motion(2, 1)).state;
+        const still = run(state, at(130), 100_000, motion(200, 100));
+        const back = run(still.state, at(101), 101_000, motion(202, 101));
+
+        expect(still.fix).toBeNull();
+        expect(back.fix?.position).toEqual(north(101));
+        expect(back.state.jump).toBeNull();
+    });
+
+    it('걸음 수만큼 경로 밖으로 걸으면 진짜 이동으로 받아들인다', () => {
+        const state = first().state;
+        // 20걸음(10m)을 걷고 GPS 도 10m 옮겨 갔다.
+        const result = run(state, at(10), 20_000, motion(20, 10));
+
+        expect(result.fix?.position).toEqual(north(10));
+        expect(result.distrusted).toBeUndefined();
+    });
+
+    it('믿지 않은 시간이 한도를 넘으면 현재 위치를 믿는다', () => {
+        let state = first().state;
+        state = run(state, at(60), 1_000, motion(2, 1)).state;
+        const early = run(
+            state,
+            at(60),
+            LOCATION_FILTER.distrustLimitMs,
+            motion(4, 2),
+        );
+        const late = run(
+            early.state,
+            at(60),
+            LOCATION_FILTER.distrustLimitMs + 1_000,
+            motion(6, 3),
+        );
+
+        expect(early.fix).toBeNull();
+        expect(late.fix?.position).toEqual(north(60));
+    });
+
+    it('추정할 경로가 없으면 걸어서 갈 수 있는 거리로 돌아올 때 다시 믿는다', () => {
+        let state = first().state;
+        state = run(state, at(60), 1_000, motion(2)).state;
+        const back = run(state, at(3), 2_000, motion(4));
+
+        expect(back.fix?.position).toEqual(north(3));
+    });
+
+    it('걸음 센서가 없으면 기존처럼 시간으로 받아들인다', () => {
+        let state = filterFix(NEW_LOCATION_FILTER, at(0), 0).state;
+        const results = [];
+        for (const nowMs of [1_000, 6_000, 12_000]) {
+            const result = filterFix(state, at(100), nowMs);
+            state = result.state;
+            results.push(result);
+        }
+
+        expect(results.map((result) => result.fix === null)).toEqual([
+            true,
+            true,
+            false,
+        ]);
+        expect(results.some((result) => result.distrusted)).toBe(false);
+    });
+});

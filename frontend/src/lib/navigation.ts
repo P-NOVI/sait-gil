@@ -102,6 +102,27 @@ export function progressAlong(
     return { ...best, remainingM: total - best.travelledM };
 }
 
+/** 출발점부터 경로를 따라 distanceM 만큼 간 경로 위 점. 경로 밖이면 가까운 끝점이다. */
+export function pointAt(route: RouteLine, distanceM: number): LngLat {
+    const { coordinates, distances_m: distances } = route;
+    const last = coordinates.length - 1;
+    if (distanceM <= 0) {
+        return coordinates[0];
+    }
+    if (distanceM >= distances[last]) {
+        return coordinates[last];
+    }
+    let i = 0;
+    while (i + 1 < last && distances[i + 1] < distanceM) {
+        i += 1;
+    }
+    const span = distances[i + 1] - distances[i];
+    const t = span > 0 ? (distanceM - distances[i]) / span : 0;
+    const [lng1, lat1] = coordinates[i];
+    const [lng2, lat2] = coordinates[i + 1];
+    return [lng1 + t * (lng2 - lng1), lat1 + t * (lat2 - lat1)];
+}
+
 /** 오차 반경이 accuracy 인 위치가 경로를 따라가는 중인지, 벗어났는지, 도착했는지 */
 export function judge(
     progress: RouteProgress,
