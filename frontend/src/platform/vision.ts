@@ -63,16 +63,23 @@ export type VisionApproach = {
 
 export const VISION_NOT_READY = '인파 인식은 준비 중입니다.';
 
-/** 카메라를 켜지 못한 이유. denied: 카메라 권한 거부, failed: 그 밖의 실패 */
-export type VisionFailure = 'denied' | 'failed';
+/**
+ * 카메라를 켜지 못한 이유. denied: 카메라 권한 거부(다시 켜면 시스템 창이 다시 뜬다),
+ * blocked: 카메라 권한 거부 + 더 묻지 않음(설정 화면에서 켜야 한다), failed: 그 밖의 실패
+ */
+export type VisionFailure = 'denied' | 'blocked' | 'failed';
 
 // 플러그인(SaitgilVisionPlugin.kt)이 실패와 함께 보내는 코드. 플러그인 쪽 값과 같아야 한다.
 const CAMERA_DENIED_CODE = 'CAMERA_DENIED';
+const CAMERA_BLOCKED_CODE = 'CAMERA_BLOCKED';
 
 /** startVision 이 던진 오류가 어떤 실패인지. 모르는 오류는 그 밖의 실패로 본다. */
 export function visionFailure(error: unknown): VisionFailure {
     const code = error instanceof Object ? Reflect.get(error, 'code') : null;
-    return code === CAMERA_DENIED_CODE ? 'denied' : 'failed';
+    if (code === CAMERA_DENIED_CODE) {
+        return 'denied';
+    }
+    return code === CAMERA_BLOCKED_CODE ? 'blocked' : 'failed';
 }
 
 /** Kotlin 플러그인 SaitgilVision 의 화면 쪽 모양. alert 는 정면 접근(danger)과 장애물(obstacle)만 받는다. */

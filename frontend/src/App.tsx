@@ -482,7 +482,7 @@ export default function App() {
     const askingCameraPermission = useRef(false);
 
     /**
-     * 카메라 권한이 거부돼 실패 알림을 읽은 뒤, 설정 화면을 열지 묻는다. "응"이라고 하면 설정 화면을 열고,
+     * 카메라 권한이 거부되고 더 묻지 않는 상태라 실패 알림을 읽은 뒤, 설정 화면을 열지 묻는다. "응"이라고 하면 설정 화면을 열고,
      * 돌아오면 카메라를 다시 켜 본다.
      */
     const askCameraPermission = async () => {
@@ -525,18 +525,19 @@ export default function App() {
     useEffect(() => {
         askCameraPermissionNow.current = askCameraPermission;
     });
+    // 시스템 창이 다시 뜨지 않는 거부(blocked)만 묻는다. 그냥 거부(denied)는 카메라를 다시 켜면 창이 뜬다.
     // 브라우저는 설정 화면을 열 수 없고, 음성 안내가 꺼져 있으면 말로 물을 수 없어 실패 알림만 읽는다.
-    const cameraDenied = vision.failure === 'denied';
+    const cameraBlocked = vision.failure === 'blocked';
     useEffect(() => {
         if (
-            cameraDenied &&
+            cameraBlocked &&
             canOpenAppSettings() &&
             settings.voice &&
             canListen()
         ) {
             void askCameraPermissionNow.current();
         }
-    }, [cameraDenied, settings.voice]);
+    }, [cameraBlocked, settings.voice]);
     const rerouting = routes.state.status === 'loading';
     // 안내 중 지도에 그릴 내 위치. 이탈이 확정되기 전에는 경로 선 위에 붙인다.
     // 새 객체를 매번 만들면 지도가 마커를 다시 그리므로 위치가 바뀔 때만 만든다.

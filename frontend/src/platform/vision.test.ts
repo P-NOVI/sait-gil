@@ -453,7 +453,7 @@ describe('startVision', () => {
 });
 
 describe('visionFailure', () => {
-    it('권한 거부 코드는 denied, 그 밖의 오류는 failed 로 본다', () => {
+    it('권한 거부 코드는 denied, 더 묻지 않는 거부는 blocked, 그 밖의 오류는 failed 로 본다', () => {
         expect(
             visionFailure(
                 Object.assign(new Error('권한 없음'), {
@@ -461,6 +461,13 @@ describe('visionFailure', () => {
                 }),
             ),
         ).toBe('denied');
+        expect(
+            visionFailure(
+                Object.assign(new Error('더 묻지 않음'), {
+                    code: 'CAMERA_BLOCKED',
+                }),
+            ),
+        ).toBe('blocked');
         expect(
             visionFailure(
                 Object.assign(new Error('카메라 실패'), {

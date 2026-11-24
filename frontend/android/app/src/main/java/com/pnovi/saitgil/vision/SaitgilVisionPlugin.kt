@@ -3,6 +3,7 @@ package com.pnovi.saitgil.vision
 import android.Manifest
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.app.ActivityCompat
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
 import com.getcapacitor.Plugin
@@ -72,8 +73,11 @@ class SaitgilVisionPlugin : Plugin() {
     private fun cameraPermissionResult(call: PluginCall) {
         if (getPermissionState(CAMERA) == PermissionState.GRANTED) {
             startCamera(call)
-        } else {
+        } else if (ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)) {
             call.reject(CAMERA_DENIED, CAMERA_DENIED_CODE)
+        } else {
+            // 방금 요청했는데도 거부되고 더 묻지 않는 상태다. 시스템 창이 다시 뜨지 않으므로 설정 화면에서 켜야 한다.
+            call.reject(CAMERA_BLOCKED, CAMERA_BLOCKED_CODE)
         }
     }
 
@@ -196,10 +200,12 @@ class SaitgilVisionPlugin : Plugin() {
         // 실패 설명. 로그·디버깅용이며 사용자에게 읽지 않는다.
         // 사용자에게 읽는 문장은 화면(visionAlerts.ts)이 아래 코드를 보고 정한다.
         private const val CAMERA_DENIED = "카메라 권한 거부"
+        private const val CAMERA_BLOCKED = "카메라 권한 거부(다시 묻지 않음)"
         private const val CAMERA_FAILED = "카메라 시작 실패"
 
         // 화면(vision.ts)이 실패 종류를 가려 안내 문장을 고르는 코드. 화면 쪽 값과 같아야 한다.
         private const val CAMERA_DENIED_CODE = "CAMERA_DENIED"
+        private const val CAMERA_BLOCKED_CODE = "CAMERA_BLOCKED"
         private const val CAMERA_FAILED_CODE = "CAMERA_FAILED"
     }
 }

@@ -31,6 +31,7 @@ export const VISION_FAILED_TEXT =
 
 const FAILURE_TEXTS: Readonly<Record<VisionFailure, string>> = {
     denied: VISION_DENIED_TEXT,
+    blocked: VISION_DENIED_TEXT,
     failed: VISION_FAILED_TEXT,
 };
 
