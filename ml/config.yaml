@@ -174,3 +174,27 @@ storage:
     - models/foot_traffic_serve/foot_traffic_meta.json
   # 올릴 수 있는 파일당 최대 크기. Neon 무료 플랜은 프로젝트 전체가 5GB 다.
   max_file_mb: 500
+
+# 실측 사진으로 거리 보정값(K)을 구한다(`python -m distance_calibration.fit`). 앱 모델과
+# 후처리는 frontend 의 DetectorConfig·YoloDecoder.kt 와 같아야 K 가 앱과 맞는다.
+distance_calibration:
+  # 실측 사진 폴더(DATA_DIR 기준). {거리}m/{방향}.jpg, 예: 3m/12.jpg (방향 10·11·12·1·2)
+  photo_dir: calibration
+  # 앱이 쓰는 모델(저장소 기준 경로)
+  model: frontend/android/app/src/main/assets/models/sidewalk_yolo26n_int8.tflite
+  # 영상 가로를 나누는 칸의 이름(왼쪽부터). CLOCK_SECTORS 와 같다.
+  sectors: [10, 11, 12, 1, 2]
+  # 모델 입력 한 변(px), 레터박스 여백 밝기, 점수 컷, 같은 클래스 박스 NMS 기준
+  input_size: 640
+  pad_gray: 114
+  min_score: 0.25
+  nms_iou: 0.7
+  # 모델 출력의 클래스 순서(DetectedClass). person 은 0 번이다.
+  class_count: 8
+  person_class: 0
+  # 박스 가장자리가 영상 끝에서 이만큼(0~1) 안이면 잘린 것으로 본다(VisionConfig.clippedEdge)
+  clipped_edge: 0.02
+  # 기존 공식과 비교할 때 쓰는 값(VisionConfig 의 defaultLongSideFovDeg·personHeightM·personWidthM)
+  old_long_side_fov_deg: 66.6
+  old_person_height_m: 1.7
+  old_person_width_m: 0.5

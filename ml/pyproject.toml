@@ -14,6 +14,10 @@ dependencies = [
 ]
 
 [dependency-groups]
+calibration = [
+    "ai-edge-litert>=2.4.0",
+    "pillow>=13.0.0",
+]
 dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.3",

@@ -1,5 +1,48 @@
 package com.pnovi.saitgil.vision
 
+import kotlin.math.floor
+
+/**
+ * 사람 박스로 거리를 재는 실측 보정값. 박스 높이·폭은 영상 크기로 나눈 0~1 비율이라 해상도와 상관없다.
+ * 거리(m) = heightKAt(박스 가운데 x) ÷ 박스 높이, 위나 아래가 잘린 박스는 거리(m) = widthK ÷ 박스 폭.
+ * 왼쪽 가장자리 칸이 가운데보다 K 가 약 12% 커서 칸마다 따로 구하고, 칸 가운데 사이는 이어서(선형 보간) 쓴다.
+ * 칸 경계에서 K 가 한 번에 바뀌면 거리가 3~8% 튀어 접근 속도(거리 변화)가 잘못 잡히기 때문이다.
+ */
+data class DistanceK(
+    /** 왼쪽부터 칸마다(CLOCK_SECTORS 순서) 칸 가운데에서의 높이 기준 K */
+    val heightK: List<Double>,
+    /** 위나 아래가 잘린 박스의 폭 기준 K. 1m 사진에서 칸마다 같아 하나만 둔다 */
+    val widthK: Double,
+) {
+    init {
+        require(heightK.size == CLOCK_SECTORS.size) { "heightK 는 칸 수(${CLOCK_SECTORS.size})만큼 있어야 합니다" }
+    }
+
+    /** 영상 가로 위치 centerX(0~1)의 높이 K. 칸 가운데 사이는 선형 보간하고, 양 끝 칸 가운데 밖은 끝 값을 쓴다 */
+    fun heightKAt(centerX: Double): Double {
+        // 칸 가운데가 정수가 되도록 옮긴 위치
+        val position = centerX * heightK.size - 0.5
+        val low = floor(position).toInt().coerceIn(0, heightK.lastIndex)
+        val high = (low + 1).coerceAtMost(heightK.lastIndex)
+        val ratio = (position - low).coerceIn(0.0, 1.0)
+        return heightK[low] + (heightK[high] - heightK[low]) * ratio
+    }
+}
+
+/**
+ * 1배 기본 렌즈(확대 1배, 세로, 4:3)로 1~5m 거리에서 찍은 사진 25장(5방향 × 5거리)으로 구한 값이다.
+ * 촬영자 한 명(키 약 1.7m, 두꺼운 패딩)과 한 기종(갤럭시 S21, SM-G991N)으로 재서, 키가 다른 사람·다른 기종이면 값이 달라질 수 있다.
+ * widthK 는 패딩 때문에 어깨폭(0.5m)보다 넓게 잰 값이다. 높이 K 는 가운데 12시 칸 1.255 ~ 양 끝 칸 약 1.39~1.40 이다.
+ * 앱 기본 모델(int8)로 구했다. fp32 모델로 구한 값과 K 차이가 1% 안이다.
+ * K 를 구한 같은 사진으로 잰 거리 오차는 3~5m 에서 ±2.7% 안, 2m 에서 ±3.2% 안이다(다른 사진으로는 더 클 수 있다).
+ * 1m 안쪽에서 위아래와 좌우가 모두 잘린 박스(양 끝 칸)는 폭이 잘려 거리가 크게 틀린다.
+ * K 는 기기 초점거리를 쓰지 않아 기종이 바뀌면 사람 거리만 어긋날 수 있다. 차·장애물 거리는 초점거리를 쓴다.
+ */
+val MEASURED_DISTANCE_K = DistanceK(
+    heightK = listOf(1.385, 1.309, 1.255, 1.288, 1.401),
+    widthK = 0.582,
+)
+
 /**
  * 사람 박스로 거리·빈 방향·정면 접근을 판단할 때 쓰는 기준값.
  * 실기기에서 맞춰 볼 초안 값이라 판단 코드에 직접 쓰지 않고 여기에 모은다.
@@ -14,6 +57,11 @@ data class VisionConfig(
      * 앱은 후면 기본 렌즈를 확대 1배로 쓰고 광각(0.5배)은 쓰지 않는다. 노트8 기본 렌즈(4.3mm, 센서 긴 변 5.645mm) 값이다.
      */
     val defaultLongSideFovDeg: Double = 66.6,
+    /**
+     * 실측 사진으로 구한 사람 거리 보정값. 있으면 위의 사람 키·폭·화각 공식 대신 쓰고, null 이면 공식을 쓴다.
+     * 값은 ml/ 의 `python -m distance_calibration.fit` 으로 구한다(#145).
+     */
+    val distanceK: DistanceK? = MEASURED_DISTANCE_K,
     /** 이 거리(m) 안에 사람이 걸친 칸을 막힌 방향으로 본다 */
     val blockedDistanceM: Double = 4.0,
     /** 막힌 칸이 이만큼 이상이면 주의 */

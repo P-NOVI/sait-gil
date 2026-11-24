@@ -39,7 +39,7 @@ class ObstacleTracker(private val config: VisionConfig = VisionConfig()) {
      * 이번 프레임에 알릴 수 있는 장애물. 걷는 길 앞 가까이 obstacleConfirmMs 동안 이어서 보여야 한다. 잠깐 잘못 잡힌 박스를 거른다.
      * objectLostMs 안에 잠깐 못 잡은 프레임은 끊긴 것으로 보지 않고, 앞 가까이가 아닌 곳에서 보이면 처음부터 다시 잰다.
      */
-    fun analyze(frame: DetectionFrame, labels: List<Int>): List<StillNotice> {
+    fun analyze(frame: DetectionFrame): List<StillNotice> {
         val boxes = frame.objects.filter { it.kind in FIXED_OBSTACLE_CLASSES }
         val seen = updateTracks(tracks, boxes, frame.timeMs, config) { ObstacleTrack(it.kind, it) }
         return seen.mapNotNull { track ->
@@ -50,7 +50,7 @@ class ObstacleTracker(private val config: VisionConfig = VisionConfig()) {
             }
             val since = track.nearSinceMs ?: frame.timeMs.also { track.nearSinceMs = it }
             if (track.noticed || frame.timeMs - since < config.obstacleConfirmMs) return@mapNotNull null
-            StillNotice(track.kind, directionOf(track.box, labels), distance) { track.noticed = true }
+            StillNotice(track.kind, directionOf(track.box), distance) { track.noticed = true }
         }
     }
 }

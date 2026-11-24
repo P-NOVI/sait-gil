@@ -63,10 +63,10 @@ internal fun inCorridor(
  * 읽을 시계 방향. 앞쪽 칸에 걸치면 그중 박스 가운데에 가장 가까운 칸, 아니면 박스 가운데 칸이다.
  * 앞쪽에 걸쳐 알렸는데 가운데가 옆 칸이라 "10시 방향"이라고 읽지 않게 한다.
  */
-internal fun directionOf(box: ObjectBox, labels: List<Int>): Int {
+internal fun directionOf(box: ObjectBox): Int {
     val center = sectorOf(box.centerX)
     val ahead = (sectorOf(box.left)..sectorOf(box.right)).filter { it in AHEAD_SECTORS }
-    return labels[ahead.minByOrNull { abs(it - center) } ?: center]
+    return CLOCK_SECTORS[ahead.minByOrNull { abs(it - center) } ?: center]
 }
 
 /** 이번 프레임에 앞쪽 가까이 보인 장애물 하나. direction 은 시계 방향(10~2시)이다 */
@@ -106,8 +106,7 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
     private var slowSinceMs: Long? = null
 
     fun analyze(frame: DetectionFrame): ObjectAnalysis {
-        val labels = clockLabels(frame, config)
-        val vehicleAnalysis = vehicles.analyze(frame, labels)
+        val vehicleAnalysis = vehicles.analyze(frame)
         // 멀어지는 차는 음성뿐 아니라 화면의 앞 장애물에서도 뺀다.
         // 걸음을 뺀 판단이 멀어짐이어도 카메라에서 본 거리가 실제로 늘지 않으면 뺀다. 따라 걸을 때나 GPS 걸음 속도 오차로
         // 서 있는 차·나란히 가는 차가 화면에서 사라지지 않게 한다. 걸음 속도를 모르면(0) 두 판단이 같다.
@@ -119,7 +118,7 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
             frame.objects
                 .filter { it.kind == kind && isAhead(it, frame) && it !in leaving }
                 .maxByOrNull { it.bottom }
-                ?.let { ObstacleSighting(kind, directionOf(it, labels)) }
+                ?.let { ObstacleSighting(kind, directionOf(it)) }
         }
         val warnings = vehicleAnalysis.alerts.map {
             VisionAlert(
@@ -131,7 +130,7 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
                 moving = true,
             )
         }
-        val stillNotices = vehicleAnalysis.notices + obstacles.analyze(frame, labels)
+        val stillNotices = vehicleAnalysis.notices + obstacles.analyze(frame)
         // 서 있으면 장애물·서 있는 차는 알리지 않는다. 알리지 않은 것은 다시 걸을 때 알린다.
         val notice = if (isStanding(frame)) null else nearestNotice(stillNotices, frame)
         val signal = signals.update(frame)
