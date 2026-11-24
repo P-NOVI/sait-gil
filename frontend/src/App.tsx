@@ -38,12 +38,15 @@ import { nearCrosswalk } from './lib/routeEvents';
 import { nearForSearch } from './lib/searchNear';
 import {
     cameraAnswer,
+    CAMERA_PERMISSION_LATER_TEXT,
+    CAMERA_PERMISSION_QUESTION,
     LOCATION_FOUND_TEXT,
     LOCATION_PERMISSION_LATER_TEXT,
     LOCATION_PERMISSION_QUESTION,
     NAVIGATION_COMMAND_HINT,
     navigationCommand,
     NOT_HEARD_TEXT,
+    OPEN_CAMERA_SETTINGS_TEXT,
     OPEN_SETTINGS_TEXT,
     permissionAnswer,
     routeAnswer,
@@ -474,6 +477,66 @@ export default function App() {
         report: guidance.report,
         buzz,
     });
+
+    // 카메라 권한을 묻는 중이면 다시 묻지 않는다.
+    const askingCameraPermission = useRef(false);
+
+    /**
+     * 카메라 권한이 거부돼 실패 알림을 읽은 뒤, 설정 화면을 열지 묻는다. "응"이라고 하면 설정 화면을 열고,
+     * 돌아오면 카메라를 다시 켜 본다.
+     */
+    const askCameraPermission = async () => {
+        if (askingCameraPermission.current) {
+            return;
+        }
+        askingCameraPermission.current = true;
+        const run = guidanceRun.current;
+        const choice = visionChoice.current;
+        // 안내가 끝났거나, 묻는 사이 사용자가 카메라를 직접 켜고 끈 것은 덮지 않는다.
+        const stale = () =>
+            guidanceRun.current !== run || visionChoice.current !== choice;
+        try {
+            // 실패 알림이 끊기지 않게 다 읽은 뒤 묻는다.
+            await whenIdle();
+            const heard = await ask(CAMERA_PERMISSION_QUESTION);
+            if (stale()) {
+                return;
+            }
+            const answer =
+                heard.status === 'heard' ? permissionAnswer(heard.text) : null;
+            if (answer !== 'on') {
+                if (listened(heard)) {
+                    announce(CAMERA_PERMISSION_LATER_TEXT);
+                }
+                return;
+            }
+            announce(OPEN_CAMERA_SETTINGS_TEXT);
+            await whenIdle();
+            await openAppSettings().catch(() => undefined);
+            if (!stale()) {
+                vision.setEnabled(true);
+            }
+        } finally {
+            askingCameraPermission.current = false;
+        }
+    };
+    // 실패가 바뀔 때만 물으므로 최신 함수를 ref 로 넘긴다.
+    const askCameraPermissionNow = useRef(askCameraPermission);
+    useEffect(() => {
+        askCameraPermissionNow.current = askCameraPermission;
+    });
+    // 브라우저는 설정 화면을 열 수 없고, 음성 안내가 꺼져 있으면 말로 물을 수 없어 실패 알림만 읽는다.
+    const cameraDenied = vision.failure === 'denied';
+    useEffect(() => {
+        if (
+            cameraDenied &&
+            canOpenAppSettings() &&
+            settings.voice &&
+            canListen()
+        ) {
+            void askCameraPermissionNow.current();
+        }
+    }, [cameraDenied, settings.voice]);
     const rerouting = routes.state.status === 'loading';
     // 안내 중 지도에 그릴 내 위치. 이탈이 확정되기 전에는 경로 선 위에 붙인다.
     // 새 객체를 매번 만들면 지도가 마커를 다시 그리므로 위치가 바뀔 때만 만든다.

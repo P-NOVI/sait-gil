@@ -56,6 +56,14 @@ export const LOCATION_PERMISSION_LATER_TEXT =
 /** Android 가 권한을 더 묻지 않아 설정 화면을 열기 전에 읽는 말 */
 export const OPEN_SETTINGS_TEXT =
     '설정 화면을 엽니다. 권한에서 위치를 허용으로 바꾼 뒤 뒤로 가기로 돌아오세요.';
+/** 카메라 권한이 거부돼 인식을 켜지 못했을 때. 실패 알림을 읽은 뒤 설정 화면을 열지 묻는 말 */
+export const CAMERA_PERMISSION_QUESTION = '설정 화면을 열까요?';
+/** 카메라 권한 설정 화면을 열기 전에 읽는 말 */
+export const OPEN_CAMERA_SETTINGS_TEXT =
+    '설정 화면을 엽니다. 권한에서 카메라를 허용으로 바꾼 뒤 뒤로 가기로 돌아오세요.';
+/** 설정 화면을 열지 않았을 때. 나중에 켜는 방법을 알려 준다. */
+export const CAMERA_PERMISSION_LATER_TEXT =
+    '설정 화면을 열지 않았습니다. 카메라를 허용한 뒤 두 번 누르고 카메라 켜라고 하세요.';
 /** 권한을 켜고 위치를 찾았을 때 */
 export const LOCATION_FOUND_TEXT = '내 위치를 찾았습니다.';
 
