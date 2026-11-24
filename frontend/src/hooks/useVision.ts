@@ -10,6 +10,7 @@ import {
 import type { Alert, WhenBusy } from '../lib/alertArbiter';
 import {
     obstacleAlert,
+    sideEntryAlert,
     signalReader,
     VISION_KEYS,
     visionFailureAlert,
@@ -29,6 +30,7 @@ import {
     visionFailure,
     type VisionFrame,
     type VisionObstacle,
+    type VisionSideEntry,
 } from '../platform';
 import { CAUTION_VIBRATION, VISION } from '../settings';
 
@@ -60,6 +62,7 @@ export function connectVision(
     onApproach: (approach: VisionApproach) => void = () => undefined,
     onFailure: (failure: VisionFailure) => void = () => undefined,
     onObstacle: (obstacle: VisionObstacle) => void = () => undefined,
+    onSideEntry: (entry: VisionSideEntry) => void = () => undefined,
 ): () => void {
     let cancelled = false;
     let stop: (() => void) | null = null;
@@ -77,6 +80,11 @@ export function connectVision(
         (obstacle) => {
             if (!cancelled) {
                 onObstacle(obstacle);
+            }
+        },
+        (entry) => {
+            if (!cancelled) {
+                onSideEntry(entry);
             }
         },
     )
@@ -215,6 +223,11 @@ export function useVision({
             // 늦게 읽으면 이미 지나쳤거나 부딪힌 뒤라, 읽던 말이 곧 끝날 때만 기다렸다 읽는다.
             (obstacle) =>
                 latest.current.report(obstacleAlert(obstacle), {
+                    maxWaitMs: VISION.obstacleMaxWaitMs,
+                }),
+            // 옆에서 들어온 사람도 늦으면 이미 지나가므로 장애물처럼 곧 끝날 때만 기다렸다 읽는다.
+            (entry) =>
+                latest.current.report(sideEntryAlert(entry), {
                     maxWaitMs: VISION.obstacleMaxWaitMs,
                 }),
         );

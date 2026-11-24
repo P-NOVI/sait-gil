@@ -8,7 +8,12 @@ const platform = vi.hoisted(() => ({
 
 vi.mock('../platform', () => platform);
 
-import type { VisionApproach, VisionFrame, VisionObstacle } from '../platform';
+import type {
+    VisionApproach,
+    VisionFrame,
+    VisionObstacle,
+    VisionSideEntry,
+} from '../platform';
 import { connectVision } from './useVision';
 
 const FRAME: VisionFrame = {
@@ -107,6 +112,38 @@ describe('connectVision', () => {
 
         expect(onObstacle).toHaveBeenCalledTimes(1);
         expect(onObstacle).toHaveBeenCalledWith(obstacle);
+    });
+
+    it('옆 진입을 onSideEntry 로 넘기고 멈춘 뒤에는 버린다', async () => {
+        let onSideEntry: (entry: VisionSideEntry) => void = () => undefined;
+        platform.startVision.mockImplementation(
+            (
+                _frame: unknown,
+                _approach: unknown,
+                _obstacle: unknown,
+                sideListener: (entry: VisionSideEntry) => void,
+            ) => {
+                onSideEntry = sideListener;
+                return Promise.resolve(vi.fn());
+            },
+        );
+        const onEntry = vi.fn();
+        const entry: VisionSideEntry = { side: 'left' };
+
+        const disconnect = connectVision(
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            onEntry,
+        );
+        await flush();
+        onSideEntry(entry);
+        disconnect();
+        onSideEntry(entry);
+
+        expect(onEntry).toHaveBeenCalledTimes(1);
+        expect(onEntry).toHaveBeenCalledWith(entry);
     });
 
     it('시작이 끝난 뒤 멈추면 인식을 멈춘다', async () => {

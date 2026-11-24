@@ -64,6 +64,11 @@ export type VisionApproach = {
     freeDirections: ClockDirection[];
 };
 
+/** 옆 칸에서 가까운 사람이 들어옴. 왼쪽은 10·11시 칸, 오른쪽은 1·2시 칸이다 */
+export type VisionSideEntry = {
+    side: 'left' | 'right';
+};
+
 export const VISION_NOT_READY = '인파 인식은 준비 중입니다.';
 
 /**
@@ -85,7 +90,7 @@ export function visionFailure(error: unknown): VisionFailure {
     return code === CAMERA_BLOCKED_CODE ? 'blocked' : 'failed';
 }
 
-/** Kotlin 플러그인 SaitgilVision 의 화면 쪽 모양. alert 는 정면 접근(danger)과 장애물(obstacle)만 받는다. */
+/** Kotlin 플러그인 SaitgilVision 의 화면 쪽 모양. alert 는 정면 접근(danger)·옆 진입(side_entry)·장애물(obstacle)만 받는다. */
 type SaitgilVisionPlugin = {
     start(): Promise<void>;
     stop(): Promise<void>;
@@ -146,6 +151,19 @@ export function toApproach(alert: unknown): VisionApproach | null {
         return null;
     }
     return { distanceM, freeDirections: toDirections(raw.freeDirections) };
+}
+
+const LEFT_SIDE_DIRECTIONS: readonly ClockDirection[] = [10, 11];
+const RIGHT_SIDE_DIRECTIONS: readonly ClockDirection[] = [1, 2];
+
+/** 플러그인 alert 를 옆 진입으로 바꾼다. 옆 진입이 아니거나 방향이 왼쪽·오른쪽 칸이 아니면 null */
+export function toSideEntry(alert: unknown): VisionSideEntry | null {
+    const raw = asRecord(alert);
+    if (raw.kind !== 'side_entry') return null;
+    const [direction] = toDirections([raw.direction]);
+    if (direction === undefined) return null;
+    if (LEFT_SIDE_DIRECTIONS.includes(direction)) return { side: 'left' };
+    return RIGHT_SIDE_DIRECTIONS.includes(direction) ? { side: 'right' } : null;
 }
 
 /** 플러그인 alert 를 장애물로 바꾼다. 장애물이 아니거나 클래스·방향이 잘못됐으면 null */
@@ -239,10 +257,16 @@ export async function startVision(
     onFrame: (frame: VisionFrame) => void,
     onApproach: (approach: VisionApproach) => void = () => undefined,
     onObstacle: (obstacle: VisionObstacle) => void = () => undefined,
+    onSideEntry: (entry: VisionSideEntry) => void = () => undefined,
 ): Promise<() => void> {
     if (!isNativeApp()) {
         if (mockEnabled()) {
-            return startMockVision(onFrame, onApproach, onObstacle);
+            return startMockVision(
+                onFrame,
+                onApproach,
+                onObstacle,
+                onSideEntry,
+            );
         }
         throw new Error(VISION_NOT_READY);
     }
@@ -263,6 +287,11 @@ export async function startVision(
             const approach = toApproach(alert);
             if (approach !== null) {
                 onApproach(approach);
+                return;
+            }
+            const sideEntry = toSideEntry(alert);
+            if (sideEntry !== null) {
+                onSideEntry(sideEntry);
                 return;
             }
             const obstacle = toObstacle(alert);

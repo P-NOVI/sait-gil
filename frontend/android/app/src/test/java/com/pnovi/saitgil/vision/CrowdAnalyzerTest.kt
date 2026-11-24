@@ -340,6 +340,48 @@ class CrowdAnalyzerTest {
     }
 
     @Test
+    fun closeNewPersonAtSideAlertsSideEntryWithClockDirection() {
+        val analyzer = CrowdAnalyzer(config)
+        analyzer.analyze(frame(0))
+
+        val left = analyzer.analyze(frame(100, person(0, 1.4))).alert
+        assertNotNull(left)
+        assertEquals(AlertKind.SIDE_ENTRY, left!!.kind)
+        assertEquals(10, left.direction)
+
+        // 반대쪽은 따로 센다
+        val right = analyzer.analyze(frame(200, person(4, 1.4))).alert
+        assertEquals(2, right!!.direction)
+    }
+
+    @Test
+    fun sideEntryIsNotAlertedForFarFrontFirstFrameOrKnownPerson() {
+        // 시작 첫 프레임에 보이는 사람
+        assertNull(CrowdAnalyzer(config).analyze(frame(0, person(0, 1.4))).alert)
+
+        val analyzer = CrowdAnalyzer(config)
+        analyzer.analyze(frame(0))
+        // 멀리, 가운데 칸
+        assertNull(analyzer.analyze(frame(100, person(0, 3.0))).alert)
+        assertNull(analyzer.analyze(frame(200, person(2, 1.4))).alert)
+        // 이미 보이던 사람이 가까이 오는 것은 새로 나타난 것이 아니다
+        analyzer.analyze(frame(300, person(1, 3.0)))
+        assertNull(analyzer.analyze(frame(400, person(1, 1.4))).alert)
+    }
+
+    @Test
+    fun sameSideEntryIsNotRepeatedWithinRepeatTime() {
+        val analyzer = CrowdAnalyzer(config)
+        analyzer.analyze(frame(0))
+        assertNotNull(analyzer.analyze(frame(100, person(0, 1.4))).alert)
+        // 사람이 사라졌다 같은 쪽에 새 사람으로 다시 잡혀도 간격 안에는 알리지 않는다
+        analyzer.analyze(frame(1_500))
+        assertNull(analyzer.analyze(frame(1_600, person(1, 1.4))).alert)
+        analyzer.analyze(frame(3_000))
+        assertNotNull(analyzer.analyze(frame(3_200, person(1, 1.4))).alert)
+    }
+
+    @Test
     fun approachAlertNamesDirectionsFreeForConfirmTimeNotFrameCount() {
         // 2시 칸을 막던 사람이 사라진 지 freeConfirmMs 가 안 됐으면, 그사이 프레임이 많이 와도 2시를 빈 방향으로 넣지 않는다.
         val analyzer = CrowdAnalyzer(config)

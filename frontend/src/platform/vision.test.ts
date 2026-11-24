@@ -22,6 +22,7 @@ import {
     setVisionNearCrosswalk,
     setVisionWalkSpeed,
     startVision,
+    toSideEntry,
     VISION_NOT_READY,
     type VisionFrame,
     visionAvailable,
@@ -480,6 +481,30 @@ describe('startVision', () => {
         await expect(startVision(vi.fn())).rejects.toThrow('시작 실패');
 
         expect(remove).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('toSideEntry', () => {
+    it('10·11시는 왼쪽, 1·2시는 오른쪽으로 바꾼다', () => {
+        expect(toSideEntry({ kind: 'side_entry', direction: 10 })).toEqual({
+            side: 'left',
+        });
+        expect(toSideEntry({ kind: 'side_entry', direction: 11 })).toEqual({
+            side: 'left',
+        });
+        expect(toSideEntry({ kind: 'side_entry', direction: 1 })).toEqual({
+            side: 'right',
+        });
+        expect(toSideEntry({ kind: 'side_entry', direction: 2 })).toEqual({
+            side: 'right',
+        });
+    });
+
+    it('옆 진입이 아니거나 방향이 12시·잘못된 값이면 null 이다', () => {
+        expect(toSideEntry({ kind: 'danger', direction: 10 })).toBeNull();
+        expect(toSideEntry({ kind: 'side_entry', direction: 12 })).toBeNull();
+        expect(toSideEntry({ kind: 'side_entry', direction: 7 })).toBeNull();
+        expect(toSideEntry({ kind: 'side_entry' })).toBeNull();
     });
 });
 
