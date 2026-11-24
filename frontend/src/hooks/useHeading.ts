@@ -7,14 +7,18 @@ import {
     learnOffset,
     smoothAngle,
 } from '../lib/heading';
-import { watchCompass } from '../platform';
+import { type HeadingWatcher, watchCompass } from '../platform';
 import { HEADING } from '../settings';
 
 /**
  * 내 위치 마커가 가리킬 방향(북쪽 0도, 시계 방향). 모르면 null.
  * 나침반을 기본으로 쓰고, course(GPS 진행 방향)가 오면 나침반 보정값을 배운다.
+ * watch 를 watchCameraHeading 으로 주면 목걸이에 건 휴대폰의 카메라가 보는 방향이 된다. 걸을 때 카메라는 걷는 쪽을 본다.
  */
-export function useHeading(course: Course | null): number | null {
+export function useHeading(
+    course: Course | null,
+    watch: HeadingWatcher = watchCompass,
+): number | null {
     const [heading, setHeading] = useState<number | null>(null);
     const compass = useRef<number | null>(null);
     const offset = useRef(0);
@@ -45,7 +49,7 @@ export function useHeading(course: Course | null): number | null {
 
     useEffect(
         () =>
-            watchCompass((degrees) => {
+            watch((degrees) => {
                 compass.current =
                     compass.current === null
                         ? degrees
@@ -56,7 +60,7 @@ export function useHeading(course: Course | null): number | null {
                           );
                 show();
             }),
-        [show],
+        [show, watch],
     );
 
     useEffect(() => {

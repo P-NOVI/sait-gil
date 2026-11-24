@@ -2,6 +2,7 @@ package com.pnovi.saitgil.vision
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -12,9 +13,10 @@ import androidx.camera.view.PreviewView
 /**
  * 개발용 카메라 화면. 디버그 빌드(BuildConfig.VISION_PREVIEW)에서만 띄워 인식이 잘 되는지 본다.
  * 두 손가락으로 벌리고 오므려 크기를 바꾸고, 한 손가락으로 끌어 옮긴다. 경로가 가려지면 치워 둔다.
+ * 길게 누르면 onLongPress 를 부른다(비교할 모델 바꾸기, #128).
  * 화면낭독기가 읽지 않도록 접근성에서 숨긴다. 메인 스레드에서만 만들고 다룬다.
  */
-class DebugPreview(private val activity: Activity) {
+class DebugPreview(private val activity: Activity, private val onLongPress: () -> Unit = {}) {
     private val screen = activity.resources.displayMetrics
     private val params = FrameLayout.LayoutParams(0, 0, Gravity.TOP or Gravity.START)
     private var lastX = 0f
@@ -41,6 +43,13 @@ class DebugPreview(private val activity: Activity) {
         },
     )
 
+    private val presser = GestureDetector(
+        activity,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onLongPress(event: MotionEvent) = onLongPress()
+        },
+    )
+
     init {
         resize((screen.widthPixels * DEFAULT_WIDTH_SHARE).toInt())
         activity.findViewById<FrameLayout>(android.R.id.content).addView(view, params)
@@ -64,6 +73,7 @@ class DebugPreview(private val activity: Activity) {
     private fun listenTouches() {
         view.setOnTouchListener { _, event ->
             scaler.onTouchEvent(event)
+            presser.onTouchEvent(event)
             when {
                 event.actionMasked == MotionEvent.ACTION_DOWN -> dragFromHere = true
                 event.actionMasked != MotionEvent.ACTION_MOVE -> Unit

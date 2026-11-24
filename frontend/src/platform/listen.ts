@@ -60,15 +60,24 @@ async function listenNative(): Promise<string | null> {
     const run = nativeRun;
     try {
         // 블루투스 이어폰을 끼고 있으면 그 마이크로 듣는다. 못 바꾸면 폰 마이크로 듣는다.
-        await startBluetoothMic();
+        const connected = await startBluetoothMic();
         if (stopped) return null;
+        // 실기기 실험용 로그. 원인을 확인하면 지운다. (#140)
+        const startedAt = Date.now();
+        console.info(`[listen] 인식 시작 (블루투스 마이크 ${connected})`);
         const { matches } = await NativeRecognition.start({
             language: SPEECH_LANG,
             maxResults: 1,
             partialResults: false,
             popup: false,
         });
+        console.info(
+            `[listen] 인식 끝 ${Date.now() - startedAt}ms, 결과 ${matches?.length ?? 0}개, 중지됨 ${stopped}`,
+        );
         return stopped ? null : (matches?.[0] ?? null);
+    } catch (error) {
+        console.info(`[listen] 인식 오류 ${String(error)}`);
+        throw error;
     } finally {
         if (stopCurrent === stop) stopCurrent = null;
         // 들은 말에 답하는 음성은 미디어 소리라, 통화용 연결을 끈 뒤에 읽어야 음질이 떨어지지 않는다.

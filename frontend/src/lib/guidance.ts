@@ -16,6 +16,7 @@ import {
     judge,
     type Judgement,
     NEW_TRACKER,
+    pointAt,
     progressAlong,
     type RerouteTracker,
     type RouteLine,
@@ -36,6 +37,19 @@ export const REROUTE_KEY = 'route:reroute';
 export const REROUTE_FAILED_KEY = 'route:reroute-failed';
 export const LOCATION_LOST_KEY = 'location:lost';
 export const APPROXIMATE_KEY = 'location:approximate';
+
+/**
+ * 걸음 수로 추정한 위치(estimated)로는 도착을 알리지 않는다.
+ * 추정 위치는 걸음 수 오차가 쌓여 실제보다 앞서 목적지에 닿을 수 있어, 도착은 믿는 GPS 위치로만 판정한다.
+ */
+export function withoutArrival(
+    alerts: readonly Alert[],
+    estimated: boolean,
+): Alert[] {
+    return estimated
+        ? alerts.filter((alert) => alert.key !== ARRIVED_KEY)
+        : [...alerts];
+}
 
 /** 사용자가 고른 경로. 이벤트 목록은 백엔드가 경로마다 만들어 준다. */
 export type GuidedRoute = RouteLine & { events: RouteEvent[] };
@@ -70,6 +84,21 @@ function reachable(
     const elapsedS = Math.max(0, nowMs - last.atMs) / 1000;
     const reachM = NAVIGATION.maxWalkSpeedMps * elapsedS + accuracy;
     return { fromM: last.travelledM - reachM, toM: last.travelledM + reachM };
+}
+
+/**
+ * 직전 진행 위치에서 walkedM 만큼 경로를 따라 더 간 경로 위 점. 걸음 수로 추정한 내 위치다.
+ * 직전 진행이 없거나 경로를 다시 찾았으면 추정할 수 없어 null 이다.
+ */
+export function deadReckon(
+    route: GuidedRoute,
+    last: GuidanceState['last'],
+    walkedM: number,
+): LngLat | null {
+    if (!last || last.route !== route) {
+        return null;
+    }
+    return pointAt(route, last.travelledM + Math.max(0, walkedM));
 }
 
 export type GuidanceStep = {

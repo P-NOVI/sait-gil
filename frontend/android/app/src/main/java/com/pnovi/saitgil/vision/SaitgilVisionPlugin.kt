@@ -1,8 +1,13 @@
 package com.pnovi.saitgil.vision
 
 import android.Manifest
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.widget.Toast
+import androidx.core.app.ActivityCompat
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
 import com.getcapacitor.Plugin
@@ -33,6 +38,12 @@ class SaitgilVisionPlugin : Plugin() {
     private var sensitivity = CrowdSensitivity.NORMAL
 
     private val visionConfig = VisionConfig()
+    private val detectorConfig = DetectorConfig()
+
+    // 추론할 모델. 릴리스 빌드는 늘 기본 모델이고, 디버그 빌드는 미리보기를 길게 눌러 바꾼 모델을 기억해 쓴다(#128).
+    // 메인 스레드에서 바꾸고 카메라 분석 스레드가 읽으므로 @Volatile 이다.
+    @Volatile
+    private var modelAsset = detectorConfig.modelAsset
 
     // 안내마다 새로 만들어 지난 안내의 사람 추적·장애물·신호등 기록을 이어 쓰지 않는다.
     private var analyzer = CrowdAnalyzer()
@@ -46,8 +57,23 @@ class SaitgilVisionPlugin : Plugin() {
     @Volatile
     private var walkSpeedAtMs = 0L
 
+    // 화면이 알려 주는, 길안내 경로의 횡단보도 근처인지(#134). 근처에서는 분석 해상도를 올리고 위쪽 가운데를 잘라 먼 신호등을 한 번 더 찾는다.
+    // 카메라 분석 스레드가 읽으므로 @Volatile 이다. 화면이 인식을 켤 때마다 다시 알려 주므로 멈출 때 지우지 않는다.
+    @Volatile
+    private var nearCrosswalk = false
+
+    // 근처를 벗어나면 highResOffDelayMs 뒤 해상도를 되돌린다. 그 안에 다시 근처가 되면 지워 다시 묶지 않는다.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val lowerResolution = Runnable { camera?.setHighRes(false) }
+
+    // 권한을 요청하기 직전의 rationale 값. 요청 뒤 값과 비교해 "다시 묻지 않음"을 가린다.
+    private var rationaleBeforeRequest = false
+
     // 마지막으로 로그에 남긴 인파 단계·신호등 상태
     private var loggedState: Pair<CrowdLevel, SignalState?>? = null
+
+    // 마지막으로 박스와 함께 로그에 남긴 신호등 상태
+    private var loggedSignal: SignalState? = null
 
     @PluginMethod
     fun start(call: PluginCall) {
@@ -64,32 +90,54 @@ class SaitgilVisionPlugin : Plugin() {
         if (getPermissionState(CAMERA) == PermissionState.GRANTED) {
             startCamera(call)
         } else {
+            rationaleBeforeRequest = shouldShowCameraRationale()
             requestPermissionForAlias(CAMERA, call, "cameraPermissionResult")
         }
     }
 
     @PermissionCallback
     private fun cameraPermissionResult(call: PluginCall) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (getPermissionState(CAMERA) == PermissionState.GRANTED) {
+            prefs.edit().remove(KEY_CAMERA_DENIED).apply()
             startCamera(call)
+        } else if (shouldShowCameraRationale()) {
+            // 사용자가 창에서 거부한 것이 기록됐다. 다시 켜면 시스템 창이 다시 뜬다.
+            prefs.edit().putBoolean(KEY_CAMERA_DENIED, true).apply()
+            call.reject(CAMERA_DENIED, CAMERA_DENIED_CODE)
+        } else if (rationaleBeforeRequest || prefs.getBoolean(KEY_CAMERA_DENIED, false)) {
+            // 거부가 이미 기록돼 있는데 설명 창이 더는 뜨지 않는다. 시스템 창이 다시 뜨지 않으므로 설정 화면에서 켜야 한다.
+            // 거부한 적 없이 rationale 이 false 인 것(Android 11 이상에서 창 바깥을 눌러 닫음, 정책 제한)은 여기에 오지 않는다.
+            call.reject(CAMERA_BLOCKED, CAMERA_BLOCKED_CODE)
         } else {
             call.reject(CAMERA_DENIED, CAMERA_DENIED_CODE)
         }
     }
 
+    private fun shouldShowCameraRationale() =
+        ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)
+
     // 미리보기 뷰를 만들고 보여 주는 일이 있어 메인 스레드에서 처리한다.
     private fun startCamera(call: PluginCall) = activity.runOnUiThread {
         if (BuildConfig.VISION_PREVIEW && preview == null) {
-            preview = DebugPreview(activity)
+            modelAsset = savedModelOrDefault(
+                modelPrefs().getString(MODEL_KEY, null),
+                availableModels(),
+                detectorConfig.modelAsset,
+            )
+            preview = DebugPreview(activity, ::switchModel)
         }
         val session = camera
             ?: CameraSession(
                 context,
                 activity,
-                LazyModelAnalyzer { LiteRtDetector.load(context) },
+                LazyModelAnalyzer({ modelAsset }) { asset ->
+                    LiteRtDetector.load(context, detectorConfig, asset) { nearCrosswalk }
+                },
                 ::onDetections,
                 preview?.view,
             ).also { camera = it }
+        session.setHighRes(nearCrosswalk)
         session.start(
             onStarted = {
                 running = true
@@ -102,6 +150,27 @@ class SaitgilVisionPlugin : Plugin() {
                 call.reject(CAMERA_FAILED, CAMERA_FAILED_CODE)
             },
         )
+    }
+
+    /** 디버그 빌드에서 다음 비교 모델로 바꾸고 기억한다. 다음 프레임부터 새 모델로 추론한다. 메인 스레드에서 부른다 */
+    private fun switchModel() {
+        val next = nextModel(detectorConfig.compareModels, availableModels(), modelAsset)
+        if (next == null) {
+            Toast.makeText(context, "비교할 모델 파일이 없습니다", Toast.LENGTH_SHORT).show()
+            return
+        }
+        modelAsset = next.asset
+        modelPrefs().edit().putString(MODEL_KEY, next.asset).apply()
+        Log.i(TAG, "비교할 모델을 바꿨습니다: ${next.label} ${next.asset}")
+        Toast.makeText(context, "모델 ${next.label}", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun modelPrefs() = context.getSharedPreferences(MODEL_PREFS, Context.MODE_PRIVATE)
+
+    /** assets 에 실제로 있는 모델 경로. 가중치는 커밋하지 않아 빌드마다 다를 수 있다 */
+    private fun availableModels(): Set<String> {
+        val folder = detectorConfig.modelAsset.substringBeforeLast('/')
+        return context.assets.list(folder).orEmpty().map { "$folder/$it" }.toSet()
     }
 
     @PluginMethod
@@ -124,6 +193,19 @@ class SaitgilVisionPlugin : Plugin() {
         call.resolve()
     }
 
+    @PluginMethod
+    fun setNearCrosswalk(call: PluginCall) {
+        val near = call.getBoolean("near") ?: return call.reject("횡단보도 근처인지(near)가 없습니다")
+        nearCrosswalk = near
+        mainHandler.removeCallbacks(lowerResolution)
+        if (near) {
+            camera?.setHighRes(true)
+        } else {
+            mainHandler.postDelayed(lowerResolution, visionConfig.highResOffDelayMs)
+        }
+        call.resolve()
+    }
+
     /** 걸음 속도를 받은 지 walkSpeedStaleMs 가 지났으면 위치가 끊긴 것으로 보고 모르는 것(null)으로 본다 */
     private fun currentWalkSpeedMps(): Double? =
         if (SystemClock.elapsedRealtime() - walkSpeedAtMs > visionConfig.walkSpeedStaleMs) null else walkSpeedMps
@@ -138,6 +220,7 @@ class SaitgilVisionPlugin : Plugin() {
 
     override fun handleOnDestroy() {
         running = false
+        mainHandler.removeCallbacks(lowerResolution)
         camera?.close()
         camera = null
         preview?.remove()
@@ -155,11 +238,26 @@ class SaitgilVisionPlugin : Plugin() {
         val frame = detected.copy(walkSpeedMps = currentWalkSpeedMps())
         val crowd = analyzer.analyze(frame)
         val objects = objectAnalyzer.analyze(frame)
-        emitCrowdState(crowd.frame.copy(signal = objects.signal, obstacles = objects.seen))
+        emitCrowdState(crowd.frame.copy(signal = objects.signal, signalId = objects.signalId, obstacles = objects.seen))
         crowd.alert?.let(::emitAlert)
         objects.alerts.forEach(::emitAlert)
         // 실기기에서 차 움직임 기준을 맞추려고 추적 중인 차를 프레임마다 남긴다. 튜닝용이라 릴리스 전에 지우거나 디버그 빌드에서만 남긴다.
         objects.vehicles.forEach { Log.d(TAG, vehicleLog(it, frame.walkSpeedMps)) }
+        // 어느 신호등을 따라갔는지 보려고 새로 고르거나 상태가 바뀔 때 박스 위치·크기를 남긴다(#132).
+        if (objects.signalPicked || objects.signal != loggedSignal) {
+            Log.d(TAG, signalLog(objects))
+            loggedSignal = objects.signal
+        }
+    }
+
+    private fun signalLog(objects: ObjectAnalysis): String {
+        val box = objects.signalBox?.let {
+            "%s 가운데 %.2f 위 %.2f 크기 %.3fx%.3f 점수 %.2f".format(
+                it.kind.wire, it.centerX, it.top, it.width, it.height, it.score,
+            )
+        } ?: "못 잡음"
+        val picked = if (objects.signalPicked) " (새로 고름)" else ""
+        return "신호등 #${objects.signalId} 상태 ${objects.signal?.wire ?: "없음"}, 박스 $box$picked"
     }
 
     private fun vehicleLog(state: VehicleState, walkSpeedMps: Double?): String {
@@ -193,13 +291,21 @@ class SaitgilVisionPlugin : Plugin() {
     companion object {
         const val CAMERA = "camera"
         private const val TAG = "SaitgilVision"
+        // 사용자가 카메라 권한 창에서 거부한 적이 있는지 적어 두는 저장소
+        private const val PREFS = "saitgil_vision"
+        private const val KEY_CAMERA_DENIED = "camera_denied"
+        // 디버그 빌드에서 고른 비교 모델을 기억하는 곳
+        private const val MODEL_PREFS = "saitgil_vision_debug"
+        private const val MODEL_KEY = "model_asset"
         // 실패 설명. 로그·디버깅용이며 사용자에게 읽지 않는다.
         // 사용자에게 읽는 문장은 화면(visionAlerts.ts)이 아래 코드를 보고 정한다.
         private const val CAMERA_DENIED = "카메라 권한 거부"
+        private const val CAMERA_BLOCKED = "카메라 권한 거부(다시 묻지 않음)"
         private const val CAMERA_FAILED = "카메라 시작 실패"
 
         // 화면(vision.ts)이 실패 종류를 가려 안내 문장을 고르는 코드. 화면 쪽 값과 같아야 한다.
         private const val CAMERA_DENIED_CODE = "CAMERA_DENIED"
+        private const val CAMERA_BLOCKED_CODE = "CAMERA_BLOCKED"
         private const val CAMERA_FAILED_CODE = "CAMERA_FAILED"
     }
 }

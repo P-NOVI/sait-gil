@@ -44,6 +44,37 @@ export const LOCATION_FILTER = {
     // 멈춘 곳에서 이 거리(오차가 더 작으면 오차) 안에서만 흔들리면 멈춰 있는 것으로 본다(m).
     // 크면 걷기 시작해도 늦게 따라가고, 작으면 멈춰 있어도 움직이는 것으로 나온다.
     stillRadiusM: 5,
+    // 걸음 센서를 쓸 수 있을 때: 한 걸음의 길이(m). 시각장애인은 보폭이 짧다.
+    stepLengthM: 0.5,
+    // 마지막 위치 이후 GPS 이동량이 (걸음 수 × 보폭 × 이 배수 + 위치 오차)보다 크면 튄 위치로 본다.
+    // 크면 보폭 오차는 넘기지만 튄 위치를 놓치고, 작으면 멀쩡한 위치를 버린다.
+    stepReachMargin: 1.5,
+    // 튄 위치를 이 시간(ms) 넘게 믿지 않으면 현재 위치를 다시 믿고 이탈을 판단한다.
+    // 걸음 수로 추정한 위치에는 방향이 없어, 진짜 이탈을 영원히 놓치지 않게 두는 상한이다.
+    distrustLimitMs: 120_000,
+    // 튄 위치가 걸음 수로 추정한 경로 위 위치에서 (이 거리 + 걸은 거리 × 아래 비율) 안으로 돌아오면 다시 믿는다(m).
+    // 이 거리는 이탈 거리(NAVIGATION.offRouteM)보다 작게 둔다. 건너편 위치를 믿어 버리지 않게 한다.
+    resumeToleranceM: 15,
+    // 걸음 수 추정 오차가 걸은 거리에 비례해 쌓이는 비율(0~1)
+    stepDriftRatio: 0.15,
+    // 오차가 쌓여도 다시 믿는 거리는 이보다 커지지 않는다(m). 오래 걸어도 건너편 위치를 믿지 않게 한다.
+    resumeToleranceMaxM: 20,
+    // 걸음 수로 추정한 위치를 안내에 넘길 때의 오차 반경(m)
+    estimatedAccuracyM: 10,
+    // 보폭 보정: 믿는 GPS 로 이만큼(m) 나아갈 때마다 걸은 거리 ÷ 걸음 수로 보폭을 다시 잰다.
+    // 보폭이 짧은 사용자도 같은 거리로 재도록 걸음 수가 아니라 거리로 구간을 잡는다.
+    // 짧으면 위치 오차(strideMaxAccuracyM)가 크게 섞여 보폭이 크게 잡히는 쪽으로 치우치고, 길면 보폭이 늦게 맞춰진다. 실기기에서 맞출 초안 값.
+    strideWindowM: 30,
+    // 보폭을 재려면 구간에서 최소 이만큼은 걸어야 한다(걸음 수).
+    strideMinSteps: 20,
+    // 잰 보폭이 이 범위 밖이면(멈춰 있었거나 위치가 튀었던 구간) 버린다(m).
+    // 하한은 보폭이 아주 짧은 사용자도 버리지 않을 만큼 낮게 둔다.
+    strideMinM: 0.25,
+    strideMaxM: 1.0,
+    // 새로 잰 보폭을 반영하는 비율(0~1). 클수록 빨리 맞지만 GPS 오차에 흔들린다.
+    strideBlend: 0.3,
+    // 보폭을 잴 때 쓰는 위치의 최대 오차(m). 이보다 부정확한 위치는 재지 않는다.
+    strideMaxAccuracyM: 8,
 } as const;
 
 export type LocationFilterSettings = typeof LOCATION_FILTER;
@@ -58,6 +89,8 @@ export const HEADING = {
     smoothing: 0.3,
     // 이보다 적게 바뀌면 마커를 다시 돌리지 않는다(도).
     minStepDeg: 2,
+    // 뒷면 카메라가 보는 방향의 수평 성분(0~1)이 이보다 작으면(거의 위·아래를 보면) 카메라 방향을 모른다고 본다.
+    cameraMinLevel: 0.5,
 } as const;
 
 // 이벤트까지 남은 거리가 이 안에 들어오면 미리 알린다.
@@ -84,6 +117,9 @@ export const BLOCK = {
     // 교차로까지 남은 거리가 이보다 길면 블럭 대신 미터로 알린다(m).
     // Tmap 안내점이 없어 한 블럭이 수백 m 로 묶일 수 있어, 이 안에 들어오면 그때 블럭으로 다시 알린다.
     maxM: 150,
+    // 횡단보도 안내점은 건너기 직전 지점이라, 이만큼 더 걸어야 다 건넌 것으로 본다(m).
+    // 건너는 중에는 다음 블럭 안내를 내지 않는다. 실기기에서 맞출 초안 값.
+    crosswalkWidthM: 15,
 } as const;
 
 export type BlockSettings = typeof BLOCK;
@@ -105,6 +141,14 @@ export const SPEECH_BUSY_MAX_MS = 15_000;
 // 음성 명령을 듣기 전에 블루투스 이어폰 마이크 연결을 기다리는 가장 긴 시간(ms).
 // 넘으면 폰 마이크로 듣는다. 그동안은 듣기 시작이 늦어진다. 실기기에서 맞출 초안 값.
 export const BLUETOOTH_MIC_CONNECT_MS = 3_000;
+
+// 안내를 다 읽은 뒤 음성 인식을 시작하기 전에 기다리는 시간(ms).
+// 읽는 소리가 가라앉기 전에 인식기가 켜지면 말하기도 전에 끝나 버린다. 실기기에서 맞출 초안 값.
+export const LISTEN_START_DELAY_MS = 250;
+
+// 읽기를 마치고 마이크가 열리기 직전에 주는 짧은 진동(ms). 화면을 보지 않는 사용자에게 말할 차례임을 알린다.
+// 기다리는 시간(LISTEN_START_DELAY_MS)보다 짧아야 진동 소리가 인식에 섞이지 않는다. 진동 세기 설정을 따른다.
+export const LISTEN_READY_VIBRATION: readonly number[] = [100];
 
 // 카메라 인파 인식 알림
 export const VISION = {
@@ -137,6 +181,23 @@ export const CROSSWALK_SIGNAL_M = {
 };
 
 export type CrosswalkSignalSettings = typeof CROSSWALK_SIGNAL_M;
+
+// 보행 신호등은 카메라가 경로의 건너는 방향을 볼 때만 알린다(#132). 교차로에서 옆 방향 횡단보도 신호등을 거른다.
+export const CROSSING_FACING = {
+    // 횡단보도 지점(Tmap 안내점)에서 다음 꼭짓점(횡단보도 끝)까지를 건너는 방향으로 본다.
+    // 횡단보도가 이보다 길면 이 거리(m)까지만 본다.
+    lookAheadM: 10,
+    // 다음 꼭짓점이 이보다 가까우면(m) 그다음 꼭짓점까지 본다. 짧은 꺾임 하나로 방향이 튀지 않게 한다.
+    minSpanM: 3,
+    // 카메라 방향과 건너는 방향이 이보다 크게 다르면 신호를 알리지 않는다(도).
+    // 나침반은 차·쇠기둥 옆에서 수십 도 틀릴 수 있어, 옆 방향(약 90도)만 거를 만큼 넉넉히 둔다. 실기기에서 맞출 초안 값.
+    maxDeg: 45,
+    // 옆을 보다 건너는 방향으로 돌아선 뒤 이 시간(ms)은 신호를 읽지 않는다.
+    // 플러그인이 놓친 신호등의 상태를 signalLostMs(1초) 동안 남겨 두므로 같게 둔다.
+    settleMs: 1_000,
+};
+
+export type CrossingFacingSettings = typeof CROSSING_FACING;
 
 // 인파가 주의 단계가 됐을 때 말 없이 주는 짧은 진동(ms)
 export const CAUTION_VIBRATION: readonly number[] = [150];

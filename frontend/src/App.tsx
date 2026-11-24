@@ -34,16 +34,23 @@ import {
     routeTitle,
     sameKindRoute,
 } from './lib/routeApi';
-import { nearCrosswalk } from './lib/routeEvents';
+import {
+    crossingBearing,
+    facingCrossing,
+    nearCrosswalk,
+} from './lib/routeEvents';
 import { nearForSearch } from './lib/searchNear';
 import {
     cameraAnswer,
+    CAMERA_PERMISSION_LATER_TEXT,
+    CAMERA_PERMISSION_QUESTION,
     LOCATION_FOUND_TEXT,
     LOCATION_PERMISSION_LATER_TEXT,
     LOCATION_PERMISSION_QUESTION,
     NAVIGATION_COMMAND_HINT,
     navigationCommand,
     NOT_HEARD_TEXT,
+    OPEN_CAMERA_SETTINGS_TEXT,
     OPEN_SETTINGS_TEXT,
     permissionAnswer,
     routeAnswer,
@@ -65,6 +72,7 @@ import {
     openAppSettings,
     requestCompassPermission,
     visionAvailable,
+    watchCameraHeading,
 } from './platform';
 
 const SHEET_TITLES: Record<Exclude<Tab, 'search'>, string> = {
@@ -463,10 +471,24 @@ export default function App() {
         guided !== null &&
         guidance.step !== null &&
         nearCrosswalk(guided.events, guidance.step.progress.travelledM);
+    // 목걸이에 건 휴대폰 카메라가 보는 방향. 걸을 때는 GPS 진행 방향으로 나침반을 바로잡는다.
+    const cameraHeading = useHeading(
+        guidance.fix?.course ?? null,
+        watchCameraHeading,
+    );
+    const crossing =
+        guided !== null && guidance.step !== null
+            ? crossingBearing(
+                  guided,
+                  guided.events,
+                  guidance.step.progress.travelledM,
+              )
+            : null;
     const vision = useVision({
         active: navigating,
         minLevel: CROWD_ALERT_FROM[settings.crowdSensitivity],
         atCrosswalk,
+        facingCrossing: facingCrossing(cameraHeading, crossing),
         // 횡단보도 근처에서 서 있으면 신호를 기다리는 중이다. 멈춰 있으면 속력이 오지 않을 수도 있다.
         waiting: atCrosswalk && isStandingStill(gpsLocation),
         // 안내 전에 찾은 오래된 위치(myLocation)의 속력이 새 값처럼 들어가지 않게 계속 갱신되는 안내 위치만 쓴다.
@@ -474,6 +496,71 @@ export default function App() {
         report: guidance.report,
         buzz,
     });
+
+    // 카메라 권한을 묻는 중이면 다시 묻지 않는다.
+    const askingCameraPermission = useRef(false);
+
+    /**
+     * 카메라 권한이 거부되고 더 묻지 않는 상태라 실패 알림을 읽은 뒤, 설정 화면을 열지 묻는다. "응"이라고 하면 설정 화면을 열고,
+     * 돌아오면 카메라를 다시 켜 본다.
+     */
+    const askCameraPermission = async () => {
+        if (askingCameraPermission.current) {
+            return;
+        }
+        askingCameraPermission.current = true;
+        const run = guidanceRun.current;
+        const choice = visionChoice.current;
+        // 안내가 끝났거나, 묻는 사이 사용자가 카메라를 직접 켜고 끈 것은 덮지 않는다.
+        const stale = () =>
+            guidanceRun.current !== run || visionChoice.current !== choice;
+        try {
+            // 실패 알림이 끊기지 않게 다 읽은 뒤 묻는다.
+            await whenIdle();
+            if (stale()) {
+                return;
+            }
+            const heard = await ask(CAMERA_PERMISSION_QUESTION);
+            if (stale()) {
+                return;
+            }
+            const answer =
+                heard.status === 'heard' ? permissionAnswer(heard.text) : null;
+            if (answer !== 'on') {
+                if (listened(heard)) {
+                    announce(CAMERA_PERMISSION_LATER_TEXT);
+                }
+                return;
+            }
+            announce(OPEN_CAMERA_SETTINGS_TEXT);
+            await whenIdle();
+            await openAppSettings().catch(() => undefined);
+            if (!stale()) {
+                vision.setEnabled(true);
+            }
+        } finally {
+            askingCameraPermission.current = false;
+        }
+    };
+    // 실패가 바뀔 때만 물으므로 최신 함수를 ref 로 넘긴다.
+    const askCameraPermissionNow = useRef(askCameraPermission);
+    useEffect(() => {
+        askCameraPermissionNow.current = askCameraPermission;
+    });
+    // 시스템 창이 다시 뜨지 않는 거부(blocked)만 묻는다. 그냥 거부(denied)는 카메라를 다시 켜면 창이 뜬다.
+    // 브라우저는 설정 화면을 열 수 없고, 음성 안내가 꺼져 있으면 말로 물을 수 없어 실패 알림만 읽는다.
+    // blocked 인 채로 음성 안내를 켜면 새 실패가 없어도 그때 묻는다.
+    const cameraBlocked = vision.failure === 'blocked';
+    useEffect(() => {
+        if (
+            cameraBlocked &&
+            canOpenAppSettings() &&
+            settings.voice &&
+            canListen()
+        ) {
+            void askCameraPermissionNow.current();
+        }
+    }, [cameraBlocked, settings.voice]);
     const rerouting = routes.state.status === 'loading';
     // 안내 중 지도에 그릴 내 위치. 이탈이 확정되기 전에는 경로 선 위에 붙인다.
     // 새 객체를 매번 만들면 지도가 마커를 다시 그리므로 위치가 바뀔 때만 만든다.

@@ -2,6 +2,7 @@ package com.pnovi.saitgil.vision
 
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 // 모델 출력(1, 4 + 클래스 수, 후보 수)을 박스로 바꾸고, 레터박스를 걷어 세운 화면 기준 좌표로 옮긴다.
 // Android 클래스를 쓰지 않아 가짜 출력으로 JVM 단위 테스트를 할 수 있다.
@@ -113,4 +114,86 @@ fun toDetectionFrame(detections: List<RawDetection>, letterbox: Letterbox, timeM
         imageHeightPx = letterbox.imageHeight,
         objects = objects,
     )
+}
+
+/** 세운 영상(px)에서 신호등만 다시 볼 정사각형 칸. 왼쪽 위 (left, top) 에서 한 변 size 다 */
+data class CropRegion(val left: Int, val top: Int, val size: Int)
+
+/**
+ * 세운 영상(가로 imageWidth, 세로 imageHeight px)에서 신호등을 다시 볼 칸. 가로 가운데, 세로 signalCropCenterY 에 두고
+ * 영상 밖으로 나가면 안쪽으로 민다. 영상이 칸보다 크지 않으면(분석 해상도를 올리기 전) 잘라 봐야 같은 영상이라 null 이다.
+ */
+fun signalCrop(imageWidth: Int, imageHeight: Int, config: DetectorConfig): CropRegion? {
+    val size = config.signalCropSizePx
+    if (imageWidth <= size || imageHeight <= size) return null
+    val top = (config.signalCropCenterY * imageHeight - size / 2.0).roundToInt().coerceIn(0, imageHeight - size)
+    return CropRegion((imageWidth - size) / 2, top, size)
+}
+
+/** 자른 칸을 추론한 박스(입력 기준 0~1) 중 신호등만 세운 영상 기준 0~1 좌표로 옮긴다. 칸 밖에 걸친 값은 칸 끝으로 자른다 */
+fun signalBoxesFromCrop(
+    detections: List<RawDetection>,
+    crop: CropRegion,
+    imageWidth: Int,
+    imageHeight: Int,
+): List<ObjectBox> = detections.filter { it.kind in SIGNAL_CLASSES }.mapNotNull { detection ->
+    val left = detection.left.coerceIn(0f, 1f)
+    val top = detection.top.coerceIn(0f, 1f)
+    val width = detection.right.coerceIn(0f, 1f) - left
+    val height = detection.bottom.coerceIn(0f, 1f) - top
+    if (width <= 0f || height <= 0f) return@mapNotNull null
+    ObjectBox(
+        kind = detection.kind,
+        left = (crop.left + left * crop.size) / imageWidth.toDouble(),
+        top = (crop.top + top * crop.size) / imageHeight.toDouble(),
+        width = width * crop.size / imageWidth.toDouble(),
+        height = height * crop.size / imageHeight.toDouble(),
+        score = detection.score.toDouble(),
+    )
+}
+
+/**
+ * 자른 칸(crop)에서 찾은 신호등 박스를 프레임에 더한다. 신호등이 아닌 박스는 그대로 둔다.
+ * 신호등끼리는 종류와 상관없이 겹친 넓이가 작은 박스의 signalMergeOverlap 이상이면 같은 신호등으로 보고 하나만 남긴다.
+ * 전체 영상은 red, 칸은 other 처럼 다르게 본 두 박스가 남으면 SignalTracker 가 프레임마다 다른 쪽을 골라 상태가 오간다.
+ * 더 자세히 본 칸 박스, 전체 영상 박스, 칸 끝에 걸려 잘린 칸 박스 순으로 남기고, 같은 차례에서는 점수가 높은 것을 남긴다.
+ */
+fun withCropSignals(
+    frame: DetectionFrame,
+    cropBoxes: List<ObjectBox>,
+    crop: CropRegion,
+    config: DetectorConfig,
+): DetectionFrame {
+    if (cropBoxes.isEmpty()) return frame
+    val (signals, others) = frame.objects.partition { it.kind in SIGNAL_CLASSES }
+    val (cut, intact) = cropBoxes.partition {
+        cutByCrop(it, crop, frame.imageWidthPx, frame.imageHeightPx, config.signalCropEdgePx)
+    }
+    val kept = mutableListOf<ObjectBox>()
+    for (box in listOf(intact, signals, cut).flatMap { group -> group.sortedByDescending { it.score } }) {
+        if (kept.none { overlapOfSmaller(it, box) >= config.signalMergeOverlap }) kept += box
+    }
+    return frame.copy(objects = others + kept)
+}
+
+/** 칸 안쪽 끝(영상 끝과 겹치지 않는 쪽)에 edgePx 안으로 닿아, 칸에 걸려 잘렸을 박스인지 */
+private fun cutByCrop(box: ObjectBox, crop: CropRegion, imageWidth: Int, imageHeight: Int, edgePx: Int): Boolean {
+    val left = box.left * imageWidth
+    val top = box.top * imageHeight
+    val right = left + box.width * imageWidth
+    val bottom = top + box.height * imageHeight
+    val cropRight = crop.left + crop.size
+    val cropBottom = crop.top + crop.size
+    return (crop.left > 0 && left - crop.left <= edgePx) ||
+        (cropRight < imageWidth && cropRight - right <= edgePx) ||
+        (crop.top > 0 && top - crop.top <= edgePx) ||
+        (cropBottom < imageHeight && cropBottom - bottom <= edgePx)
+}
+
+/** 두 박스가 겹친 넓이 ÷ 작은 박스 넓이. 칸 끝에 잘린 박스처럼 한쪽이 다른 쪽 안에 들면 1 이다 */
+private fun overlapOfSmaller(a: ObjectBox, b: ObjectBox): Double {
+    val width = min(a.left + a.width, b.left + b.width) - max(a.left, b.left)
+    val height = min(a.top + a.height, b.top + b.height) - max(a.top, b.top)
+    if (width <= 0.0 || height <= 0.0) return 0.0
+    return width * height / min(a.width * a.height, b.width * b.height)
 }

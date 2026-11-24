@@ -2,21 +2,33 @@
 // 북쪽 기준 값(deviceorientationabsolute)이 있으면 그것을, 없으면 iOS 의 webkitCompassHeading 을 쓴다.
 
 import {
+    cameraHeadingFromOrientation,
     compassFromOrientation,
     type OrientationReading,
 } from '../lib/heading';
 
 type PermissionRequest = () => Promise<'granted' | 'denied'>;
 
+/** 방향 센서 값을 나침반 방향(도)으로 바꾼다. 모르면 null */
+type ToHeading = (reading: OrientationReading) => number | null;
+
+/** 나침반 방향을 받을 때마다 부를 함수를 받고, 멈추는 함수를 돌려준다 */
+export type HeadingWatcher = (
+    onHeading: (degrees: number) => void,
+) => () => void;
+
 function screenAngle(): number {
     return globalThis.screen?.orientation?.angle ?? 0;
 }
 
 /**
- * 나침반 방향(북쪽 0도, 시계 방향)이 바뀔 때마다 onHeading 으로 알린다.
+ * 방향 센서 값이 올 때마다 toHeading 으로 바꿔 onHeading 으로 알린다.
  * 센서가 없는 기기에서는 아무것도 하지 않는다. 돌려준 함수를 부르면 멈춘다.
  */
-export function watchCompass(onHeading: (degrees: number) => void): () => void {
+function watchOrientation(
+    toHeading: ToHeading,
+    onHeading: (degrees: number) => void,
+): () => void {
     if (!('DeviceOrientationEvent' in globalThis)) {
         return () => undefined;
     }
@@ -25,10 +37,7 @@ export function watchCompass(onHeading: (degrees: number) => void): () => void {
             ? 'deviceorientationabsolute'
             : 'deviceorientation';
     const handle = (event: Event) => {
-        const heading = compassFromOrientation(
-            event as unknown as OrientationReading,
-            screenAngle(),
-        );
+        const heading = toHeading(event as unknown as OrientationReading);
         if (heading !== null) {
             onHeading(heading);
         }
@@ -36,6 +45,20 @@ export function watchCompass(onHeading: (degrees: number) => void): () => void {
     globalThis.addEventListener(type, handle);
     return () => globalThis.removeEventListener(type, handle);
 }
+
+/** 화면 위쪽이 가리키는 나침반 방향(북쪽 0도, 시계 방향). 손에 든 휴대폰의 지도 마커에 쓴다 */
+export const watchCompass: HeadingWatcher = (onHeading) =>
+    watchOrientation(
+        (reading) => compassFromOrientation(reading, screenAngle()),
+        onHeading,
+    );
+
+/** 뒷면 카메라가 보는 나침반 방향. 목걸이에 세워 건 휴대폰이 횡단보도 쪽을 보는지 가릴 때 쓴다 */
+export const watchCameraHeading: HeadingWatcher = (onHeading) =>
+    watchOrientation(
+        (reading) => cameraHeadingFromOrientation(reading),
+        onHeading,
+    );
 
 /**
  * iOS 는 버튼을 누른 순간에 권한을 물어야 나침반 값이 온다. 버튼 클릭에서 바로 부른다.

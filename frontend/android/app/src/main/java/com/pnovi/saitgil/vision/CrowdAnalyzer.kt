@@ -161,9 +161,8 @@ fun freeDirections(blocked: Set<Int>, labels: List<Int> = CLOCK_SECTORS): List<I
 }
 
 /** 추적 중인 사람 하나. samples 는 (시각, 거리) 기록이다. */
-private class Track(val id: Int, var box: PersonBox) {
+private class Track(val id: Int, var box: PersonBox, var lastSeenMs: Long) {
     val samples = ArrayDeque<Pair<Long, Double>>()
-    var missed = 0
     var alertedAtMs: Long? = null
 
     /** 지난 거리를 잘린 박스(폭)로 쟀는지. 재는 방법이 바뀌면 거리가 튀므로 기록을 새로 시작한다 */
@@ -175,8 +174,8 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
     private val tracks = mutableListOf<Track>()
     private var nextId = 0
 
-    // 최근 프레임들의 빈 방향. 접근 경고에는 이어서 비어 있던 방향만 넣는다.
-    private val recentFree = ArrayDeque<List<Int>>()
+    // 최근 freeConfirmMs 동안 프레임들의 (시각, 빈 방향). 접근 경고에는 이어서 비어 있던 방향만 넣는다.
+    private val recentFree = ArrayDeque<Pair<Long, List<Int>>>()
 
     fun analyze(frame: DetectionFrame): CrowdAnalysis {
         val seen = match(frame)
@@ -209,10 +208,10 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
             track.box.top <= config.clippedEdge && track.box.bottom >= 1 - config.clippedEdge
         }
         val free = freeDirections(blocked, clockLabels(frame, config))
-        recentFree.addLast(free)
-        while (recentFree.size > config.freeConfirmFrames) recentFree.removeFirst()
+        recentFree.addLast(frame.timeMs to free)
+        while (recentFree.first().first < frame.timeMs - config.freeConfirmMs) recentFree.removeFirst()
         // 넓은 순서는 지금 프레임을 따르고, 최근 프레임 내내 비어 있던 방향만 남긴다.
-        val steadyFree = free.filter { direction -> recentFree.all { direction in it } }
+        val steadyFree = free.filter { direction -> recentFree.all { direction in it.second } }
 
         val level = when {
             frontClipped -> CrowdLevel.DANGER
@@ -252,16 +251,15 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
         for ((track, boxIndex, _) in pairs) {
             if (track in matchedTracks || boxIndex in matchedBoxes) continue
             track.box = frame.boxes[boxIndex]
-            track.missed = 0
+            track.lastSeenMs = frame.timeMs
             matchedTracks += track
             matchedBoxes += boxIndex
         }
-        tracks.filter { it !in matchedTracks }.forEach { it.missed += 1 }
-        tracks.removeAll { it.missed > config.trackMaxMissedFrames }
+        tracks.removeAll { frame.timeMs - it.lastSeenMs > config.trackLostMs }
 
         val added = frame.boxes.indices
             .filter { it !in matchedBoxes }
-            .map { Track(nextId++, frame.boxes[it]) }
+            .map { Track(nextId++, frame.boxes[it], frame.timeMs) }
         tracks += added
         return matchedTracks.toList() + added
     }

@@ -7,7 +7,7 @@
   걷는 시간은 거리 ÷ walking_speed_mps 로 계산한다.
 """
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +17,8 @@ from core.geo import LngLat, distance_m
 # 구간 시설물(facilityType) 중 지면 높이와 다른 곳. DEM 은 이 위·아래 높이를 모른다.
 # 1 교량, 2 터널, 3 고가도로, 12 육교, 14 지하보도, 18 지하철지하보도
 STRUCTURE_FACILITY_TYPES = frozenset({1, 2, 3, 12, 14, 18})
+# 지하보도 구간
+UNDERPASS_FACILITY_TYPE = 14
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,30 @@ class TmapRoute:
     @property
     def length_m(self) -> float:
         return self.distances_m[-1] if self.distances_m else 0.0
+
+    def underpass_round_trip_starts(self) -> list[LngLat]:
+        """지상에서 지하보도로 내려갔다가 다시 지상으로 올라오는 곳의 시작 위치.
+
+        이어진 지하보도 구간은 하나로 본다. 출발점에서 시작하거나 도착점에서
+        끝나는 지하보도는 올라오지 않으므로 뺀다.
+        """
+        starts: list[LngLat] = []
+        run_start: int | None = None
+        for index, segment in enumerate(self.segments):
+            if segment.facility_type == UNDERPASS_FACILITY_TYPE:
+                if run_start is None:
+                    run_start = index
+                continue
+            if run_start is not None and run_start > 0:
+                starts.append(
+                    self.line[self._vertex_at(self.segments[run_start].start_m)]
+                )
+            run_start = None
+        return starts
+
+    def _vertex_at(self, at_m: float) -> int:
+        """출발점부터 at_m 인 꼭짓점의 위치. 구간 시작은 꼭짓점과 거리가 같다."""
+        return min(bisect_left(self.distances_m, at_m), len(self.line) - 1)
 
     def on_structure(self, at_m: float) -> bool:
         """경로 위 at_m 지점이 교량·터널 같은 구조물 구간인지."""

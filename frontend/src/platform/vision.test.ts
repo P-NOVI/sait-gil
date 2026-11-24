@@ -5,6 +5,7 @@ const plugin = vi.hoisted(() => ({
     start: vi.fn(),
     stop: vi.fn(),
     setWalkSpeed: vi.fn(),
+    setNearCrosswalk: vi.fn(),
     addListener: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ import { connectVision } from '../hooks/useVision';
 import { freeDirectionText, visionReader } from '../lib/visionAlerts';
 
 import {
+    setVisionNearCrosswalk,
     setVisionWalkSpeed,
     startVision,
     VISION_NOT_READY,
@@ -77,6 +79,7 @@ describe('startVision', () => {
             nearestPersonM: null,
             freeDirections: [11, 12, 1],
             signal: null,
+            signalId: 0,
             obstacles: [],
         });
         expect(plugin.addListener).not.toHaveBeenCalled();
@@ -189,6 +192,7 @@ describe('startVision', () => {
                 nearestPersonM: 2.1,
                 freeDirections: [11],
                 signal: null,
+                signalId: 0,
                 obstacles: [],
             },
         ]);
@@ -207,6 +211,7 @@ describe('startVision', () => {
                 nearestPersonM: null,
                 freeDirections: [],
                 signal: null,
+                signalId: 0,
                 obstacles: [],
             },
         ]);
@@ -230,6 +235,7 @@ describe('startVision', () => {
                 nearestPersonM: null,
                 freeDirections: [12],
                 signal: null,
+                signalId: 0,
                 obstacles: [],
             },
             {
@@ -237,6 +243,7 @@ describe('startVision', () => {
                 nearestPersonM: null,
                 freeDirections: [],
                 signal: null,
+                signalId: 0,
                 obstacles: [],
             },
         ]);
@@ -256,6 +263,29 @@ describe('startVision', () => {
             'other',
             null,
         ]);
+        stop();
+    });
+
+    it('신호등 번호를 받고 잘못된 값은 0 으로 본다', async () => {
+        native.value = true;
+        const frames: VisionFrame[] = [];
+        const stop = await startVision((frame) => frames.push(frame));
+
+        emit({
+            level: 'clear',
+            freeDirections: [],
+            signal: 'red',
+            signalId: 3,
+        });
+        emit({
+            level: 'clear',
+            freeDirections: [],
+            signal: 'red',
+            signalId: 1.5,
+        });
+        emit({ level: 'clear', freeDirections: [], signal: 'red' });
+
+        expect(frames.map((frame) => frame.signalId)).toEqual([3, 0, 0]);
         stop();
     });
 
@@ -380,6 +410,7 @@ describe('startVision', () => {
             nearestPersonM: null,
             freeDirections: [2, 12, 10],
             signal: null,
+            signalId: 0,
             obstacles: [],
         });
         stop();
@@ -453,7 +484,7 @@ describe('startVision', () => {
 });
 
 describe('visionFailure', () => {
-    it('권한 거부 코드는 denied, 그 밖의 오류는 failed 로 본다', () => {
+    it('권한 거부 코드는 denied, 더 묻지 않는 거부는 blocked, 그 밖의 오류는 failed 로 본다', () => {
         expect(
             visionFailure(
                 Object.assign(new Error('권한 없음'), {
@@ -461,6 +492,13 @@ describe('visionFailure', () => {
                 }),
             ),
         ).toBe('denied');
+        expect(
+            visionFailure(
+                Object.assign(new Error('더 묻지 않음'), {
+                    code: 'CAMERA_BLOCKED',
+                }),
+            ),
+        ).toBe('blocked');
         expect(
             visionFailure(
                 Object.assign(new Error('카메라 실패'), {
@@ -527,6 +565,35 @@ describe('setVisionWalkSpeed', () => {
         native.value = true;
         plugin.setWalkSpeed.mockRejectedValue(new Error('실패'));
         expect(() => setVisionWalkSpeed(1.2)).not.toThrow();
+        await flush();
+    });
+});
+
+describe('setVisionNearCrosswalk', () => {
+    beforeEach(() => {
+        plugin.setNearCrosswalk.mockReset().mockResolvedValue(undefined);
+    });
+
+    it('앱에서는 횡단보도 근처인지 플러그인에 보낸다', () => {
+        native.value = true;
+
+        setVisionNearCrosswalk(true);
+        setVisionNearCrosswalk(false);
+
+        expect(plugin.setNearCrosswalk.mock.calls).toEqual([
+            [{ near: true }],
+            [{ near: false }],
+        ]);
+    });
+
+    it('웹에서는 보내지 않고, 보내기가 실패해도 오류를 던지지 않는다', async () => {
+        native.value = false;
+        setVisionNearCrosswalk(true);
+        expect(plugin.setNearCrosswalk).not.toHaveBeenCalled();
+
+        native.value = true;
+        plugin.setNearCrosswalk.mockRejectedValue(new Error('실패'));
+        expect(() => setVisionNearCrosswalk(true)).not.toThrow();
         await flush();
     });
 });
