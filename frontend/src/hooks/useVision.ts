@@ -20,6 +20,7 @@ import { walkSpeedOf } from '../lib/walkSpeed';
 import {
     type CrowdLevel,
     type LocationFix,
+    setVisionNearCrosswalk,
     setVisionWalkSpeed,
     startVision,
     visionAvailable,
@@ -159,6 +160,13 @@ export function useVision({
             setVisionWalkSpeed(walkSpeedOf(walkFix));
         }
     }, [running, walkFix]);
+
+    // 횡단보도 근처에서는 플러그인이 분석 해상도를 올려 먼 신호등을 한 번 더 찾는다. 켤 때마다 지금 값을 다시 알린다.
+    useEffect(() => {
+        if (running && visionAvailable()) {
+            setVisionNearCrosswalk(atCrosswalk);
+        }
+    }, [running, atCrosswalk]);
 
     useEffect(() => {
         if (!running || !visionAvailable()) {

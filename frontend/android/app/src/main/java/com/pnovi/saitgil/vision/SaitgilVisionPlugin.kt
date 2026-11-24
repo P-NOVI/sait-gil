@@ -2,6 +2,8 @@ package com.pnovi.saitgil.vision
 
 import android.Manifest
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
@@ -54,6 +56,15 @@ class SaitgilVisionPlugin : Plugin() {
 
     @Volatile
     private var walkSpeedAtMs = 0L
+
+    // 화면이 알려 주는, 길안내 경로의 횡단보도 근처인지(#134). 근처에서는 분석 해상도를 올리고 위쪽 가운데를 잘라 먼 신호등을 한 번 더 찾는다.
+    // 카메라 분석 스레드가 읽으므로 @Volatile 이다. 화면이 인식을 켤 때마다 다시 알려 주므로 멈출 때 지우지 않는다.
+    @Volatile
+    private var nearCrosswalk = false
+
+    // 근처를 벗어나면 highResOffDelayMs 뒤 해상도를 되돌린다. 그 안에 다시 근처가 되면 지워 다시 묶지 않는다.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val lowerResolution = Runnable { camera?.setHighRes(false) }
 
     // 권한을 요청하기 직전의 rationale 값. 요청 뒤 값과 비교해 "다시 묻지 않음"을 가린다.
     private var rationaleBeforeRequest = false
@@ -120,10 +131,13 @@ class SaitgilVisionPlugin : Plugin() {
             ?: CameraSession(
                 context,
                 activity,
-                LazyModelAnalyzer({ modelAsset }) { asset -> LiteRtDetector.load(context, detectorConfig, asset) },
+                LazyModelAnalyzer({ modelAsset }) { asset ->
+                    LiteRtDetector.load(context, detectorConfig, asset) { nearCrosswalk }
+                },
                 ::onDetections,
                 preview?.view,
             ).also { camera = it }
+        session.setHighRes(nearCrosswalk)
         session.start(
             onStarted = {
                 running = true
@@ -179,6 +193,19 @@ class SaitgilVisionPlugin : Plugin() {
         call.resolve()
     }
 
+    @PluginMethod
+    fun setNearCrosswalk(call: PluginCall) {
+        val near = call.getBoolean("near") ?: return call.reject("횡단보도 근처인지(near)가 없습니다")
+        nearCrosswalk = near
+        mainHandler.removeCallbacks(lowerResolution)
+        if (near) {
+            camera?.setHighRes(true)
+        } else {
+            mainHandler.postDelayed(lowerResolution, visionConfig.highResOffDelayMs)
+        }
+        call.resolve()
+    }
+
     /** 걸음 속도를 받은 지 walkSpeedStaleMs 가 지났으면 위치가 끊긴 것으로 보고 모르는 것(null)으로 본다 */
     private fun currentWalkSpeedMps(): Double? =
         if (SystemClock.elapsedRealtime() - walkSpeedAtMs > visionConfig.walkSpeedStaleMs) null else walkSpeedMps
@@ -193,6 +220,7 @@ class SaitgilVisionPlugin : Plugin() {
 
     override fun handleOnDestroy() {
         running = false
+        mainHandler.removeCallbacks(lowerResolution)
         camera?.close()
         camera = null
         preview?.remove()

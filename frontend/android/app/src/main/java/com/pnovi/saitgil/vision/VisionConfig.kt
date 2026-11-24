@@ -140,6 +140,12 @@ data class VisionConfig(
     val vehicleFastMps: Double = 5.0,
     /** 걸음 속도를 받은 지 이 시간(ms)이 지나면 위치가 끊긴 것으로 보고 0 으로 되돌린다. 마지막 속도가 계속 빠지는 일을 막는다 */
     val walkSpeedStaleMs: Long = 3_000,
+    /**
+     * 횡단보도 근처를 벗어난 뒤 이 시간(ms) 동안 다시 근처가 되지 않아야 분석 해상도를 되돌린다(#134).
+     * GPS 진행 거리가 근처 경계에서 오가도 다시 묶기(그동안 프레임이 끊김)를 되풀이하지 않게 한다. 올리는 것은 바로 한다.
+     * 실기기에서 맞출 초안 값이다
+     */
+    val highResOffDelayMs: Long = 5_000,
     /** 옆에서 걷는 길 가운데 쪽으로 이 속도(m/s) 이상 들어오면 건너오는 차로 본다 */
     val vehicleCrossingMps: Double = 1.5,
     /** vehicleMotionSpanMs 만큼 지켜보기 전이라도 길 위 이 거리(m) 안에서 vehicleMovingMps 넘게 다가오면 움직이는 차로 알린다 */
@@ -200,6 +206,25 @@ data class DetectorConfig(
     val logWarmupFrames: Int = 5,
     /** 레터박스 여백 밝기(0~255). 학습 때 Ultralytics 가 채우는 회색과 같다 */
     val padGray: Int = 114,
+    /**
+     * 횡단보도 근처에서 세운 영상의 위쪽 가운데를 잘라 신호등만 한 번 더 찾을 정사각형 한 변(px, #134).
+     * 근처에서는 분석 해상도를 올리므로(CameraSession) 모델 입력과 같은 크기로 잘라 줄이지 않고 넣는다.
+     * 960×1280 영상에서 가로 2/3 를 덮어, 앞쪽으로 보는 신호등 폭(가운데 60%)이 들어간다. 영상이 이보다 작으면 자르지 않는다
+     */
+    val signalCropSizePx: Int = 640,
+    /**
+     * 자를 칸 가운데의 세로 위치(위에서 0~1). 길 건너 신호등은 25~35m 떨어져 수평선(VisionConfig.horizonY 0.5) 조금 위에 보이고,
+     * 폰이 앞뒤로 기울어도 들어가게 위쪽으로 넉넉히 둔다. 실기기에서 맞출 초안 값이다
+     */
+    val signalCropCenterY: Double = 0.4,
+    /**
+     * 전체 영상과 자른 칸의 신호등 박스가 겹친 넓이가 작은 박스 넓이의 이 비율 이상이면 같은 신호등으로 보고 하나만 남긴다.
+     * 같은 신호등을 red·other 로 다르게 봐도 하나로 친다. 먼 신호등은 박스가 작아 몇 px 만 어긋나도 IoU 가 nmsIou 보다 낮아
+     * IoU 대신 작은 박스 기준으로 본다. 실기기에서 맞출 초안 값이다
+     */
+    val signalMergeOverlap: Double = 0.5,
+    /** 자른 칸의 끝(영상 끝이 아닌 쪽)에서 이 거리(px) 안까지 닿은 신호등 박스는 칸에 걸려 잘린 것으로 본다 */
+    val signalCropEdgePx: Int = 4,
 )
 
 /**

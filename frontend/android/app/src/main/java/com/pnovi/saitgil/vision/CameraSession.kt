@@ -56,6 +56,9 @@ class CameraSession(
     // 화면은 세로 고정(AndroidManifest 의 screenOrientation="portrait")이라 화면 방향이 바뀌지 않는다.
     // 그래서 분석을 만들 때 한 번만 잡고, 거꾸로 걸린 것은 applyMount 가 180° 더 돌린다.
     private var baseRotation = Surface.ROTATION_0
+
+    // 횡단보도 근처라 분석 해상도를 올렸는지(#134). 메인 스레드에서만 쓴다.
+    private var highRes = false
     private val orientation = object : OrientationEventListener(context) {
         override fun onOrientationChanged(degrees: Int) {
             val known = degrees.takeIf { it != ORIENTATION_UNKNOWN }
@@ -99,6 +102,45 @@ class CameraSession(
         }
     }
 
+    /**
+     * 분석 해상도를 올리거나(SIGNAL_ANALYSIS_SIZE) 되돌린다(ANALYSIS_SIZE). 횡단보도 근처에서 먼 신호등을 잘라 볼 큰 영상을 받으려고 쓴다.
+     * CameraX 는 분석 해상도를 묶을 때만 정하므로, 켜져 있으면 분석만 새로 만들어 다시 묶는다. 그동안 잠깐 프레임이 오지 않는다.
+     * 꺼져 있으면 다음에 켤 때 이 해상도로 묶는다. 다시 묶지 못하면 원래 해상도로 되돌린다.
+     */
+    fun setHighRes(on: Boolean) {
+        main.execute {
+            if (highRes != on) {
+                highRes = on
+                analysis?.let(::rebindAnalysis)
+            }
+        }
+    }
+
+    @MainThread
+    private fun rebindAnalysis(old: ImageAnalysis) {
+        val next = buildAnalysis()
+        useCases = useCases.map { if (it === old) next else it }
+        old.clearAnalyzer()
+        val cameraProvider = provider ?: return
+        if (!cameraProvider.isBound(old)) return
+        cameraProvider.unbind(old)
+        try {
+            cameraProvider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, next)
+            Log.i(TAG, if (highRes) "횡단보도 근처라 분석 해상도를 올립니다" else "분석 해상도를 되돌립니다")
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "분석 해상도를 바꾸지 못해 되돌립니다", error)
+            highRes = !highRes
+            val back = buildAnalysis()
+            useCases = useCases.map { if (it === next) back else it }
+            next.clearAnalyzer()
+            try {
+                cameraProvider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, back)
+            } catch (again: RuntimeException) {
+                Log.e(TAG, "분석을 다시 묶지 못했습니다", again)
+            }
+        }
+    }
+
     /** 플러그인이 사라질 때. 카메라를 끄고, 분석 중인 프레임이 끝나면 분석기를 닫은 뒤 분석 스레드를 닫는다. */
     fun close() {
         stop()
@@ -109,7 +151,10 @@ class CameraSession(
     private fun buildAnalysis(): ImageAnalysis {
         val resolution = ResolutionSelector.Builder()
             .setResolutionStrategy(
-                ResolutionStrategy(ANALYSIS_SIZE, ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER),
+                ResolutionStrategy(
+                    if (highRes) SIGNAL_ANALYSIS_SIZE else ANALYSIS_SIZE,
+                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                ),
             )
             .build()
         return ImageAnalysis.Builder()
@@ -173,6 +218,10 @@ class CameraSession(
 
         // 모델 입력(640×640)에 맞춘 해상도. 세우면 480×640 이라 줄이지 않고 좌우 여백만 붙여 넣는다.
         private val ANALYSIS_SIZE = Size(640, 480)
+
+        // 횡단보도 근처 해상도(#134). 세우면 960×1280 이라 전체는 반으로 줄여 넣고, 위쪽 가운데 640×640 은 줄이지 않고 신호등만 다시 찾는다.
+        // 건너편 보행등(30m)이 480×640 에서 약 6×12px 라 nano 모델이 잡기 어려워 두 배로 키운다.
+        private val SIGNAL_ANALYSIS_SIZE = Size(1280, 960)
 
         // 카메라가 돌고 있는지 로그로 확인할 간격(프레임 수)
         private const val LOG_EVERY_FRAMES = 30L
