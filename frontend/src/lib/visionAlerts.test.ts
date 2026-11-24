@@ -284,6 +284,10 @@ describe('visionFailureAlert', () => {
         });
     });
 
+    it('더 묻지 않는 권한 거부도 설정에서 허용하라고 알린다', () => {
+        expect(visionFailureAlert('blocked').text).toBe(VISION_DENIED_TEXT);
+    });
+
     it('그 밖의 실패는 카메라를 켜지 못했다고 알린다', () => {
         expect(visionFailureAlert('failed').text).toBe(VISION_FAILED_TEXT);
     });
