@@ -139,6 +139,14 @@ export const SPEECH_BUSY_MAX_MS = 15_000;
 // 넘으면 폰 마이크로 듣는다. 그동안은 듣기 시작이 늦어진다. 실기기에서 맞출 초안 값.
 export const BLUETOOTH_MIC_CONNECT_MS = 3_000;
 
+// 안내를 다 읽은 뒤 음성 인식을 시작하기 전에 기다리는 시간(ms).
+// 읽는 소리가 가라앉기 전에 인식기가 켜지면 말하기도 전에 끝나 버린다. 실기기에서 맞출 초안 값.
+export const LISTEN_START_DELAY_MS = 250;
+
+// 읽기를 마치고 마이크가 열리기 직전에 주는 짧은 진동(ms). 화면을 보지 않는 사용자에게 말할 차례임을 알린다.
+// 기다리는 시간(LISTEN_START_DELAY_MS)보다 짧아야 진동 소리가 인식에 섞이지 않는다. 진동 세기 설정을 따른다.
+export const LISTEN_READY_VIBRATION: readonly number[] = [100];
+
 // 카메라 인파 인식 알림
 export const VISION = {
     // 같은 단계·같은 빈 방향이 이만큼 연달아 나와야 믿는다. 한 프레임 튀는 것은 넘긴다.
