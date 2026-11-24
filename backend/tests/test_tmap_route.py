@@ -1,6 +1,10 @@
 import pytest
 
-from core.tmap_route import parse_route
+from core.tmap_route import (
+    ANNOUNCING_TURN_TYPES,
+    UNVERIFIED_FACILITY_TYPES,
+    parse_route,
+)
 from tests.helpers import LAT_STEP_M, tmap_response
 
 VERTICES = [(127.0, 37.5), (127.0, 37.501), (127.0, 37.502), (127.0, 37.503)]
@@ -32,6 +36,53 @@ def test_on_structure_only_inside_bridge_segment() -> None:
     assert not route.on_structure(LAT_STEP_M / 2)
     assert route.on_structure(LAT_STEP_M * 1.5)
     assert not route.on_structure(LAT_STEP_M * 2.5)
+
+
+def unannounced(response: dict) -> list[tuple[float, float]]:
+    return parse_route(response).unannounced_facility_starts(
+        UNVERIFIED_FACILITY_TYPES, ANNOUNCING_TURN_TYPES
+    )
+
+
+def test_facility_without_announcement_gives_its_start() -> None:
+    response = tmap_response(VERTICES, [200, 12, 11, 201], [11, 14, 11])
+
+    assert unannounced(response) == [VERTICES[1]]
+
+
+def test_facility_after_underpass_entry_is_announced() -> None:
+    response = tmap_response(VERTICES, [200, 126, 11, 201], [11, 14, 11])
+
+    assert unannounced(response) == []
+
+
+def test_joined_facility_segments_give_only_the_first_start() -> None:
+    response = tmap_response(VERTICES, [200, 12, 13, 201], [11, 14, 14])
+
+    assert unannounced(response) == [VERTICES[1]]
+
+
+def test_joined_facility_segments_need_announcement_only_at_start() -> None:
+    response = tmap_response(VERTICES, [200, 126, 13, 201], [11, 14, 14])
+
+    assert unannounced(response) == []
+
+
+def test_second_facility_run_needs_its_own_announcement() -> None:
+    response = tmap_response(VERTICES, [126, 13, 13, 201], [14, 11, 14])
+
+    assert unannounced(response) == [VERTICES[2]]
+
+
+def test_route_without_facility_has_no_unannounced_start() -> None:
+    assert unannounced(tmap_response(VERTICES, [200, 11, 11, 201])) == []
+
+
+def test_unannounced_ignores_missing_facility_codes() -> None:
+    response = tmap_response(VERTICES[:2], [200, 201])
+    response["features"][1]["properties"]["facilityType"] = ""
+
+    assert unannounced(response) == []
 
 
 def test_parse_route_handles_missing_codes() -> None:

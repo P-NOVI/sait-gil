@@ -51,6 +51,59 @@ def test_plan_routes_picks_detour_as_less_crowded_and_gentle() -> None:
     assert detour.slope.score == 0
 
 
+def detour_with_facility(turn: int) -> dict:
+    """DETOUR 와 같은 선. 두 번째 구간만 시설물 14 이고, 그 앞 안내점은 turn 이다."""
+    return tmap_response(
+        [START, (127.001, 37.5), (127.001, 37.502), END],
+        [200, turn, 12, 201],
+        [11, 14, 11],
+    )
+
+
+def test_plan_routes_skips_candidate_with_unannounced_facility() -> None:
+    risky = detour_with_facility(12)
+
+    planned = plan_routes([RECOMMENDED, risky], TIMELINE, settings(), flat_detour)
+
+    assert [p.kinds for p in planned] == [
+        (RouteKind.RECOMMENDED, RouteKind.LESS_CROWDED, RouteKind.GENTLE)
+    ]
+
+
+def test_plan_routes_keeps_candidate_with_announced_underpass() -> None:
+    underpass = detour_with_facility(126)
+
+    planned = plan_routes([RECOMMENDED, underpass], TIMELINE, settings(), flat_detour)
+
+    assert [p.kinds for p in planned][1] == (RouteKind.LESS_CROWDED, RouteKind.GENTLE)
+
+
+def test_plan_routes_keeps_candidate_sharing_the_recommended_facility() -> None:
+    # 둘 다 출발점에서 안내 없이 14 로 시작한다. 같은 곳이라 후보를 거르지 않는다.
+    recommended = tmap_response([START, (127.0, 37.501), END], [200, 11, 201], [14, 11])
+    shared = tmap_response(
+        [START, (127.001, 37.5), (127.001, 37.502), END],
+        [200, 12, 12, 201],
+        [14, 11, 11],
+    )
+
+    planned = plan_routes([recommended, shared], TIMELINE, settings(), flat_detour)
+
+    assert [p.kinds for p in planned][1] == (RouteKind.LESS_CROWDED, RouteKind.GENTLE)
+
+
+def test_plan_routes_skips_candidate_with_its_own_unannounced_facility() -> None:
+    # 추천 경로도 안내 없는 14 구간이 있지만, 후보의 14 구간은 다른 곳이다.
+    recommended = tmap_response([START, (127.0, 37.501), END], [200, 11, 201], [14, 11])
+    risky = detour_with_facility(12)
+
+    planned = plan_routes([recommended, risky], TIMELINE, settings(), flat_detour)
+
+    assert [p.kinds for p in planned] == [
+        (RouteKind.RECOMMENDED, RouteKind.LESS_CROWDED, RouteKind.GENTLE)
+    ]
+
+
 def test_plan_routes_events_include_crowd_start() -> None:
     recommended = plan_routes([RECOMMENDED], TIMELINE, settings(), flat_detour)[0]
 

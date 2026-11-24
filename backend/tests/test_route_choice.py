@@ -56,6 +56,32 @@ def test_tie_prefers_shorter_candidate() -> None:
     assert options[1] == RouteOption(2, (RouteKind.LESS_CROWDED,))
 
 
+def test_ineligible_candidate_is_never_picked() -> None:
+    options = choose(
+        ScoredRoute(500, congestion_score=100, slope_score=100),
+        ScoredRoute(400, congestion_score=0, slope_score=0, eligible=False),
+        ScoredRoute(700, congestion_score=50, slope_score=20),
+    )
+
+    assert options == [
+        RouteOption(0, (RouteKind.RECOMMENDED,)),
+        RouteOption(2, (RouteKind.LESS_CROWDED, RouteKind.GENTLE)),
+    ]
+
+
+def test_recommended_wins_when_every_candidate_is_ineligible() -> None:
+    options = choose(
+        ScoredRoute(500, congestion_score=100, slope_score=100),
+        ScoredRoute(400, congestion_score=0, slope_score=0, eligible=False),
+    )
+
+    assert options == [
+        RouteOption(
+            0, (RouteKind.RECOMMENDED, RouteKind.LESS_CROWDED, RouteKind.GENTLE)
+        )
+    ]
+
+
 def test_only_recommended_route() -> None:
     options = choose(ScoredRoute(500, congestion_score=100, slope_score=100))
 

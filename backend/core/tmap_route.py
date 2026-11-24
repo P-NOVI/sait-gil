@@ -7,7 +7,7 @@
   걷는 시간은 거리 ÷ walking_speed_mps 로 계산한다.
 """
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +17,13 @@ from core.geo import LngLat, distance_m
 # 구간 시설물(facilityType) 중 지면 높이와 다른 곳. DEM 은 이 위·아래 높이를 모른다.
 # 1 교량, 2 터널, 3 고가도로, 12 육교, 14 지하보도, 18 지하철지하보도
 STRUCTURE_FACILITY_TYPES = frozenset({1, 2, 3, 12, 14, 18})
+# 후보 경로에서 거르는 구간 시설물. 14 는 지하보도 진입 안내 없이 나와 도로를 건너는
+# 구간이 된 적이 있고(서울역 → 남대문시장, 최단 옵션), 뜻은 Tmap 에서 확인하지 못했다.
+UNVERIFIED_FACILITY_TYPES = frozenset({14})
+# 위 시설물 구간이 어떤 곳인지 알려 주는 안내점(turnType). 126 지하보도 진입
+ANNOUNCING_TURN_TYPES = frozenset({126})
+# 두 경로의 구간 시작점이 이 거리 안이면 같은 곳으로 본다(m)
+SAME_PLACE_M = 5.0
 
 
 @dataclass(frozen=True)
@@ -45,6 +52,31 @@ class TmapRoute:
     @property
     def length_m(self) -> float:
         return self.distances_m[-1] if self.distances_m else 0.0
+
+    def unannounced_facility_starts(
+        self, facility_types: frozenset[int], announcing_turn_types: frozenset[int]
+    ) -> list[LngLat]:
+        """facility_types 구간 중 announcing_turn_types 안내점 없이 시작하는 곳의 위치.
+
+        이어진 구간은 하나로 보고, 첫 구간의 시작점에 안내점이 있는지만 본다.
+        """
+        announced_at = {
+            point.distance_m
+            for point in self.guide_points
+            if point.turn_type in announcing_turn_types
+        }
+        starts: list[LngLat] = []
+        previous_inside = False
+        for segment in self.segments:
+            inside = segment.facility_type in facility_types
+            if inside and not previous_inside and segment.start_m not in announced_at:
+                starts.append(self.line[self._vertex_at(segment.start_m)])
+            previous_inside = inside
+        return starts
+
+    def _vertex_at(self, at_m: float) -> int:
+        """출발점부터 at_m 인 꼭짓점의 위치. 구간 시작은 꼭짓점과 거리가 같다."""
+        return min(bisect_left(self.distances_m, at_m), len(self.line) - 1)
 
     def on_structure(self, at_m: float) -> bool:
         """경로 위 at_m 지점이 교량·터널 같은 구조물 구간인지."""
