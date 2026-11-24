@@ -26,6 +26,13 @@ export type LocationFilterState = {
         /** 버리기 시작했을 때의 누적 걸음 수. 걸음 센서를 쓸 수 없었으면 없다. */
         fromSteps?: number;
     } | null;
+    /** 보폭 보정. 믿는 GPS 로 걸은 거리 ÷ 걸음 수로 맞춘다. */
+    stride: {
+        /** 맞춘 보폭(m). 아직 못 쟀으면 null 이고 settings.stepLengthM 을 쓴다. */
+        stepLengthM: number | null;
+        /** 보폭을 재는 구간의 시작. 믿지 않는 구간이 끼면 버린다. */
+        from: { position: LngLat; steps: number } | null;
+    };
 };
 
 /** 걸음 센서로 잰 움직임. 걸음 센서를 쓸 수 있을 때만 넘긴다. */
@@ -39,10 +46,18 @@ export type Motion = {
 export const NEW_LOCATION_FILTER: LocationFilterState = {
     anchor: null,
     jump: null,
+    stride: { stepLengthM: null, from: null },
 };
 
+/** 지금 쓸 보폭(m). 맞춘 값이 있으면 그것을, 없으면 설정값을 쓴다. */
+export const strideOf = (
+    state: LocationFilterState,
+    settings: LocationFilterSettings = LOCATION_FILTER,
+): number => state.stride.stepLengthM ?? settings.stepLengthM;
+
 type Filtered = {
-    state: LocationFilterState;
+    /** 보폭 보정(stride)은 filterFix 가 이어서 채운다. */
+    state: Omit<LocationFilterState, 'stride'>;
     /** 쓸 위치. 튄 위치라 버렸으면 null */
     fix: LocationFix | null;
     /** 걸음 수와 맞지 않아 믿지 않는 중이면 true. 이때 안내는 걸음 수로 추정한 위치를 쓴다. */
@@ -88,8 +103,8 @@ function judgeByMotion(
     settings: LocationFilterSettings,
 ): Filtered | null {
     const { jump } = state;
-    const walkedM =
-        Math.max(0, motion.steps - anchorSteps) * settings.stepLengthM;
+    const stepLengthM = strideOf(state, settings);
+    const walkedM = Math.max(0, motion.steps - anchorSteps) * stepLengthM;
     const apartM = distanceM(anchor.position, fix.position);
     const withinReach =
         apartM <= walkedM * settings.stepReachMargin + fix.accuracy;
@@ -109,7 +124,7 @@ function judgeByMotion(
     // 이미 믿지 않는 중. 추정한 위치가 없으면(경로가 없을 때) 걸어서 갈 수 있는 거리로 돌아와야 한다.
     const sinceJumpM =
         Math.max(0, motion.steps - (jump.fromSteps ?? motion.steps)) *
-        settings.stepLengthM;
+        stepLengthM;
     const back = motion.expected
         ? distanceM(motion.expected, fix.position) <=
           Math.min(
@@ -138,6 +153,79 @@ export function filterFix(
     fix: LocationFix,
     nowMs: number,
     settings: LocationFilterSettings = LOCATION_FILTER,
+    motion?: Motion,
+): { state: LocationFilterState; fix: LocationFix | null; distrusted?: true } {
+    const judged = judgeFix(state, fix, nowMs, settings, motion);
+    return {
+        ...judged,
+        state: {
+            ...judged.state,
+            stride: motion
+                ? nextStride(state, judged, fix, motion, settings)
+                : state.stride,
+        },
+    };
+}
+
+/**
+ * 믿는 GPS 로 걸은 거리 ÷ 걸음 수로 보폭을 맞춘다.
+ * 믿지 않는 구간이 끼었거나(튄 위치) 믿어도 오차가 크면 그 구간으로는 재지 않는다.
+ */
+function nextStride(
+    state: LocationFilterState,
+    judged: Filtered,
+    fix: LocationFix,
+    motion: Motion,
+    settings: LocationFilterSettings,
+): LocationFilterState['stride'] {
+    const { stride } = state;
+    if (judged.distrusted || state.jump || judged.state.jump) {
+        return { ...stride, from: null };
+    }
+    if (!judged.fix || fix.accuracy > settings.strideMaxAccuracyM) {
+        return stride;
+    }
+    const here = { position: judged.fix.position, steps: motion.steps };
+    if (!stride.from) {
+        return { ...stride, from: here };
+    }
+    const walkedSteps = motion.steps - stride.from.steps;
+    if (walkedSteps < settings.strideWindowSteps) {
+        return stride;
+    }
+    const measuredM =
+        distanceM(stride.from.position, here.position) / walkedSteps;
+    if (measuredM < settings.strideMinM || measuredM > settings.strideMaxM) {
+        return { ...stride, from: here };
+    }
+    const current = strideOf(state, settings);
+    return {
+        stepLengthM: current + (measuredM - current) * settings.strideBlend,
+        from: here,
+    };
+}
+
+/** 추정한 경로 위 위치를 안내에 넘길 위치로 만든다. 속력은 받은 위치의 값을 그대로 둔다(없으면 모름). */
+export function estimatedFix(
+    received: LocationFix,
+    expected: LngLat,
+    settings: LocationFilterSettings = LOCATION_FILTER,
+): LocationFix {
+    const fix: LocationFix = {
+        position: expected,
+        accuracy: settings.estimatedAccuracyM,
+    };
+    if (received.speedMps !== undefined) {
+        fix.speedMps = received.speedMps;
+    }
+    return fix;
+}
+
+function judgeFix(
+    state: LocationFilterState,
+    fix: LocationFix,
+    nowMs: number,
+    settings: LocationFilterSettings,
     motion?: Motion,
 ): Filtered {
     const { anchor } = state;

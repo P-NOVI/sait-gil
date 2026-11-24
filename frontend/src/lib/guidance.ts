@@ -34,6 +34,19 @@ import {
 
 export const ARRIVED_KEY = 'goal:arrived';
 export const REROUTE_KEY = 'route:reroute';
+
+/**
+ * 걸음 수로 추정한 위치(estimated)로는 도착을 알리지 않는다.
+ * 추정 위치는 걸음 수 오차가 쌓여 실제보다 앞서 목적지에 닿을 수 있어, 도착은 믿는 GPS 위치로만 판정한다.
+ */
+export function withoutArrival(
+    alerts: readonly Alert[],
+    estimated: boolean,
+): Alert[] {
+    return estimated
+        ? alerts.filter((alert) => alert.key !== ARRIVED_KEY)
+        : [...alerts];
+}
 export const REROUTE_FAILED_KEY = 'route:reroute-failed';
 export const LOCATION_LOST_KEY = 'location:lost';
 export const APPROXIMATE_KEY = 'location:approximate';

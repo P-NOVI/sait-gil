@@ -5,12 +5,14 @@ import { NAVIGATION } from '../settings';
 import { distanceM, type LngLat } from './geo';
 import {
     ARRIVED_KEY,
+    deadReckon,
     type GuidedRoute,
     guidanceStep,
     markAnnounced,
     NEW_GUIDANCE,
     REROUTE_KEY,
     shownFix,
+    withoutArrival,
 } from './guidance';
 import { dueBlockAlert, eventKey, type RouteEvent } from './routeEvents';
 
@@ -336,5 +338,47 @@ describe('guidanceStep 블럭 안내', () => {
             '10미터 앞에 계단이 있습니다.',
             '이번 블럭 끝에 횡단보도가 있습니다.',
         ]);
+    });
+});
+
+describe('withoutArrival', () => {
+    const arrived = { key: ARRIVED_KEY, level: 'route', text: '도착' } as const;
+    const turn = {
+        key: 'turn',
+        level: 'route',
+        text: '곧 오른쪽입니다.',
+    } as const;
+
+    it('추정 위치일 때는 도착 알림만 뺀다', () => {
+        expect(withoutArrival([turn, arrived], true)).toEqual([turn]);
+    });
+
+    it('믿는 위치일 때는 그대로 둔다', () => {
+        expect(withoutArrival([turn, arrived], false)).toEqual([turn, arrived]);
+    });
+});
+
+describe('deadReckon', () => {
+    const last = { route: ROUTE, travelledM: 100, atMs: 0 };
+
+    it('마지막 진행 거리에서 걸은 만큼 경로 위로 나아간다', () => {
+        const point = deadReckon(ROUTE, last, 30);
+
+        expect(distanceM(point ?? START, north(130))).toBeLessThan(0.5);
+    });
+
+    it('경로 끝을 넘으면 끝점에 둔다', () => {
+        expect(deadReckon(ROUTE, last, 900)).toEqual(north(500));
+    });
+
+    it('걸음이 줄어도 뒤로 가지 않는다', () => {
+        const point = deadReckon(ROUTE, last, -20);
+
+        expect(distanceM(point ?? START, north(100))).toBeLessThan(0.5);
+    });
+
+    it('직전 진행이 없거나 다른 경로면 추정하지 않는다', () => {
+        expect(deadReckon(ROUTE, null, 10)).toBeNull();
+        expect(deadReckon({ ...ROUTE }, last, 10)).toBeNull();
     });
 });

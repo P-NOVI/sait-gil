@@ -61,6 +61,16 @@ export const LOCATION_FILTER = {
     resumeToleranceMaxM: 20,
     // 걸음 수로 추정한 위치를 안내에 넘길 때의 오차 반경(m)
     estimatedAccuracyM: 10,
+    // 보폭 보정: 믿는 GPS 로 이만큼 걸을 때마다(걸음 수) 걸은 거리 ÷ 걸음 수로 보폭을 다시 잰다.
+    // 짧으면 GPS 오차가 크게 섞이고, 길면 보폭이 늦게 맞춰진다.
+    strideWindowSteps: 20,
+    // 잰 보폭이 이 범위 밖이면(멈춰 있었거나 위치가 튀었던 구간) 버린다(m).
+    strideMinM: 0.3,
+    strideMaxM: 1.0,
+    // 새로 잰 보폭을 반영하는 비율(0~1). 클수록 빨리 맞지만 GPS 오차에 흔들린다.
+    strideBlend: 0.3,
+    // 보폭을 잴 때 쓰는 위치의 최대 오차(m). 이보다 부정확한 위치는 재지 않는다.
+    strideMaxAccuracyM: 15,
 } as const;
 
 export type LocationFilterSettings = typeof LOCATION_FILTER;

@@ -13,11 +13,14 @@ import {
     LOCATION_LOST_KEY,
     markAnnounced,
     NEW_GUIDANCE,
+    withoutArrival,
 } from '../lib/guidance';
 import {
+    estimatedFix,
     filterFix,
     type Motion,
     NEW_LOCATION_FILTER,
+    strideOf,
 } from '../lib/locationFilter';
 import {
     allowScreenOff,
@@ -163,7 +166,7 @@ export function useGuidance({
                                             current.route,
                                             state.last,
                                             (steps - stepsAtLast) *
-                                                LOCATION_FILTER.stepLengthM,
+                                                strideOf(filter),
                                         )
                                       : null,
                           };
@@ -176,13 +179,12 @@ export function useGuidance({
                 );
                 filter = filtered.state;
                 let { fix } = filtered;
+                let estimated = false;
                 // 걸음 수와 맞지 않아 믿지 않는 동안에는 걸음 수로 추정한 경로 위 위치로 안내를 잇는다.
                 // 경로를 벗어난 것으로 보지 않아 다시 찾지 않는다. 믿지 않는 시간에는 상한이 있다(distrustLimitMs).
                 if (!fix && filtered.distrusted && motion?.expected) {
-                    fix = {
-                        position: motion.expected,
-                        accuracy: LOCATION_FILTER.estimatedAccuracyM,
-                    };
+                    fix = estimatedFix(received, motion.expected);
+                    estimated = true;
                 }
                 // 튄 위치는 지도와 안내에 쓰지 않고 다음 위치를 기다린다.
                 if (!fix) {
@@ -219,7 +221,12 @@ export function useGuidance({
                 );
                 state = step.state;
                 stepsAtLast = steps;
-                const picked = pickAlert(step.alerts, spokenAt.current, now);
+                // 추정 위치로는 도착을 알리지 않는다. 목적지 근처에서 GPS 가 튀어도 안내가 일찍 끝나지 않게 한다.
+                const picked = pickAlert(
+                    withoutArrival(step.alerts, estimated),
+                    spokenAt.current,
+                    now,
+                );
                 // 읽는 중이라 미룬 알림은 표시하지 않아 다음 위치에서 다시 고른다.
                 const alert =
                     picked && !current.busyFor(picked.level) ? picked : null;

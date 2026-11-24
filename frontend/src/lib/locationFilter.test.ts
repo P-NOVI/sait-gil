@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { LocationFix } from '../platform';
 import { LOCATION_FILTER } from '../settings';
 import type { LngLat } from './geo';
-import { filterFix, NEW_LOCATION_FILTER } from './locationFilter';
+import {
+    estimatedFix,
+    filterFix,
+    NEW_LOCATION_FILTER,
+    strideOf,
+} from './locationFilter';
 
 const START: LngLat = [127, 37.5];
 const north = (meters: number): LngLat => [127, 37.5 + meters / 111_195];
@@ -224,5 +229,121 @@ describe('filterFix (걸음 센서)', () => {
             false,
         ]);
         expect(results.some((result) => result.distrusted)).toBe(false);
+    });
+});
+
+describe('estimatedFix', () => {
+    it('받은 위치의 속력을 그대로 이어 붙이고 방향은 붙이지 않는다', () => {
+        const received: LocationFix = { ...at(60), speedMps: 1.1 };
+        const fix = estimatedFix(received, north(10));
+
+        expect(fix).toEqual({
+            position: north(10),
+            accuracy: LOCATION_FILTER.estimatedAccuracyM,
+            speedMps: 1.1,
+        });
+    });
+
+    it('받은 위치에 속력이 없으면 속력을 만들지 않는다', () => {
+        const fix = estimatedFix(
+            { position: north(60), accuracy: 5 },
+            north(10),
+        );
+
+        expect(fix.speedMps).toBeUndefined();
+    });
+});
+
+describe('보폭 보정', () => {
+    const motion = (steps: number) => ({ steps, expected: null });
+    // 한 걸음 stepM 으로 1초에 2걸음씩 걷는 사람의 위치를 받는다.
+    function walk(stepM: number, seconds: number, from = NEW_LOCATION_FILTER) {
+        let state = from;
+        for (let second = 0; second <= seconds; second += 1) {
+            state = filterFix(
+                state,
+                at(second * 2 * stepM),
+                second * 1_000,
+                LOCATION_FILTER,
+                motion(second * 2),
+            ).state;
+        }
+        return state;
+    }
+
+    it('처음에는 설정 보폭을 쓴다', () => {
+        expect(strideOf(NEW_LOCATION_FILTER)).toBe(LOCATION_FILTER.stepLengthM);
+    });
+
+    it('믿는 GPS 로 걸으면 실제 보폭에 가깝게 맞춘다', () => {
+        const state = walk(0.7, 100);
+
+        expect(strideOf(state)).toBeGreaterThan(0.65);
+        expect(strideOf(state)).toBeLessThan(0.75);
+    });
+
+    it('보폭이 맞춰지면 오래 걸어도 믿지 않는 상태로 빠지지 않는다', () => {
+        const state = walk(0.7, 100);
+        const result = filterFix(
+            state,
+            at(100 * 2 * 0.7 + 1.4),
+            101_000,
+            LOCATION_FILTER,
+            motion(202),
+        );
+        expect(result.fix).not.toBeNull();
+        expect(result.distrusted).toBeUndefined();
+    });
+
+    it('멈춰 있던 구간(걸음 수만 늘고 거리는 그대로)은 보폭에 반영하지 않는다', () => {
+        let state = walk(0.5, 40);
+        const before = strideOf(state);
+        for (let second = 41; second <= 80; second += 1) {
+            state = filterFix(
+                state,
+                at(40),
+                second * 1_000,
+                LOCATION_FILTER,
+                motion(second * 2),
+            ).state;
+        }
+
+        expect(strideOf(state)).toBeCloseTo(before, 5);
+    });
+
+    it('오차가 큰 위치로는 보폭을 재지 않는다', () => {
+        let state = NEW_LOCATION_FILTER;
+        for (let second = 0; second <= 60; second += 1) {
+            state = filterFix(
+                state,
+                at(second * 2 * 0.7, LOCATION_FILTER.strideMaxAccuracyM + 5),
+                second * 1_000,
+                LOCATION_FILTER,
+                motion(second * 2),
+            ).state;
+        }
+
+        expect(strideOf(state)).toBe(LOCATION_FILTER.stepLengthM);
+    });
+
+    it('튄 위치가 끼면 재던 구간을 버린다', () => {
+        const state = walk(0.7, 30);
+        const jumped = filterFix(
+            state,
+            at(500),
+            31_000,
+            LOCATION_FILTER,
+            motion(62),
+        );
+
+        expect(jumped.distrusted).toBe(true);
+        expect(jumped.state.stride.from).toBeNull();
+        expect(strideOf(jumped.state)).toBe(strideOf(state));
+    });
+
+    it('걸음 센서가 없으면 보폭 상태를 바꾸지 않는다', () => {
+        const result = filterFix(NEW_LOCATION_FILTER, at(0), 0);
+
+        expect(result.state.stride).toEqual(NEW_LOCATION_FILTER.stride);
     });
 });
