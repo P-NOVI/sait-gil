@@ -34,6 +34,9 @@ import {
 
 export const ARRIVED_KEY = 'goal:arrived';
 export const REROUTE_KEY = 'route:reroute';
+export const REROUTE_FAILED_KEY = 'route:reroute-failed';
+export const LOCATION_LOST_KEY = 'location:lost';
+export const APPROXIMATE_KEY = 'location:approximate';
 
 /**
  * 걸음 수로 추정한 위치(estimated)로는 도착을 알리지 않는다.
@@ -47,9 +50,6 @@ export function withoutArrival(
         ? alerts.filter((alert) => alert.key !== ARRIVED_KEY)
         : [...alerts];
 }
-export const REROUTE_FAILED_KEY = 'route:reroute-failed';
-export const LOCATION_LOST_KEY = 'location:lost';
-export const APPROXIMATE_KEY = 'location:approximate';
 
 /** 사용자가 고른 경로. 이벤트 목록은 백엔드가 경로마다 만들어 준다. */
 export type GuidedRoute = RouteLine & { events: RouteEvent[] };

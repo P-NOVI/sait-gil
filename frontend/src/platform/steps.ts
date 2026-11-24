@@ -46,7 +46,12 @@ export function watchSteps(onSteps: (steps: number) => void): () => void {
                 return;
             }
             handle = listener;
-            const { available } = await inPermissionOrder(() => native.start());
+            // 권한 창을 기다리는 사이 멈췄으면 센서를 켜지 않는다. (stop 이 start 보다 먼저 도착하는 것을 막는다.)
+            const { available } = await inPermissionOrder(() =>
+                stopped
+                    ? Promise.resolve({ available: false })
+                    : native.start(),
+            );
             if (!available) {
                 await listener.remove();
                 handle = null;

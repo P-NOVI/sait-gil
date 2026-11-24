@@ -96,6 +96,27 @@ describe('watchSteps', () => {
     });
 });
 
+describe('watchSteps 권한 대기 중 멈춤', () => {
+    it('대기하는 사이 멈추면 센서를 켜지 않는다', async () => {
+        let finishOther: () => void = () => undefined;
+        // 카메라 권한 창처럼 앞선 요청이 끝나지 않은 상태
+        const other = inPermissionOrder(
+            () =>
+                new Promise<void>((resolve) => {
+                    finishOther = resolve;
+                }),
+        );
+        const stop = watchSteps(vi.fn());
+        await flush();
+        stop();
+        finishOther();
+        await other;
+        await flush();
+
+        expect(plugin.start).not.toHaveBeenCalled();
+    });
+});
+
 describe('inPermissionOrder', () => {
     it('앞선 요청이 끝난 뒤에 다음 요청을 보낸다', async () => {
         const order: string[] = [];
