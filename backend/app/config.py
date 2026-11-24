@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     collector_sdot_max_pages: int = 300
     # 수집 DB가 비었을 때만 받는 S-DoT 최신 행 수
     collector_sdot_rows: int = 2000
+    # DB의 최신 S-DoT 측정이 이 시간보다 오래되면 수집을 실패로 끝내 알린다.
+    # API 가 멈추면 수집이 0행으로 정상 종료해 알아채기 어려워서 둔다.
+    collector_sdot_stale_hours: int = 48
     # 날씨 실황은 지난 이 시간 안에서 DB에 없는 정시만 받는다.
     # 기상청은 24시간 안만 준다.
     collector_backfill_hours: int = 12
