@@ -157,7 +157,7 @@ export function filterFix(
         if (judged) {
             return judged;
         }
-        return stillOrMove(state, anchor, fix, nowMs, settings, motion);
+        return stillOrMove(anchor, fix, nowMs, settings, motion);
     }
     const elapsedS = Math.max(0, nowMs - anchor.atMs) / 1000;
     const reachM = settings.maxSpeedMps * elapsedS + fix.accuracy;
@@ -171,12 +171,11 @@ export function filterFix(
             ? moveTo(fix, nowMs, motion)
             : { state: { ...state, jump }, fix: null };
     }
-    return stillOrMove(state, anchor, fix, nowMs, settings, motion);
+    return stillOrMove(anchor, fix, nowMs, settings, motion);
 }
 
 /** 믿어도 되는 위치를 멈춤 보정한다. 멈춘 곳에서 벗어났으면 새 기준 위치로 삼는다. */
 function stillOrMove(
-    state: LocationFilterState,
     anchor: NonNullable<LocationFilterState['anchor']>,
     fix: LocationFix,
     nowMs: number,
