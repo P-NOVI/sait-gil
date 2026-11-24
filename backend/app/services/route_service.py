@@ -19,7 +19,7 @@ from core.congestion import (
     congestion_summary,
     timed_point_levels,
 )
-from core.geo import LinePoint, LngLat, line_key, sample_line
+from core.geo import LinePoint, LngLat, distance_m, line_key, sample_line
 from core.route_choice import RouteKind, ScoredRoute, choose_routes
 from core.route_events import RouteEvent, route_events
 from core.slope import SlopeSummary, slope_summary
@@ -62,9 +62,22 @@ def plan_routes(
         _measure(route, points, heights, timeline, settings)
         for route, points, heights in zip(routes, samples, elevations, strict=True)
     ]
+    # 지상에서 지하보도로 내려갔다 올라오는 곳이 있는데 추천 경로에는 같은 곳이 없으면,
+    # 그 후보는 덜 붐비는 길·완만한 길에서 뺀다.
+    recommended_starts = (
+        measured[0].route.underpass_round_trip_starts() if measured else []
+    )
     options = choose_routes(
         [
-            ScoredRoute(m.route.length_m, m.congestion.score, m.slope.score)
+            ScoredRoute(
+                m.route.length_m,
+                m.congestion.score,
+                m.slope.score,
+                eligible=all(
+                    _near_any(start, recommended_starts, settings.route_same_place_m)
+                    for start in m.route.underpass_round_trip_starts()
+                ),
+            )
             for m in measured
         ],
         settings.route_congestion_margin_m,
@@ -91,6 +104,10 @@ def walk_end(
     """가장 긴 경로를 speed_mps 로 다 걸었을 때의 시각."""
     longest = max((route.length_m for route in _unique_routes(responses)), default=0)
     return departed_at + timedelta(seconds=longest / speed_mps)
+
+
+def _near_any(position: LngLat, others: Sequence[LngLat], within_m: float) -> bool:
+    return any(distance_m(position, other) <= within_m for other in others)
 
 
 def _unique_routes(responses: Sequence[Mapping[str, Any]]) -> list[TmapRoute]:
