@@ -1,6 +1,6 @@
 package com.pnovi.saitgil.vision
 
-// 차·장애물 박스를 프레임마다 이어 같은 물체로 보고, 서 있는 물체를 알린 기록을 남긴다.
+// 차·장애물 박스를 프레임마다 이어 같은 물체로 본다.
 // VehicleTracker 와 ObstacleTracker 가 같이 쓴다. Android 클래스를 쓰지 않는다.
 
 import kotlin.math.abs
@@ -9,18 +9,19 @@ import kotlin.math.min
 
 /** 프레임마다 이어 보는 물체 하나 */
 internal open class BoxTrack(val kind: DetectedClass, var box: ObjectBox) {
-    /** 연달아 안 보인 프레임 수 */
-    var missed = 0
+    /** 마지막으로 보인 프레임 시각(ms) */
+    var lastSeenMs = 0L
 }
 
 /**
  * 새 박스를 tracks 의 같은 클래스 물체와 짝지어 tracks 를 고친다. 많이 겹치는 것부터, 안 겹치면 가운데가 가까운 것끼리.
- * 짝이 없는 박스는 newTrack 으로 더하고, obstacleMaxMissedFrames 보다 오래 안 보인 물체는 뺀다.
+ * 짝이 없는 박스는 newTrack 으로 더하고, objectLostMs 보다 오래 안 보인 물체는 뺀다.
  * 이번 프레임에 보인 물체를 이어 본 것, 새로 더한 것 순서로 돌려준다.
  */
 internal fun <T : BoxTrack> updateTracks(
     tracks: MutableList<T>,
     boxes: List<ObjectBox>,
+    nowMs: Long,
     config: VisionConfig,
     newTrack: (ObjectBox) -> T,
 ): List<T> {
@@ -33,13 +34,14 @@ internal fun <T : BoxTrack> updateTracks(
     for ((track, index, _) in pairs) {
         if (track in matchedTracks || index in matchedBoxes) continue
         track.box = boxes[index]
-        track.missed = 0
+        track.lastSeenMs = nowMs
         matchedTracks += track
         matchedBoxes += index
     }
-    tracks.filter { it !in matchedTracks }.forEach { it.missed += 1 }
-    tracks.removeAll { it.missed > config.obstacleMaxMissedFrames }
-    val added = boxes.indices.filter { it !in matchedBoxes }.map { newTrack(boxes[it]) }
+    tracks.removeAll { nowMs - it.lastSeenMs > config.objectLostMs }
+    val added = boxes.indices
+        .filter { it !in matchedBoxes }
+        .map { index -> newTrack(boxes[index]).also { it.lastSeenMs = nowMs } }
     tracks += added
     return matchedTracks.toList() + added
 }
@@ -57,27 +59,6 @@ private fun sameObjectScore(previous: ObjectBox, next: ObjectBox, config: Vision
     val shift = abs(next.centerX - previous.centerX)
     val ratio = max(next.height, previous.height) / min(next.height, previous.height)
     return if (shift <= config.objectMaxShift && ratio <= config.objectMaxSizeRatio) 1 - shift else null
-}
-
-/**
- * 서 있는 물체 하나를 알린 기록. 처음 한 번 알리고, closeM 밖에서 알린 물체가 closeM 안으로 들어오면 한 번 더 알린다.
- */
-internal class NoticeRecord {
-    private var firstAtM: Double? = null
-    private var again = false
-
-    /** 한 번이라도 알렸는지 */
-    val noticed: Boolean get() = firstAtM != null
-
-    /** 지금 거리에서 알릴 차례인지 */
-    fun due(distanceM: Double, closeM: Double): Boolean {
-        val first = firstAtM ?: return true
-        return !again && first > closeM && distanceM <= closeM
-    }
-
-    fun mark(distanceM: Double) {
-        if (firstAtM == null) firstAtM = distanceM else again = true
-    }
 }
 
 /**

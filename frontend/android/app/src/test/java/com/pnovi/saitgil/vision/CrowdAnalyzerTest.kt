@@ -3,6 +3,7 @@ package com.pnovi.saitgil.vision
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.tan
 
@@ -277,6 +278,25 @@ class CrowdAnalyzerTest {
         val results = walkToward(CrowdAnalyzer(config), List(12) { 3.6 - it * 0.12 }, sector = 0)
 
         assertNull(results.firstNotNullOfOrNull { it.alert })
+    }
+
+    @Test
+    fun approachAlertNamesDirectionsFreeForConfirmTimeNotFrameCount() {
+        // 1시 칸을 막던 사람이 사라진 지 freeConfirmMs 가 안 됐으면, 그사이 프레임이 많이 와도 1시를 빈 방향으로 넣지 않는다.
+        val analyzer = CrowdAnalyzer(config)
+        val step = 50L
+        val clearAt = 8
+        val results = List(24) { 3.6 - it * 0.06 }.mapIndexed { index, distance ->
+            val side = if (index < clearAt) arrayOf(person(4, 3.0)) else emptyArray()
+            analyzer.analyze(frame(index * step, person(2, distance), *side))
+        }
+
+        val index = results.indexOfFirst { it.alert != null }
+        // 사라진 뒤 세 프레임 넘게 왔지만 freeConfirmMs 는 아직 안 지났다.
+        assertTrue(index - clearAt >= 3)
+        assertTrue((index - clearAt + 1) * step <= config.freeConfirmMs)
+        assertEquals(true, 1 in results[index].frame.freeDirections)
+        assertEquals(false, 1 in results[index].alert!!.freeDirections)
     }
 
     @Test
