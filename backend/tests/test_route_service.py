@@ -51,51 +51,69 @@ def test_plan_routes_picks_detour_as_less_crowded_and_gentle() -> None:
     assert detour.slope.score == 0
 
 
-def detour_with_facility(turn: int) -> dict:
-    """DETOUR 와 같은 선. 두 번째 구간만 시설물 14 이고, 그 앞 안내점은 turn 이다."""
+def detour_with_underpass(facility_types: list[int]) -> dict:
+    """DETOUR 와 같은 선. 구간마다 시설물(facilityType)을 facility_types 로 둔다."""
     return tmap_response(
         [START, (127.001, 37.5), (127.001, 37.502), END],
-        [200, turn, 12, 201],
-        [11, 14, 11],
+        [200, 126, 12, 201],
+        facility_types,
     )
 
 
-def test_plan_routes_skips_candidate_with_unannounced_facility() -> None:
-    risky = detour_with_facility(12)
+def test_plan_routes_skips_candidate_with_underpass_round_trip() -> None:
+    round_trip = detour_with_underpass([11, 14, 11])
 
-    planned = plan_routes([RECOMMENDED, risky], TIMELINE, settings(), flat_detour)
+    planned = plan_routes([RECOMMENDED, round_trip], TIMELINE, settings(), flat_detour)
 
     assert [p.kinds for p in planned] == [
         (RouteKind.RECOMMENDED, RouteKind.LESS_CROWDED, RouteKind.GENTLE)
     ]
 
 
-def test_plan_routes_keeps_candidate_with_announced_underpass() -> None:
-    underpass = detour_with_facility(126)
+def test_plan_routes_keeps_candidate_ending_in_underpass() -> None:
+    ends_below = detour_with_underpass([11, 11, 14])
 
-    planned = plan_routes([RECOMMENDED, underpass], TIMELINE, settings(), flat_detour)
+    planned = plan_routes([RECOMMENDED, ends_below], TIMELINE, settings(), flat_detour)
 
     assert [p.kinds for p in planned][1] == (RouteKind.LESS_CROWDED, RouteKind.GENTLE)
 
 
-def test_plan_routes_keeps_candidate_sharing_the_recommended_facility() -> None:
-    # 둘 다 출발점에서 안내 없이 14 로 시작한다. 같은 곳이라 후보를 거르지 않는다.
-    recommended = tmap_response([START, (127.0, 37.501), END], [200, 11, 201], [14, 11])
+def test_plan_routes_keeps_candidate_starting_in_underpass() -> None:
+    starts_below = detour_with_underpass([14, 11, 11])
+
+    planned = plan_routes(
+        [RECOMMENDED, starts_below], TIMELINE, settings(), flat_detour
+    )
+
+    assert [p.kinds for p in planned][1] == (RouteKind.LESS_CROWDED, RouteKind.GENTLE)
+
+
+def test_plan_routes_keeps_candidate_sharing_the_recommended_round_trip() -> None:
+    # 둘 다 같은 곳에서 지하보도로 내려갔다 올라온다. 같은 곳이라 거르지 않는다.
+    recommended = tmap_response(
+        [START, (127.0, 37.5005), (127.0, 37.501), END],
+        [200, 11, 11, 201],
+        [11, 14, 11],
+    )
     shared = tmap_response(
-        [START, (127.001, 37.5), (127.001, 37.502), END],
-        [200, 12, 12, 201],
-        [14, 11, 11],
+        [START, (127.0, 37.5005), (127.001, 37.501), END],
+        [200, 11, 12, 201],
+        [11, 14, 11],
     )
 
     planned = plan_routes([recommended, shared], TIMELINE, settings(), flat_detour)
 
-    assert [p.kinds for p in planned][1] == (RouteKind.LESS_CROWDED, RouteKind.GENTLE)
+    assert len(planned) == 2
 
 
-def test_plan_routes_skips_candidate_with_its_own_unannounced_facility() -> None:
-    # 추천 경로도 안내 없는 14 구간이 있지만, 후보의 14 구간은 다른 곳이다.
-    recommended = tmap_response([START, (127.0, 37.501), END], [200, 11, 201], [14, 11])
-    risky = detour_with_facility(12)
+def test_plan_routes_skips_candidate_with_its_own_round_trip() -> None:
+    # 추천 경로에도 왕복 지하보도가 있지만, 후보의 것은 다른 곳이다.
+    recommended = tmap_response(
+        [START, (127.0, 37.5005), (127.0, 37.501), END],
+        [200, 11, 11, 201],
+        [11, 14, 11],
+    )
+    risky = detour_with_underpass([11, 14, 11])
 
     planned = plan_routes([recommended, risky], TIMELINE, settings(), flat_detour)
 

@@ -23,13 +23,7 @@ from core.geo import LinePoint, LngLat, distance_m, line_key, sample_line
 from core.route_choice import RouteKind, ScoredRoute, choose_routes
 from core.route_events import RouteEvent, route_events
 from core.slope import SlopeSummary, slope_summary
-from core.tmap_route import (
-    ANNOUNCING_TURN_TYPES,
-    SAME_PLACE_M,
-    UNVERIFIED_FACILITY_TYPES,
-    TmapRoute,
-    parse_route,
-)
+from core.tmap_route import TmapRoute, parse_route
 
 ElevationReader = Callable[[Sequence[LngLat]], list[float | None]]
 
@@ -68,9 +62,11 @@ def plan_routes(
         _measure(route, points, heights, timeline, settings)
         for route, points, heights in zip(routes, samples, elevations, strict=True)
     ]
-    # 안내 없이 시작하는 시설물 구간(14 등)이 있는데 추천 경로에는 같은 곳이 없으면,
+    # 지상에서 지하보도로 내려갔다 올라오는 곳이 있는데 추천 경로에는 같은 곳이 없으면,
     # 그 후보는 덜 붐비는 길·완만한 길에서 뺀다.
-    recommended_starts = _unannounced_starts(measured[0].route) if measured else []
+    recommended_starts = (
+        measured[0].route.underpass_round_trip_starts() if measured else []
+    )
     options = choose_routes(
         [
             ScoredRoute(
@@ -78,8 +74,8 @@ def plan_routes(
                 m.congestion.score,
                 m.slope.score,
                 eligible=all(
-                    _near_any(start, recommended_starts)
-                    for start in _unannounced_starts(m.route)
+                    _near_any(start, recommended_starts, settings.route_same_place_m)
+                    for start in m.route.underpass_round_trip_starts()
                 ),
             )
             for m in measured
@@ -110,14 +106,8 @@ def walk_end(
     return departed_at + timedelta(seconds=longest / speed_mps)
 
 
-def _unannounced_starts(route: TmapRoute) -> list[LngLat]:
-    return route.unannounced_facility_starts(
-        UNVERIFIED_FACILITY_TYPES, ANNOUNCING_TURN_TYPES
-    )
-
-
-def _near_any(position: LngLat, others: Sequence[LngLat]) -> bool:
-    return any(distance_m(position, other) <= SAME_PLACE_M for other in others)
+def _near_any(position: LngLat, others: Sequence[LngLat], within_m: float) -> bool:
+    return any(distance_m(position, other) <= within_m for other in others)
 
 
 def _unique_routes(responses: Sequence[Mapping[str, Any]]) -> list[TmapRoute]:
