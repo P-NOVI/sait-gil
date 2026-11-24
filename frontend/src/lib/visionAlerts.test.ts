@@ -395,4 +395,17 @@ describe('signalReader', () => {
         expect(signalText(read, 'red', false)).toBeNull();
         expect(signalText(read, 'red')).toBe(SIGNAL_RED_TEXT);
     });
+
+    it('옆 방향을 보면 읽지 않는다', () => {
+        expect(signalReader()('red', true, false)).toBeNull();
+    });
+
+    it('옆 방향을 보다 돌아오면 바뀌었다고 하지 않고 처음부터 알린다', () => {
+        // 옆 신호등의 초록불이 남은 채 다시 바라봐도 "빨간불이 바뀌었습니다"라고 읽지 않는다.
+        const read = signalReader();
+
+        expect(read('red', true, true)?.text).toBe(SIGNAL_RED_TEXT);
+        expect(read('other', true, false)).toBeNull();
+        expect(read('other', true, true)?.text).toBe(SIGNAL_SEEN_TEXT);
+    });
 });

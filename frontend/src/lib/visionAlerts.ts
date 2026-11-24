@@ -112,21 +112,27 @@ export const SIGNAL_SEEN_TEXT = '신호등이 있습니다.';
 // 빨간불이 아닌 신호등에는 깜빡임·꺼짐도 섞여 있어 초록불이라고 말하지 않는다.
 export const SIGNAL_CHANGED_TEXT = '빨간불이 바뀌었습니다.';
 
-/** 보행 신호등 상태를 받아 알림을 돌려준다. 알릴 것이 없으면 null */
+/**
+ * 보행 신호등 상태를 받아 알림을 돌려준다. 알릴 것이 없으면 null.
+ * facing 은 카메라가 횡단보도를 건너는 방향을 보는지다. 모르면 true 를 준다.
+ */
 export type SignalReader = (
     signal: PedSignal | null,
     atCrosswalk: boolean,
+    facing?: boolean,
 ) => Alert | null;
 
 /**
- * 안내를 시작할 때마다 새로 만든다. 횡단보도 근처에서만 신호등 상태가 바뀔 때 알린다.
+ * 안내를 시작할 때마다 새로 만든다. 횡단보도 근처에서 건너는 방향을 볼 때만 신호등 상태가 바뀔 때 알린다.
  * 처음 보이면 빨간불인지 알리고, 빨간불에서 바뀌면 바뀌었다고 알린다.
  * 잠깐 안 보였다 같은 상태로 다시 보이면 또 읽지 않는다. 횡단보도를 벗어나면 기록을 지운다.
+ * 옆 방향을 보면 그 신호등은 건널 횡단보도의 것이 아닐 수 있어 읽지 않고 기록도 지운다.
+ * 기록을 두면 옆 신호등의 초록불이 남은 채 다시 바라볼 때 "빨간불이 바뀌었습니다"라고 읽을 수 있어서다.
  */
 export function signalReader(): SignalReader {
     let told: PedSignal | null = null;
-    return (signal, atCrosswalk) => {
-        if (!atCrosswalk) {
+    return (signal, atCrosswalk, facing = true) => {
+        if (!atCrosswalk || !facing) {
             told = null;
             return null;
         }
