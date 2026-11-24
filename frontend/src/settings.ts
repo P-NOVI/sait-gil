@@ -58,6 +58,8 @@ export const HEADING = {
     smoothing: 0.3,
     // 이보다 적게 바뀌면 마커를 다시 돌리지 않는다(도).
     minStepDeg: 2,
+    // 뒷면 카메라가 보는 방향의 수평 성분(0~1)이 이보다 작으면(거의 위·아래를 보면) 카메라 방향을 모른다고 본다.
+    cameraMinLevel: 0.5,
 } as const;
 
 // 이벤트까지 남은 거리가 이 안에 들어오면 미리 알린다.
@@ -137,6 +139,23 @@ export const CROSSWALK_SIGNAL_M = {
 };
 
 export type CrosswalkSignalSettings = typeof CROSSWALK_SIGNAL_M;
+
+// 보행 신호등은 카메라가 경로의 건너는 방향을 볼 때만 알린다(#132). 교차로에서 옆 방향 횡단보도 신호등을 거른다.
+export const CROSSING_FACING = {
+    // 횡단보도 지점(Tmap 안내점)에서 다음 꼭짓점(횡단보도 끝)까지를 건너는 방향으로 본다.
+    // 횡단보도가 이보다 길면 이 거리(m)까지만 본다.
+    lookAheadM: 10,
+    // 다음 꼭짓점이 이보다 가까우면(m) 그다음 꼭짓점까지 본다. 짧은 꺾임 하나로 방향이 튀지 않게 한다.
+    minSpanM: 3,
+    // 카메라 방향과 건너는 방향이 이보다 크게 다르면 신호를 알리지 않는다(도).
+    // 나침반은 차·쇠기둥 옆에서 수십 도 틀릴 수 있어, 옆 방향(약 90도)만 거를 만큼 넉넉히 둔다. 실기기에서 맞출 초안 값.
+    maxDeg: 45,
+    // 옆을 보다 건너는 방향으로 돌아선 뒤 이 시간(ms)은 신호를 읽지 않는다.
+    // 플러그인이 놓친 신호등의 상태를 signalLostMs(1초) 동안 남겨 두므로 같게 둔다.
+    settleMs: 1_000,
+};
+
+export type CrossingFacingSettings = typeof CROSSING_FACING;
 
 // 인파가 주의 단계가 됐을 때 말 없이 주는 짧은 진동(ms)
 export const CAUTION_VIBRATION: readonly number[] = [150];

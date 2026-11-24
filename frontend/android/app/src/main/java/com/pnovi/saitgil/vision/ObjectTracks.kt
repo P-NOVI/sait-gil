@@ -49,8 +49,14 @@ internal fun <T : BoxTrack> updateTracks(
 /**
  * 같은 물체로 볼 점수. 겹치면 1 + IoU, 안 겹쳐도 가운데가 objectMaxShift 안이고 크기가 비슷하면 1 보다 작은 값이다.
  * 옆으로 빠르게 지나가는 차와, 목걸이가 흔들려 옆으로 밀린 가는 기둥은 0.7초 사이에 제 폭보다 멀리 움직여 겹치지 않는다.
+ * 신호등은 옆 신호등으로 넘어가지 않게 maxShift 를 좁혀 부른다(SignalTracker).
  */
-private fun sameObjectScore(previous: ObjectBox, next: ObjectBox, config: VisionConfig): Double? {
+internal fun sameObjectScore(
+    previous: ObjectBox,
+    next: ObjectBox,
+    config: VisionConfig,
+    maxShift: Double = config.objectMaxShift,
+): Double? {
     val overlap = iou(
         PersonBox(previous.left, previous.top, previous.width, previous.height, previous.score),
         PersonBox(next.left, next.top, next.width, next.height, next.score),
@@ -58,7 +64,7 @@ private fun sameObjectScore(previous: ObjectBox, next: ObjectBox, config: Vision
     if (overlap >= config.objectTrackIou) return 1 + overlap
     val shift = abs(next.centerX - previous.centerX)
     val ratio = max(next.height, previous.height) / min(next.height, previous.height)
-    return if (shift <= config.objectMaxShift && ratio <= config.objectMaxSizeRatio) 1 - shift else null
+    return if (shift <= maxShift && ratio <= config.objectMaxSizeRatio) 1 - shift else null
 }
 
 /**

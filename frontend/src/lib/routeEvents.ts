@@ -5,10 +5,14 @@ import {
     ALERT_DISTANCE_M,
     BLOCK,
     type BlockSettings,
+    CROSSING_FACING,
+    type CrossingFacingSettings,
     CROSSWALK_SIGNAL_M,
     type CrosswalkSignalSettings,
 } from '../settings';
-import type { LngLat } from './geo';
+import { bearingDeg, distanceM, type LngLat } from './geo';
+import { angleDiff } from './heading';
+import type { RouteLine } from './navigation';
 
 export type EventKind =
     | 'turn'
@@ -117,18 +121,99 @@ export function dueBlockAlert(
     return { event, far };
 }
 
+/** 횡단보도 앞(남은 거리가 aheadM 안)이거나 막 지난(pastM 안) 곳의 횡단보도 중 가장 가까운 것. 없으면 null */
+export function nearestCrosswalk(
+    events: readonly RouteEvent[],
+    travelledM: number,
+    settings: CrosswalkSignalSettings = CROSSWALK_SIGNAL_M,
+): RouteEvent | null {
+    const gap = (event: RouteEvent) => Math.abs(event.distance_m - travelledM);
+    return events
+        .filter((event) => {
+            const remainingM = event.distance_m - travelledM;
+            return (
+                event.kind === 'crosswalk' &&
+                remainingM <= settings.aheadM &&
+                remainingM >= -settings.pastM
+            );
+        })
+        .reduce<RouteEvent | null>(
+            (nearest, event) =>
+                nearest === null || gap(event) < gap(nearest) ? event : nearest,
+            null,
+        );
+}
+
 /** 횡단보도 앞(남은 거리가 aheadM 안)이거나 막 지난(pastM 안) 곳에 있는지. 보행 신호등을 알릴지 정한다. */
 export function nearCrosswalk(
     events: readonly RouteEvent[],
     travelledM: number,
     settings: CrosswalkSignalSettings = CROSSWALK_SIGNAL_M,
 ): boolean {
-    return events.some((event) => {
-        const remainingM = event.distance_m - travelledM;
-        return (
-            event.kind === 'crosswalk' &&
-            remainingM <= settings.aheadM &&
-            remainingM >= -settings.pastM
-        );
-    });
+    return nearestCrosswalk(events, travelledM, settings) !== null;
+}
+
+/** 경로를 따라 alongM 간 지점. 출발점보다 앞이면 출발점, 끝을 넘으면 도착점이다 */
+function pointAlong(
+    { coordinates, distances_m }: RouteLine,
+    alongM: number,
+): LngLat {
+    const next = distances_m.findIndex((distance) => distance >= alongM);
+    if (next === -1) {
+        return coordinates[coordinates.length - 1];
+    }
+    if (next === 0) {
+        return coordinates[0];
+    }
+    const [from, to] = [coordinates[next - 1], coordinates[next]];
+    const span = distances_m[next] - distances_m[next - 1];
+    const share = span > 0 ? (alongM - distances_m[next - 1]) / span : 0;
+    return [
+        from[0] + (to[0] - from[0]) * share,
+        from[1] + (to[1] - from[1]) * share,
+    ];
+}
+
+/**
+ * 가까운 횡단보도를 건너는 방향(북쪽 0도, 시계 방향).
+ * Tmap 안내점은 다음 구간(횡단보도)이 시작하는 꼭짓점에 있어, 안내점에서 다음 꼭짓점(횡단보도 끝)까지를 본다.
+ * 정한 거리만큼 더 가서 보면 짧은 횡단보도를 건너 바로 꺾는 길이 섞여 방향이 틀어진다. 긴 횡단보도는 lookAheadM 까지만 본다.
+ * 근처에 횡단보도가 없거나 경로가 끝나 방향을 잴 수 없으면 null.
+ */
+export function crossingBearing(
+    route: RouteLine,
+    events: readonly RouteEvent[],
+    travelledM: number,
+    settings: CrossingFacingSettings = CROSSING_FACING,
+): number | null {
+    const crosswalk = nearestCrosswalk(events, travelledM);
+    if (crosswalk === null) {
+        return null;
+    }
+    const startM = crosswalk.distance_m;
+    const nextVertexM = route.distances_m.find(
+        (distance) => distance >= startM + settings.minSpanM,
+    );
+    const endM = Math.min(
+        nextVertexM ?? Infinity,
+        startM + settings.lookAheadM,
+    );
+    const start = pointAlong(route, startM);
+    const end = pointAlong(route, endM);
+    return distanceM(start, end) > 0 ? bearingDeg(start, end) : null;
+}
+
+/**
+ * 카메라가 횡단보도를 건너는 방향을 보는지. 신호등이 경로에서 건널 횡단보도의 것인지 가릴 때 쓴다.
+ * 카메라 방향이나 건너는 방향을 모르면 막지 않는다(true). 지금까지처럼 횡단보도 근처면 신호를 알린다.
+ */
+export function facingCrossing(
+    cameraHeading: number | null,
+    crossing: number | null,
+    settings: CrossingFacingSettings = CROSSING_FACING,
+): boolean {
+    if (cameraHeading === null || crossing === null) {
+        return true;
+    }
+    return Math.abs(angleDiff(cameraHeading, crossing)) <= settings.maxDeg;
 }

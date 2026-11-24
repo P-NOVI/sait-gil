@@ -126,6 +126,8 @@ class Settings(BaseSettings):
     # 후보가 추천 경로보다 점수로 이만큼 넘게 낫지 않으면 따로 띄우지 않는다
     route_congestion_margin_m: float = 10.0
     route_slope_margin_m: float = 10.0
+    # 두 경로의 지하보도 시작점이 이 거리 안이면 같은 곳으로 본다(m)
+    route_same_place_m: float = 5.0
 
 
 @lru_cache

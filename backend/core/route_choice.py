@@ -16,6 +16,8 @@ class ScoredRoute:
     distance_m: float
     congestion_score: float
     slope_score: float
+    # False 면 덜 붐비는 길·완만한 길로 고르지 않는다. 추천 경로(routes[0])는 상관없다.
+    eligible: bool = True
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,7 @@ def choose_routes(
 
     추천, 덜 붐비는 길, 완만한 길 순으로 돌려준다.
 
+    - eligible 이 False 인 후보는 뽑지 않는다.
     - 후보가 추천 경로보다 margin 넘게 낫지 않으면 추천 경로를 그 기준의 경로로 본다.
     - 한 경로가 여러 기준에 뽑히면 한 번만 넣고 kinds 를 합친다.
     """
@@ -57,9 +60,9 @@ def choose_routes(
 def _best(
     routes: Sequence[ScoredRoute], score: Callable[[ScoredRoute], float], margin: float
 ) -> int:
-    """점수가 가장 낮은 후보. 점수가 같으면 짧은 경로를 고른다."""
+    """뽑을 수 있는 후보 중 점수가 가장 낮은 경로. 점수가 같으면 짧은 경로를 고른다."""
     best = min(
-        range(1, len(routes)),
+        (index for index in range(1, len(routes)) if routes[index].eligible),
         key=lambda index: (score(routes[index]), routes[index].distance_m),
         default=0,
     )

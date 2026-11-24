@@ -31,6 +31,8 @@ export type VisionFrame = {
     freeDirections: ClockDirection[];
     /** 몇 프레임 연달아 같았던 보행 신호등 상태. 안 보이면 null */
     signal: PedSignal | null;
+    /** 플러그인이 따라가는 보행 신호등 번호. 새 신호등을 고를 때마다 바뀐다. 모르면 0 */
+    signalId: number;
     /** 이 프레임에 앞쪽 가까이 보인 장애물. 여러 프레임 확인을 거치지 않아 화면에만 쓴다 */
     obstacles: VisionObstacle[];
 };
@@ -124,6 +126,7 @@ function toFrame(state: unknown): VisionFrame {
         nearestPersonM: toDistance(raw.nearestPersonM),
         freeDirections: toDirections(raw.freeDirections),
         signal: PED_SIGNALS.find((known) => known === raw.signal) ?? null,
+        signalId: toSignalId(raw.signalId),
         obstacles: (Array.isArray(raw.obstacles) ? raw.obstacles : [])
             .map((seen) => {
                 const { kind, direction } = asRecord(seen);
@@ -171,6 +174,10 @@ function toDistance(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0
         ? value
         : null;
+}
+
+function toSignalId(value: unknown): number {
+    return typeof value === 'number' && Number.isInteger(value) ? value : 0;
 }
 
 // 플러그인이 보낸 넓은 순서를 유지한다. 고정된 시계 순서로 다시 정렬하지 않는다.

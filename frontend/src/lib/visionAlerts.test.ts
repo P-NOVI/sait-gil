@@ -6,7 +6,7 @@ import type {
     VisionFrame,
     VisionLevel,
 } from '../platform';
-import { VISION } from '../settings';
+import { CROSSING_FACING, VISION } from '../settings';
 import {
     BLOCKED_TEXT,
     CROWDED_TEXT,
@@ -38,6 +38,7 @@ function frame(
         nearestPersonM: null,
         freeDirections,
         signal: null,
+        signalId: 0,
         obstacles: [],
     };
 }
@@ -394,5 +395,71 @@ describe('signalReader', () => {
         expect(signalText(read, 'red')).toBe(SIGNAL_RED_TEXT);
         expect(signalText(read, 'red', false)).toBeNull();
         expect(signalText(read, 'red')).toBe(SIGNAL_RED_TEXT);
+    });
+
+    it('옆 방향을 보면 읽지 않는다', () => {
+        expect(signalReader()('red', true, { facing: false })).toBeNull();
+    });
+
+    it('다른 신호등을 고르면 바뀌었다고 하지 않고 처음부터 알린다', () => {
+        // 따라가던 빨간불을 놓치고 옆 신호등(초록)을 골라도 "빨간불이 바뀌었습니다"라고 읽지 않는다.
+        const read = signalReader();
+
+        expect(read('red', true, { signalId: 1 })?.text).toBe(SIGNAL_RED_TEXT);
+        expect(read('other', true, { signalId: 2 })?.text).toBe(
+            SIGNAL_SEEN_TEXT,
+        );
+    });
+
+    it('옆을 보는 동안 다른 신호등을 고르면 돌아와서 처음부터 알린다', () => {
+        const read = signalReader();
+        const back = 1_000 + CROSSING_FACING.settleMs;
+
+        expect(read('red', true, { signalId: 1, nowMs: 0 })?.text).toBe(
+            SIGNAL_RED_TEXT,
+        );
+        expect(
+            read('other', true, { facing: false, signalId: 2, nowMs: 1_000 }),
+        ).toBeNull();
+        expect(read('other', true, { signalId: 2, nowMs: back })?.text).toBe(
+            SIGNAL_SEEN_TEXT,
+        );
+    });
+
+    it('방향이 잠깐 벗어났다 돌아와도 같은 신호등이면 바뀐 것을 알린다', () => {
+        // 빨간불을 기다리다 나침반이 튄 사이 초록불로 바뀌어도 "빨간불이 바뀌었습니다"를 놓치지 않는다.
+        const read = signalReader();
+        const back = 1_000 + CROSSING_FACING.settleMs;
+
+        expect(read('red', true, { signalId: 1, nowMs: 0 })?.text).toBe(
+            SIGNAL_RED_TEXT,
+        );
+        expect(
+            read('other', true, { facing: false, signalId: 1, nowMs: 1_000 }),
+        ).toBeNull();
+        expect(read('other', true, { signalId: 1, nowMs: back })?.text).toBe(
+            SIGNAL_CHANGED_TEXT,
+        );
+    });
+
+    it('방향 경계를 오가도 빨간불을 되풀이하지 않는다', () => {
+        const read = signalReader();
+        const back = 100 + CROSSING_FACING.settleMs;
+
+        expect(read('red', true, { nowMs: 0 })?.text).toBe(SIGNAL_RED_TEXT);
+        expect(read('red', true, { facing: false, nowMs: 100 })).toBeNull();
+        expect(read('red', true, { nowMs: back })).toBeNull();
+    });
+
+    it('옆을 보다 돌아선 직후 settleMs 동안은 읽지 않는다', () => {
+        // 플러그인에 잠깐 남은 옆 신호등 상태를 첫 말로 읽지 않는다.
+        const read = signalReader();
+        const settle = CROSSING_FACING.settleMs;
+
+        expect(read('other', true, { facing: false, nowMs: 0 })).toBeNull();
+        expect(read('other', true, { nowMs: settle - 1 })).toBeNull();
+        expect(read('red', true, { nowMs: settle })?.text).toBe(
+            SIGNAL_RED_TEXT,
+        );
     });
 });

@@ -34,7 +34,11 @@ import {
     routeTitle,
     sameKindRoute,
 } from './lib/routeApi';
-import { nearCrosswalk } from './lib/routeEvents';
+import {
+    crossingBearing,
+    facingCrossing,
+    nearCrosswalk,
+} from './lib/routeEvents';
 import { nearForSearch } from './lib/searchNear';
 import {
     cameraAnswer,
@@ -68,6 +72,7 @@ import {
     openAppSettings,
     requestCompassPermission,
     visionAvailable,
+    watchCameraHeading,
 } from './platform';
 
 const SHEET_TITLES: Record<Exclude<Tab, 'search'>, string> = {
@@ -466,10 +471,24 @@ export default function App() {
         guided !== null &&
         guidance.step !== null &&
         nearCrosswalk(guided.events, guidance.step.progress.travelledM);
+    // 목걸이에 건 휴대폰 카메라가 보는 방향. 걸을 때는 GPS 진행 방향으로 나침반을 바로잡는다.
+    const cameraHeading = useHeading(
+        guidance.fix?.course ?? null,
+        watchCameraHeading,
+    );
+    const crossing =
+        guided !== null && guidance.step !== null
+            ? crossingBearing(
+                  guided,
+                  guided.events,
+                  guidance.step.progress.travelledM,
+              )
+            : null;
     const vision = useVision({
         active: navigating,
         minLevel: CROWD_ALERT_FROM[settings.crowdSensitivity],
         atCrosswalk,
+        facingCrossing: facingCrossing(cameraHeading, crossing),
         // 횡단보도 근처에서 서 있으면 신호를 기다리는 중이다. 멈춰 있으면 속력이 오지 않을 수도 있다.
         waiting: atCrosswalk && isStandingStill(gpsLocation),
         // 안내 전에 찾은 오래된 위치(myLocation)의 속력이 새 값처럼 들어가지 않게 계속 갱신되는 안내 위치만 쓴다.
