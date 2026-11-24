@@ -87,6 +87,7 @@ type SaitgilVisionPlugin = {
     start(): Promise<void>;
     stop(): Promise<void>;
     setWalkSpeed(options: { speedMps: number | null }): Promise<void>;
+    setNearCrosswalk(options: { near: boolean }): Promise<void>;
     addListener(
         eventName: 'crowdState' | 'alert',
         listener: (state: unknown) => void,
@@ -204,6 +205,20 @@ export function setVisionWalkSpeed(speedMps: number | null): void {
         .setWalkSpeed({
             speedMps: speedMps === null ? null : Math.max(0, speedMps),
         })
+        .catch(() => undefined);
+}
+
+/**
+ * 길안내 경로의 횡단보도 근처인지 플러그인에 알린다. 플러그인은 근처에서 분석 해상도를 올리고
+ * 영상 위쪽 가운데를 잘라 길 건너 먼 신호등을 한 번 더 찾는다(#134).
+ * 앱에서만 보내고, 보내지 못해도 인식은 계속되므로 실패는 무시한다.
+ */
+export function setVisionNearCrosswalk(near: boolean): void {
+    if (!isNativeApp()) {
+        return;
+    }
+    void visionPlugin()
+        .setNearCrosswalk({ near })
         .catch(() => undefined);
 }
 

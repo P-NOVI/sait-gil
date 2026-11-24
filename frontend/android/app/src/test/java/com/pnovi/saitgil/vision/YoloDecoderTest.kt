@@ -8,6 +8,83 @@ import org.junit.Test
 class YoloDecoderTest {
     private val config = DetectorConfig()
 
+    /** 자른 칸 입력 기준 0~1 박스 하나 */
+    private fun raw(kind: DetectedClass, centerX: Float, centerY: Float, size: Float = 0.02f, score: Float = 0.5f) =
+        RawDetection(kind, score, centerX, centerY, size, size * 2)
+
+    private fun signalBox(left: Double, top: Double, score: Double, kind: DetectedClass = DetectedClass.PED_SIGNAL_RED) =
+        ObjectBox(kind, left, top, 0.02, 0.04, score)
+
+    @Test
+    fun signalCropSitsInUpperMiddleOfHighResImage() {
+        // 세운 960×1280 영상에서 640 칸은 가로 가운데, 세로 0.4 를 가운데로 둔다.
+        assertEquals(CropRegion(left = 160, top = 192, size = 640), signalCrop(960, 1280, config))
+    }
+
+    @Test
+    fun signalCropIsPushedInsideTheImage() {
+        val crop = signalCrop(960, 1280, config.copy(signalCropCenterY = 0.1))!!
+
+        assertEquals(0, crop.top)
+        assertEquals(1280 - 640, signalCrop(960, 1280, config.copy(signalCropCenterY = 0.95))!!.top)
+    }
+
+    @Test
+    fun noSignalCropUntilAnalysisResolutionIsRaised() {
+        // 해상도를 올리기 전(480×640) 영상은 칸보다 좁아 자르지 않는다.
+        assertEquals(null, signalCrop(480, 640, config))
+        assertEquals(null, signalCrop(640, 1280, config))
+    }
+
+    @Test
+    fun cropSignalsMoveBackToWholeImageCoordinates() {
+        val crop = CropRegion(left = 160, top = 192, size = 640)
+        val detections = listOf(
+            raw(DetectedClass.PED_SIGNAL_RED, centerX = 0.5f, centerY = 0.25f),
+            raw(DetectedClass.CAR, centerX = 0.5f, centerY = 0.9f, size = 0.3f),
+        )
+
+        val boxes = signalBoxesFromCrop(detections, crop, 960, 1280)
+
+        val box = boxes.single()
+        assertEquals(DetectedClass.PED_SIGNAL_RED, box.kind)
+        // 칸 안 가로 0.5 는 영상 가로 (160 + 320) / 960 = 0.5, 세로 0.25 는 (192 + 160) / 1280 = 0.275 다.
+        assertEquals(0.5, box.centerX, 1e-6)
+        assertEquals(0.275, box.top + box.height / 2, 1e-6)
+        assertEquals(0.02 * 640 / 960, box.width, 1e-6)
+        assertEquals(0.04 * 640 / 1280, box.height, 1e-6)
+    }
+
+    @Test
+    fun cropSignalsAreClippedToTheCrop() {
+        val crop = CropRegion(left = 160, top = 192, size = 640)
+
+        val box = signalBoxesFromCrop(listOf(raw(DetectedClass.PED_SIGNAL_OTHER, 0.0f, 0.5f)), crop, 960, 1280).single()
+
+        assertEquals(160.0 / 960, box.left, 1e-6)
+        assertEquals(0.01 * 640 / 960, box.width, 1e-6)
+    }
+
+    @Test
+    fun cropSignalOverlappingWholeImageSignalKeepsHigherScore() {
+        val car = ObjectBox(DetectedClass.CAR, 0.4, 0.6, 0.2, 0.2, 0.8)
+        val whole = signalBox(0.5, 0.3, score = 0.3)
+        val frame = DetectionFrame(0, emptyList(), 960, 1280, objects = listOf(car, whole))
+        val cropped = signalBox(0.5, 0.3, score = 0.6)
+        val far = signalBox(0.6, 0.35, score = 0.4, kind = DetectedClass.PED_SIGNAL_OTHER)
+
+        val merged = withCropSignals(frame, listOf(cropped, far), config.nmsIou)
+
+        assertEquals(setOf(car, cropped, far), merged.objects.toSet())
+    }
+
+    @Test
+    fun noCropSignalsLeaveFrameAsIs() {
+        val frame = DetectionFrame(0, emptyList(), 960, 1280, objects = listOf(signalBox(0.5, 0.3, score = 0.3)))
+
+        assertEquals(frame, withCropSignals(frame, emptyList(), config.nmsIou))
+    }
+
     /** 모델 입력 기준 0~1 박스 하나와 클래스 점수 */
     private data class Candidate(
         val centerX: Float,

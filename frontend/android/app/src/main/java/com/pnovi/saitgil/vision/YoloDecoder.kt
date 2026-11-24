@@ -2,6 +2,7 @@ package com.pnovi.saitgil.vision
 
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 // 모델 출력(1, 4 + 클래스 수, 후보 수)을 박스로 바꾸고, 레터박스를 걷어 세운 화면 기준 좌표로 옮긴다.
 // Android 클래스를 쓰지 않아 가짜 출력으로 JVM 단위 테스트를 할 수 있다.
@@ -114,3 +115,59 @@ fun toDetectionFrame(detections: List<RawDetection>, letterbox: Letterbox, timeM
         objects = objects,
     )
 }
+
+/** 세운 영상(px)에서 신호등만 다시 볼 정사각형 칸. 왼쪽 위 (left, top) 에서 한 변 size 다 */
+data class CropRegion(val left: Int, val top: Int, val size: Int)
+
+/**
+ * 세운 영상(가로 imageWidth, 세로 imageHeight px)에서 신호등을 다시 볼 칸. 가로 가운데, 세로 signalCropCenterY 에 두고
+ * 영상 밖으로 나가면 안쪽으로 민다. 영상이 칸보다 크지 않으면(분석 해상도를 올리기 전) 잘라 봐야 같은 영상이라 null 이다.
+ */
+fun signalCrop(imageWidth: Int, imageHeight: Int, config: DetectorConfig): CropRegion? {
+    val size = config.signalCropSizePx
+    if (imageWidth <= size || imageHeight <= size) return null
+    val top = (config.signalCropCenterY * imageHeight - size / 2.0).roundToInt().coerceIn(0, imageHeight - size)
+    return CropRegion((imageWidth - size) / 2, top, size)
+}
+
+/** 자른 칸을 추론한 박스(입력 기준 0~1) 중 신호등만 세운 영상 기준 0~1 좌표로 옮긴다. 칸 밖에 걸친 값은 칸 끝으로 자른다 */
+fun signalBoxesFromCrop(
+    detections: List<RawDetection>,
+    crop: CropRegion,
+    imageWidth: Int,
+    imageHeight: Int,
+): List<ObjectBox> = detections.filter { it.kind in SIGNAL_CLASSES }.mapNotNull { detection ->
+    val left = detection.left.coerceIn(0f, 1f)
+    val top = detection.top.coerceIn(0f, 1f)
+    val width = detection.right.coerceIn(0f, 1f) - left
+    val height = detection.bottom.coerceIn(0f, 1f) - top
+    if (width <= 0f || height <= 0f) return@mapNotNull null
+    ObjectBox(
+        kind = detection.kind,
+        left = (crop.left + left * crop.size) / imageWidth.toDouble(),
+        top = (crop.top + top * crop.size) / imageHeight.toDouble(),
+        width = width * crop.size / imageWidth.toDouble(),
+        height = height * crop.size / imageHeight.toDouble(),
+        score = detection.score.toDouble(),
+    )
+}
+
+/**
+ * 자른 칸에서 찾은 신호등 박스를 프레임에 더한다. 전체 영상에서 찾은 같은 종류 신호등과 iouThreshold 이상 겹치면
+ * 점수가 높은 쪽 하나만 남긴다. 신호등이 아닌 박스는 그대로 둔다.
+ */
+fun withCropSignals(frame: DetectionFrame, cropBoxes: List<ObjectBox>, iouThreshold: Float): DetectionFrame {
+    if (cropBoxes.isEmpty()) return frame
+    val (signals, others) = frame.objects.partition { it.kind in SIGNAL_CLASSES }
+    val kept = mutableListOf<ObjectBox>()
+    for (box in (signals + cropBoxes).sortedByDescending { it.score }) {
+        val overlaps = kept.any { it.kind == box.kind && boxIou(it, box) >= iouThreshold }
+        if (!overlaps) kept += box
+    }
+    return frame.copy(objects = others + kept)
+}
+
+private fun boxIou(a: ObjectBox, b: ObjectBox): Double = iou(
+    PersonBox(a.left, a.top, a.width, a.height, a.score),
+    PersonBox(b.left, b.top, b.width, b.height, b.score),
+)

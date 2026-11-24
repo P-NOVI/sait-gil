@@ -5,6 +5,7 @@ const plugin = vi.hoisted(() => ({
     start: vi.fn(),
     stop: vi.fn(),
     setWalkSpeed: vi.fn(),
+    setNearCrosswalk: vi.fn(),
     addListener: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ import { connectVision } from '../hooks/useVision';
 import { freeDirectionText, visionReader } from '../lib/visionAlerts';
 
 import {
+    setVisionNearCrosswalk,
     setVisionWalkSpeed,
     startVision,
     VISION_NOT_READY,
@@ -534,6 +536,35 @@ describe('setVisionWalkSpeed', () => {
         native.value = true;
         plugin.setWalkSpeed.mockRejectedValue(new Error('실패'));
         expect(() => setVisionWalkSpeed(1.2)).not.toThrow();
+        await flush();
+    });
+});
+
+describe('setVisionNearCrosswalk', () => {
+    beforeEach(() => {
+        plugin.setNearCrosswalk.mockReset().mockResolvedValue(undefined);
+    });
+
+    it('앱에서는 횡단보도 근처인지 플러그인에 보낸다', () => {
+        native.value = true;
+
+        setVisionNearCrosswalk(true);
+        setVisionNearCrosswalk(false);
+
+        expect(plugin.setNearCrosswalk.mock.calls).toEqual([
+            [{ near: true }],
+            [{ near: false }],
+        ]);
+    });
+
+    it('웹에서는 보내지 않고, 보내기가 실패해도 오류를 던지지 않는다', async () => {
+        native.value = false;
+        setVisionNearCrosswalk(true);
+        expect(plugin.setNearCrosswalk).not.toHaveBeenCalled();
+
+        native.value = true;
+        plugin.setNearCrosswalk.mockRejectedValue(new Error('실패'));
+        expect(() => setVisionNearCrosswalk(true)).not.toThrow();
         await flush();
     });
 });

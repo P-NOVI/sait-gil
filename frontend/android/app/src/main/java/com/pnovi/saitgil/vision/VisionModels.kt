@@ -52,6 +52,9 @@ enum class DetectedClass(val wire: String) {
     PED_SIGNAL_OTHER("ped_signal_other"),
 }
 
+/** 보행 신호등 클래스. 횡단보도 근처에서는 영상 위쪽 가운데를 잘라 이 클래스만 한 번 더 찾는다(#134) */
+val SIGNAL_CLASSES: Set<DetectedClass> = setOf(DetectedClass.PED_SIGNAL_RED, DetectedClass.PED_SIGNAL_OTHER)
+
 /** 보행 신호등 상태. OTHER 는 빨간불이 아닌 신호등(초록·깜빡임·꺼짐)이다 */
 enum class SignalState(val wire: String) {
     RED("red"),

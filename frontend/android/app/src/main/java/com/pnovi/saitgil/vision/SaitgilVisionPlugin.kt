@@ -55,6 +55,11 @@ class SaitgilVisionPlugin : Plugin() {
     @Volatile
     private var walkSpeedAtMs = 0L
 
+    // 화면이 알려 주는, 길안내 경로의 횡단보도 근처인지(#134). 근처에서는 분석 해상도를 올리고 위쪽 가운데를 잘라 먼 신호등을 한 번 더 찾는다.
+    // 카메라 분석 스레드가 읽으므로 @Volatile 이다. 화면이 인식을 켤 때마다 다시 알려 주므로 멈출 때 지우지 않는다.
+    @Volatile
+    private var nearCrosswalk = false
+
     // 권한을 요청하기 직전의 rationale 값. 요청 뒤 값과 비교해 "다시 묻지 않음"을 가린다.
     private var rationaleBeforeRequest = false
 
@@ -117,10 +122,13 @@ class SaitgilVisionPlugin : Plugin() {
             ?: CameraSession(
                 context,
                 activity,
-                LazyModelAnalyzer({ modelAsset }) { asset -> LiteRtDetector.load(context, detectorConfig, asset) },
+                LazyModelAnalyzer({ modelAsset }) { asset ->
+                    LiteRtDetector.load(context, detectorConfig, asset) { nearCrosswalk }
+                },
                 ::onDetections,
                 preview?.view,
             ).also { camera = it }
+        session.setHighRes(nearCrosswalk)
         session.start(
             onStarted = {
                 running = true
@@ -173,6 +181,14 @@ class SaitgilVisionPlugin : Plugin() {
         if (speed != null && !speed.isFinite()) return call.reject("걸음 속도가 올바르지 않습니다: $speed")
         walkSpeedMps = speed?.coerceAtLeast(0.0)
         walkSpeedAtMs = SystemClock.elapsedRealtime()
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun setNearCrosswalk(call: PluginCall) {
+        val near = call.getBoolean("near") ?: return call.reject("횡단보도 근처인지(near)가 없습니다")
+        nearCrosswalk = near
+        camera?.setHighRes(near)
         call.resolve()
     }
 

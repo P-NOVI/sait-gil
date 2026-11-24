@@ -33,6 +33,8 @@ class LiteRtDetector private constructor(
     private val label: String,
     /** 배터리 온도(°C). 발열로 느려지는지 볼 때 쓴다. 모르면 null */
     private val batteryTempC: () -> Double?,
+    /** 횡단보도 근처라 영상 위쪽 가운데를 잘라 먼 신호등을 한 번 더 찾을지(#134) */
+    private val farSignals: () -> Boolean,
 ) : FrameAnalyzer {
     private val size = config.inputSize
     private val planeSize = size * size
@@ -64,29 +66,14 @@ class LiteRtDetector private constructor(
     private val foundCounts = IntArray(DetectedClass.entries.size)
     private val foundBest = FloatArray(DetectedClass.entries.size)
 
+    // 같은 구간에서 위쪽 가운데를 잘라 한 번 더 추론한 프레임 수와 그 시간 합, 찾은 신호등 수·최고 점수(#134).
+    private var croppedFrames = 0
+    private var cropMsSum = 0L
+    private val cropFoundCounts = IntArray(DetectedClass.entries.size)
+    private val cropFoundBest = FloatArray(DetectedClass.entries.size)
+
     override fun analyze(image: ImageProxy): DetectionFrame {
         val started = SystemClock.elapsedRealtime()
-        val letterbox = prepare(image)
-        val prepared = SystemClock.elapsedRealtime()
-        output.rewind()
-        interpreter.run(input, output)
-        output.rewind()
-        output.asFloatBuffer().get(outputValues)
-        val inferred = SystemClock.elapsedRealtime()
-        val detections = decodeDetections(outputValues, candidates, config)
-        // 찍은 시각을 쓴다. 정면 접근 속도를 잴 때 추론이 밀려도 프레임 사이 시간이 맞게 한다.
-        val frame = toDetectionFrame(detections, letterbox, image.imageInfo.timestamp / NANOS_PER_MS)
-        val decoded = SystemClock.elapsedRealtime()
-        val intervalMs = if (lastStartedMs == 0L) null else started - lastStartedMs
-        lastStartedMs = started
-        logWindow(FrameTimes(prepared - started, inferred - prepared, decoded - inferred, intervalMs), detections)
-        return frame
-    }
-
-    override fun close() = interpreter.close()
-
-    /** 프레임을 세운 방향으로 돌려 정사각형 입력에 레터박스로 넣고, 채널 우선(NCHW) 0~1 값으로 채운다 */
-    private fun prepare(image: ImageProxy): Letterbox {
         val rotation = image.imageInfo.rotationDegrees
         val upright = rotation % 180 == 0
         val letterbox = Letterbox(
@@ -94,16 +81,77 @@ class LiteRtDetector private constructor(
             imageHeight = if (upright) image.height else image.width,
             inputSize = size,
         )
-        val frame = image.toBitmap()
+        val bitmap = image.toBitmap()
+        try {
+            placeUpright(image, rotation)
+            placement.postScale(letterbox.scale, letterbox.scale)
+            placement.postTranslate(letterbox.padX, letterbox.padY)
+            fillInput(bitmap)
+            val prepared = SystemClock.elapsedRealtime()
+            runModel()
+            val inferred = SystemClock.elapsedRealtime()
+            val detections = decodeDetections(outputValues, candidates, config)
+            // 찍은 시각을 쓴다. 정면 접근 속도를 잴 때 추론이 밀려도 프레임 사이 시간이 맞게 한다.
+            val frame = toDetectionFrame(detections, letterbox, image.imageInfo.timestamp / NANOS_PER_MS)
+            val decoded = SystemClock.elapsedRealtime()
+            val crop = if (farSignals()) signalCrop(letterbox.imageWidth, letterbox.imageHeight, config) else null
+            val cropBoxes = crop?.let { searchSignals(image, bitmap, rotation, it, letterbox) }
+            val cropMs = cropBoxes?.let { SystemClock.elapsedRealtime() - decoded }
+            val intervalMs = if (lastStartedMs == 0L) null else started - lastStartedMs
+            lastStartedMs = started
+            logWindow(
+                FrameTimes(prepared - started, inferred - prepared, decoded - inferred, intervalMs, cropMs),
+                detections,
+                cropBoxes,
+            )
+            return withCropSignals(frame, cropBoxes.orEmpty(), config.nmsIou)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    override fun close() = interpreter.close()
+
+    /** placement 를 프레임을 세운 방향으로 돌리고 왼쪽 위를 (0, 0) 에 두는 변환으로 되돌린다 */
+    private fun placeUpright(image: ImageProxy, rotation: Int) {
         placement.reset()
         placement.postRotate(rotation.toFloat())
         val turned = RectF(0f, 0f, image.width.toFloat(), image.height.toFloat()).also(placement::mapRect)
         placement.postTranslate(-turned.left, -turned.top)
-        placement.postScale(letterbox.scale, letterbox.scale)
-        placement.postTranslate(letterbox.padX, letterbox.padY)
+    }
+
+    /**
+     * 세운 프레임의 crop 칸을 정사각형 입력에 그려 한 번 더 추론하고, 찾은 신호등 박스를 세운 영상 기준 좌표로 돌려준다.
+     * 칸은 영상 안에 있어 입력 전체를 덮으므로 여백이 생기지 않는다.
+     */
+    private fun searchSignals(
+        image: ImageProxy,
+        frame: Bitmap,
+        rotation: Int,
+        crop: CropRegion,
+        letterbox: Letterbox,
+    ): List<ObjectBox> {
+        placeUpright(image, rotation)
+        placement.postTranslate(-crop.left.toFloat(), -crop.top.toFloat())
+        val scale = size.toFloat() / crop.size
+        placement.postScale(scale, scale)
+        fillInput(frame)
+        runModel()
+        val detections = decodeDetections(outputValues, candidates, config)
+        return signalBoxesFromCrop(detections, crop, letterbox.imageWidth, letterbox.imageHeight)
+    }
+
+    private fun runModel() {
+        output.rewind()
+        interpreter.run(input, output)
+        output.rewind()
+        output.asFloatBuffer().get(outputValues)
+    }
+
+    /** placement 로 프레임을 정사각형 입력에 그리고, 채널 우선(NCHW) 0~1 값으로 채운다. 프레임이 덮지 않는 곳은 여백 회색이다 */
+    private fun fillInput(frame: Bitmap) {
         canvas.drawColor(padColor)
         canvas.drawBitmap(frame, placement, paint)
-        frame.recycle()
 
         square.getPixels(pixels, 0, size, 0, 0, size, size)
         for (i in 0 until planeSize) {
@@ -114,17 +162,26 @@ class LiteRtDetector private constructor(
         }
         input.rewind()
         input.asFloatBuffer().put(inputValues)
-        return letterbox
     }
 
-    /** 프레임 한 장의 단계별 시간(ms). intervalMs 는 앞 프레임 분석 시작부터 이번 시작까지이며 첫 프레임은 null */
-    private class FrameTimes(val prepareMs: Long, val inferMs: Long, val decodeMs: Long, val intervalMs: Long?)
+    /**
+     * 프레임 한 장의 단계별 시간(ms). intervalMs 는 앞 프레임 분석 시작부터 이번 시작까지이며 첫 프레임은 null 이다.
+     * cropMs 는 위쪽 가운데를 잘라 한 번 더 추론한 시간(그리기·추론·후처리)이며 자르지 않았으면 null 이다
+     */
+    private class FrameTimes(
+        val prepareMs: Long,
+        val inferMs: Long,
+        val decodeMs: Long,
+        val intervalMs: Long?,
+        val cropMs: Long?,
+    )
 
     /**
      * 구간마다 추론 시간과 클래스별 박스 수·최고 점수를 로그로 남긴다. 실기기에서 모델이 맞게 잡는지 볼 때 쓴다.
      * 모델 비교(#128)를 위해 모델 이름·기기·배터리 온도를 같은 줄에 남긴다. "추론 측정" 으로 찾는다.
+     * 횡단보도 근처에서 위쪽 가운데를 잘라 한 번 더 추론했으면 그 시간과 찾은 신호등을 따로 남긴다(#134). "신호등 칸" 으로 찾는다.
      */
-    private fun logWindow(times: FrameTimes, detections: List<RawDetection>) {
+    private fun logWindow(times: FrameTimes, detections: List<RawDetection>, cropBoxes: List<ObjectBox>?) {
         if (warmupLeft > 0) {
             warmupLeft -= 1
             return
@@ -139,6 +196,15 @@ class LiteRtDetector private constructor(
             foundCounts[index] += 1
             foundBest[index] = maxOf(foundBest[index], detection.score)
         }
+        times.cropMs?.let {
+            croppedFrames += 1
+            cropMsSum += it
+        }
+        for (box in cropBoxes.orEmpty()) {
+            val index = box.kind.ordinal
+            cropFoundCounts[index] += 1
+            cropFoundBest[index] = maxOf(cropFoundBest[index], box.score.toFloat())
+        }
         if (timedFrames < config.logEveryFrames) return
 
         val fps = if (intervalMsSum > 0) "%.2f".format(timedFrames * MS_PER_SECOND / intervalMsSum) else "-"
@@ -149,10 +215,14 @@ class LiteRtDetector private constructor(
                 "전처리 ${prepareMsSum / timedFrames}ms, 후처리 ${decodeMsSum / timedFrames}ms, ${fps}fps, " +
                 "배터리 $battery (${timedFrames}장)",
         )
-        val found = DetectedClass.entries
-            .filter { foundCounts[it.ordinal] > 0 }
-            .joinToString { "${it.wire} ${foundCounts[it.ordinal]}개(최고 ${"%.2f".format(foundBest[it.ordinal])})" }
-        Log.d(TAG, "탐지 합계 (${timedFrames}장): ${found.ifEmpty { "없음" }}")
+        Log.d(TAG, "탐지 합계 (${timedFrames}장): ${foundText(foundCounts, foundBest)}")
+        if (croppedFrames > 0) {
+            Log.d(
+                TAG,
+                "신호등 칸 추론 평균 ${cropMsSum / croppedFrames}ms (${croppedFrames}장), " +
+                    "찾은 신호등: ${foundText(cropFoundCounts, cropFoundBest)}",
+            )
+        }
         timedFrames = 0
         prepareMsSum = 0
         inferMsSum = 0
@@ -160,7 +230,17 @@ class LiteRtDetector private constructor(
         intervalMsSum = 0
         foundCounts.fill(0)
         foundBest.fill(0f)
+        croppedFrames = 0
+        cropMsSum = 0
+        cropFoundCounts.fill(0)
+        cropFoundBest.fill(0f)
     }
+
+    /** 클래스별 박스 수·최고 점수를 로그 한 줄로. 하나도 없으면 "없음" */
+    private fun foundText(counts: IntArray, best: FloatArray): String = DetectedClass.entries
+        .filter { counts[it.ordinal] > 0 }
+        .joinToString { "${it.wire} ${counts[it.ordinal]}개(최고 ${"%.2f".format(best[it.ordinal])})" }
+        .ifEmpty { "없음" }
 
     companion object {
         private const val TAG = "SaitgilVision"
@@ -173,12 +253,14 @@ class LiteRtDetector private constructor(
 
         /**
          * assets 의 모델(asset)로 만든다. 모델 파일이 없거나(가중치는 커밋하지 않는다) 입출력이 앱과 다르면 null 이다.
+         * farSignals 가 true 인 프레임은 위쪽 가운데를 잘라 신호등을 한 번 더 찾는다.
          * 모델을 읽는 데 시간이 걸리므로 메인 스레드에서 부르지 않는다.
          */
         fun load(
             context: Context,
             config: DetectorConfig = DetectorConfig(),
             asset: String = config.modelAsset,
+            farSignals: () -> Boolean = { false },
         ): LiteRtDetector? {
             val model = try {
                 context.assets.open(asset).use { it.readBytes() }
@@ -213,7 +295,7 @@ class LiteRtDetector private constructor(
             val label = modelLabel(config.compareModels, asset)
             Log.i(TAG, "모델을 불러왔습니다: $label $asset (${model.size / BYTES_PER_KB}KB, 후보 ${outputShape[2]}개)")
             val appContext = context.applicationContext
-            return LiteRtDetector(interpreter, config, outputShape[2], label) { batteryTempC(appContext) }
+            return LiteRtDetector(interpreter, config, outputShape[2], label, { batteryTempC(appContext) }, farSignals)
         }
 
         /** 배터리 온도(°C). 시스템이 늘 들고 있는 배터리 상태 방송을 읽기만 하고 수신기는 등록하지 않는다 */

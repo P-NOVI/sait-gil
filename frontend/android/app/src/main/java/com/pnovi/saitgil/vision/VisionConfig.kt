@@ -170,6 +170,17 @@ data class DetectorConfig(
     val logWarmupFrames: Int = 5,
     /** 레터박스 여백 밝기(0~255). 학습 때 Ultralytics 가 채우는 회색과 같다 */
     val padGray: Int = 114,
+    /**
+     * 횡단보도 근처에서 세운 영상의 위쪽 가운데를 잘라 신호등만 한 번 더 찾을 정사각형 한 변(px, #134).
+     * 근처에서는 분석 해상도를 올리므로(CameraSession) 모델 입력과 같은 크기로 잘라 줄이지 않고 넣는다.
+     * 960×1280 영상에서 가로 2/3 를 덮어, 앞쪽으로 보는 신호등 폭(가운데 60%)이 들어간다. 영상이 이보다 작으면 자르지 않는다
+     */
+    val signalCropSizePx: Int = 640,
+    /**
+     * 자를 칸 가운데의 세로 위치(위에서 0~1). 길 건너 신호등은 25~35m 떨어져 수평선(VisionConfig.horizonY 0.5) 조금 위에 보이고,
+     * 폰이 앞뒤로 기울어도 들어가게 위쪽으로 넉넉히 둔다. 실기기에서 맞출 초안 값이다
+     */
+    val signalCropCenterY: Double = 0.4,
 )
 
 /**
