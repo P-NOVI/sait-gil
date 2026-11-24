@@ -57,8 +57,7 @@ export const LOCATION_PERMISSION_LATER_TEXT =
 export const OPEN_SETTINGS_TEXT =
     '설정 화면을 엽니다. 권한에서 위치를 허용으로 바꾼 뒤 뒤로 가기로 돌아오세요.';
 /** 카메라 권한이 거부돼 인식을 켜지 못했을 때. 실패 알림을 읽은 뒤 설정 화면을 열지 묻는 말 */
-export const CAMERA_PERMISSION_QUESTION =
-    '카메라를 허용하려면 설정 화면을 열까요?';
+export const CAMERA_PERMISSION_QUESTION = '카메라 설정 화면을 열까요?';
 /** 카메라 권한 설정 화면을 열기 전에 읽는 말 */
 export const OPEN_CAMERA_SETTINGS_TEXT =
     '설정 화면을 엽니다. 권한에서 카메라를 허용으로 바꾼 뒤 뒤로 가기로 돌아오세요.';
