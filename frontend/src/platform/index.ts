@@ -20,6 +20,7 @@ export {
 } from './location';
 export { isNativeApp, SPEECH_LANG } from './runtime';
 export { speak, stopSpeaking } from './speech';
+export { watchSteps } from './steps';
 export { readStored, writeStored } from './storage';
 export {
     type ClockDirection,

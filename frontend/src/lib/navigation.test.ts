@@ -5,6 +5,7 @@ import { distanceM, type LngLat } from './geo';
 import {
     judge,
     NEW_TRACKER,
+    pointAt,
     progressAlong,
     type RouteLine,
     type RouteProgress,
@@ -249,5 +250,25 @@ describe('trackOffRoute', () => {
         expect(
             trackOffRoute(NEW_TRACKER, 'uncertain', here, later).offRoute,
         ).toBe(false);
+    });
+});
+
+describe('pointAt', () => {
+    it('출발점 이전이면 출발점이다', () => {
+        expect(pointAt(ROUTE, -5)).toEqual(A);
+        expect(pointAt(ROUTE, 0)).toEqual(A);
+    });
+
+    it('경로 끝을 넘으면 끝점이다', () => {
+        expect(pointAt(ROUTE, 300)).toEqual(C);
+        expect(pointAt(ROUTE, 999)).toEqual(C);
+    });
+
+    it('누적 거리로 구간 안을 보간한다', () => {
+        expect(pointAt(ROUTE, 50)).toEqual([
+            (A[0] + B[0]) / 2,
+            (A[1] + B[1]) / 2,
+        ]);
+        expect(pointAt(ROUTE, 200)).toEqual([B[0], (B[1] + C[1]) / 2]);
     });
 });

@@ -6,22 +6,31 @@ import type { LngLat } from '../lib/geo';
 import {
     APPROXIMATE_KEY,
     ARRIVED_KEY,
+    deadReckon,
     type GuidanceStep,
     type GuidedRoute,
     guidanceStep,
     LOCATION_LOST_KEY,
     markAnnounced,
     NEW_GUIDANCE,
+    withoutArrival,
 } from '../lib/guidance';
-import { filterFix, NEW_LOCATION_FILTER } from '../lib/locationFilter';
+import {
+    estimatedFix,
+    filterFix,
+    type Motion,
+    NEW_LOCATION_FILTER,
+    strideOf,
+} from '../lib/locationFilter';
 import {
     allowScreenOff,
     APPROXIMATE_TEXT,
     keepScreenOn,
     type LocationFix,
     watchLocation,
+    watchSteps,
 } from '../platform';
-import { LOCATION_LOST_COOLDOWN_MS } from '../settings';
+import { LOCATION_FILTER, LOCATION_LOST_COOLDOWN_MS } from '../settings';
 
 export type Guidance = {
     /** 마지막으로 받은 위치 */
@@ -134,17 +143,53 @@ export function useGuidance({
         session.current += 1;
         void keepScreenOn().catch(() => false);
 
+        // 걸음 센서를 쓸 수 있으면 누적 걸음 수가 들어온다. 쓸 수 없으면 null 로 남아 시간 기준으로 거른다.
+        let steps: number | null = null;
+        // 직전 길안내 걸음을 돌렸을 때의 걸음 수. 이후 걸은 만큼 경로 위 내 위치를 추정한다.
+        let stepsAtLast: number | null = null;
+        const stopSteps = watchSteps((total) => {
+            steps = total;
+        });
+
         const stop = watchLocation(
             (received) => {
                 const now = Date.now();
-                const filtered = filterFix(filter, received, now);
+                const current = latest.current;
+                const motion: Motion | undefined =
+                    steps === null
+                        ? undefined
+                        : {
+                              steps,
+                              expected:
+                                  current.route && stepsAtLast !== null
+                                      ? deadReckon(
+                                            current.route,
+                                            state.last,
+                                            (steps - stepsAtLast) *
+                                                strideOf(filter),
+                                        )
+                                      : null,
+                          };
+                const filtered = filterFix(
+                    filter,
+                    received,
+                    now,
+                    LOCATION_FILTER,
+                    motion,
+                );
                 filter = filtered.state;
-                const { fix } = filtered;
+                let { fix } = filtered;
+                let estimated = false;
+                // 걸음 수와 맞지 않아 믿지 않는 동안에는 걸음 수로 추정한 경로 위 위치로 안내를 잇는다.
+                // 경로를 벗어난 것으로 보지 않아 다시 찾지 않는다. 믿지 않는 시간에는 상한이 있다(distrustLimitMs).
+                if (!fix && filtered.distrusted && motion?.expected) {
+                    fix = estimatedFix(received, motion.expected);
+                    estimated = true;
+                }
                 // 튄 위치는 지도와 안내에 쓰지 않고 다음 위치를 기다린다.
                 if (!fix) {
                     return;
                 }
-                const current = latest.current;
                 // 대략적인 위치로는 판단을 계속 보류해 말없이 멈추므로, 이유를 안내마다 한 번 읽는다.
                 // 읽는 중이면 버리고 다음 위치에서 다시 넘긴다.
                 const error = fix.approximate ? APPROXIMATE_TEXT : null;
@@ -175,7 +220,13 @@ export function useGuidance({
                     now,
                 );
                 state = step.state;
-                const picked = pickAlert(step.alerts, spokenAt.current, now);
+                stepsAtLast = steps;
+                // 추정 위치로는 도착을 알리지 않는다. 목적지 근처에서 GPS 가 튀어도 안내가 일찍 끝나지 않게 한다.
+                const picked = pickAlert(
+                    withoutArrival(step.alerts, estimated),
+                    spokenAt.current,
+                    now,
+                );
                 // 읽는 중이라 미룬 알림은 표시하지 않아 다음 위치에서 다시 고른다.
                 const alert =
                     picked && !current.busyFor(picked.level) ? picked : null;
@@ -214,6 +265,7 @@ export function useGuidance({
         return () => {
             session.current += 1;
             stop();
+            stopSteps();
             void allowScreenOff().catch(() => undefined);
             setGuidance(IDLE);
         };

@@ -4,6 +4,7 @@ import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
 import com.pnovi.saitgil.audio.SaitgilAudioPlugin;
 import com.pnovi.saitgil.settings.SaitgilSettingsPlugin;
+import com.pnovi.saitgil.steps.SaitgilStepsPlugin;
 import com.pnovi.saitgil.vision.SaitgilVisionPlugin;
 
 public class MainActivity extends BridgeActivity {
@@ -14,6 +15,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SaitgilVisionPlugin.class);
         registerPlugin(SaitgilSettingsPlugin.class);
         registerPlugin(SaitgilAudioPlugin.class);
+        registerPlugin(SaitgilStepsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
