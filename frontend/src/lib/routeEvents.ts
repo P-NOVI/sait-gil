@@ -90,6 +90,7 @@ export type BlockAlert = {
  * 지금 알릴 블럭 안내. 다음 교차로(회전·횡단보도) 하나만 본다. 없으면 null.
  * 교차로까지 남은 거리가 settings.maxM 이하면 "이번 블럭", 더 멀면 미터로 한 번씩 알린다.
  * "곧" 안내 전까지 걸을 거리가 settings.minWalkM 보다 짧으면(짧은 블럭, 이미 가까이 와서 시작한 블럭) 내지 않는다.
+ * 방금 지난 횡단보도를 아직 다 건너지 못했으면(settings.crosswalkWidthM 안) 새 블럭에 들어온 것이 아니므로 내지 않는다.
  */
 export function dueBlockAlert(
     events: readonly RouteEvent[],
@@ -98,6 +99,15 @@ export function dueBlockAlert(
     settings: BlockSettings = BLOCK,
     alertDistanceM: Readonly<Record<EventKind, number>> = ALERT_DISTANCE_M,
 ): BlockAlert | null {
+    const crossing = events.some(
+        (end) =>
+            end.kind === 'crosswalk' &&
+            end.distance_m < travelledM &&
+            travelledM < end.distance_m + settings.crosswalkWidthM,
+    );
+    if (crossing) {
+        return null;
+    }
     const event = events
         .filter((end) => isBlockEnd(end) && end.distance_m >= travelledM)
         .reduce<RouteEvent | null>(
