@@ -4,6 +4,7 @@
 
 import { type PluginListenerHandle, registerPlugin } from '@capacitor/core';
 
+import { inPermissionOrder } from './permissionQueue';
 import { isNativeApp } from './runtime';
 
 type SaitgilStepsPlugin = {
@@ -45,7 +46,7 @@ export function watchSteps(onSteps: (steps: number) => void): () => void {
                 return;
             }
             handle = listener;
-            const { available } = await native.start();
+            const { available } = await inPermissionOrder(() => native.start());
             if (!available) {
                 await listener.remove();
                 handle = null;

@@ -4,6 +4,7 @@
 
 import { type PluginListenerHandle, registerPlugin } from '@capacitor/core';
 
+import { inPermissionOrder } from './permissionQueue';
 import { isNativeApp } from './runtime';
 import { startMockVision } from './visionMock';
 
@@ -252,7 +253,7 @@ export async function startVision(
         Promise.all(listeners.map((listener) => listener.remove()));
     try {
         await inOrder(async () => {
-            await vision.start();
+            await inPermissionOrder(() => vision.start());
             owner = session;
         });
     } catch (error) {
