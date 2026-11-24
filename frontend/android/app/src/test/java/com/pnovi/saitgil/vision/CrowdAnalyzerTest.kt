@@ -62,6 +62,34 @@ class CrowdAnalyzerTest {
     }
 
     @Test
+    fun heightKIsInterpolatedBetweenSectorCenters() {
+        val k = VisionConfig().distanceK!!
+
+        // 칸 가운데 값은 그대로, 두 칸 경계는 두 값의 가운데, 양 끝 칸 가운데 밖은 끝 값이다.
+        CLOCK_SECTORS.indices.forEach { sector ->
+            assertEquals(k.heightK[sector], k.heightKAt((sector + 0.5) / CLOCK_SECTORS.size), 1e-9)
+        }
+        assertEquals((k.heightK[1] + k.heightK[2]) / 2, k.heightKAt(0.4), 1e-9)
+        assertEquals(k.heightK.first(), k.heightKAt(0.0), 1e-9)
+        assertEquals(k.heightK.last(), k.heightKAt(1.0), 1e-9)
+    }
+
+    @Test
+    fun distanceDoesNotJumpWhenPersonCrossesSectorBoundary() {
+        // 3m 앞 사람이 11시 칸에서 12시 칸으로 옆으로 걸어 들어와도(x 0.38→0.42) 거리가 계단처럼 튀지 않는다.
+        val measured = VisionConfig()
+        val k = measured.distanceK!!
+        val height = k.heightKAt(0.4) / 3.0
+        fun distanceAt(x: Double): Double {
+            val box = PersonBox(x - 0.05, 0.5 - height / 2, 0.1, height, score = 0.9)
+            return estimateDistanceM(box, frame(0, box), measured)!!
+        }
+
+        assertEquals(3.0, distanceAt(0.4), 1e-9)
+        assertTrue(kotlin.math.abs(distanceAt(0.42) - distanceAt(0.38)) < 0.03)
+    }
+
+    @Test
     fun measuredKUsesBoxWidthWhenClippedVertically() {
         val measured = VisionConfig()
         val k = measured.distanceK!!

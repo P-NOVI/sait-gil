@@ -7,11 +7,13 @@ from distance_calibration.geometry import (
     Box,
     Letterbox,
     Measurement,
+    SectorK,
     clipped_sideways,
     clipped_vertically,
     decode_persons,
     estimate_distance,
     fit_k,
+    height_k_at,
     sector_of,
 )
 
@@ -144,7 +146,7 @@ def test_fit_k_uses_median_per_sector_and_recovers_distances() -> None:
     assert ks[2].height_samples == 4
     assert ks[0].height_k is None  # 사진이 없는 칸
     box = Box(0.45, 0.2, 0.1, 0.5, 0.9)
-    assert abs(estimate_distance(box, ks[2], SETTINGS) - 2.5) < 0.05
+    assert abs(estimate_distance(box, ks, SETTINGS) - 2.5) < 0.05
 
 
 def test_fit_k_splits_vertically_clipped_photos_into_width_k() -> None:
@@ -165,9 +167,19 @@ def test_fit_k_splits_vertically_clipped_photos_into_width_k() -> None:
 def test_estimate_distance_is_none_without_k() -> None:
     ks = fit_k([], SETTINGS)
 
-    assert estimate_distance(Box(0.45, 0.2, 0.1, 0.5, 0.9), ks[2], SETTINGS) is None
+    assert estimate_distance(Box(0.45, 0.2, 0.1, 0.5, 0.9), ks, SETTINGS) is None
 
 
 def test_error_pct() -> None:
     assert error_pct(None, 3.0) is None
     assert round(error_pct(3.3, 3.0), 1) == 10.0
+
+
+def test_height_k_is_interpolated_between_sector_centers() -> None:
+    none = SectorK(None, None, 0, 0)
+    ks = [SectorK(1.4, None, 3, 0), none, SectorK(1.2, None, 3, 0), none, none]
+
+    assert height_k_at(0.1, ks) == 1.4  # 칸 가운데
+    assert abs(height_k_at(0.3, ks) - 1.3) < 1e-9  # K 없는 칸은 건너뛰고 잇는다
+    assert height_k_at(0.9, ks) == 1.2  # 끝 밖은 끝 값
+    assert height_k_at(0.5, [none] * 5) is None

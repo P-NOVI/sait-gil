@@ -90,7 +90,7 @@ def report(
     )
     for m in measurements:
         by_width = clipped_vertically(m.box, settings["clipped_edge"])
-        fitted = estimate_distance(m.box, ks[m.sector], settings)
+        fitted = estimate_distance(m.box, ks, settings)
         old = old_estimate(m, settings)
         mark = "" if m.sector == m.expected_sector else "  (칸 다름)"
         lines.append(
@@ -107,7 +107,7 @@ def measure(photos: list[tuple[Path, float, int]], settings: dict[str, Any]):
     """사진마다 사람 박스를 뽑는다. (측정 목록, 사람을 못 찾은 사진 이름)을 돌려준다."""
     from distance_calibration.detect import load_interpreter, person_boxes, read_image
 
-    interpreter = load_interpreter(repo_path(settings["model"]))
+    interpreter = load_interpreter(repo_path(str(settings["model"])))
     measurements: list[Measurement] = []
     missed: list[str] = []
     for path, distance, expected in photos:
@@ -138,6 +138,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--photos", type=Path, help="사진 폴더(기본: DATA_DIR/설정값)")
     parser.add_argument("--json", type=Path, help="칸별 K 를 JSON 으로 저장할 경로")
+    parser.add_argument(
+        "--model",
+        type=Path,
+        help="추론할 .tflite(기본: 설정값). int8 등으로 다시 구할 때",
+    )
     args = parser.parse_args()
 
     photo_dir = args.photos or data_path(settings["photo_dir"])
@@ -147,6 +152,8 @@ def main() -> None:
             f"규칙에 맞는 사진이 없습니다: {photo_dir}/{{거리}}m/{{방향}}.jpg"
         )
 
+    if args.model:
+        settings = {**settings, "model": args.model}
     measurements, missed = measure(photos, settings)
     ks = fit_k(measurements, settings)
     print(f"사진 {len(photos)}장 중 사람을 찾은 사진 {len(measurements)}장\n")

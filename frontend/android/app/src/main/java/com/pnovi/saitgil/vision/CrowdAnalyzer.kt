@@ -104,14 +104,14 @@ fun estimateDistanceM(box: PersonBox, frame: DetectionFrame, config: VisionConfi
 }
 
 /**
- * 실측 보정값(K)으로 거리를 잰다. 박스 가운데가 속한 칸의 높이 K 를 쓰고, 위나 아래가 잘렸으면 폭 K 를 쓴다.
+ * 실측 보정값(K)으로 거리를 잰다. 박스 가운데 위치의 높이 K(칸 사이는 보간)를 쓰고, 위나 아래가 잘렸으면 폭 K 를 쓴다.
  * 높이·폭이 0 이면 null 이다.
  */
 private fun estimateDistanceByK(box: PersonBox, k: DistanceK, config: VisionConfig): Double? {
     val (ratio, kValue) = if (isClippedVertically(box, config)) {
         box.width to k.widthK
     } else {
-        box.height to k.heightK[sectorOf(box.centerX)]
+        box.height to k.heightKAt(box.centerX)
     }
     if (ratio <= 0.0) return null
     return kValue / ratio

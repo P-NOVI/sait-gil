@@ -190,8 +190,30 @@ def fit_k(measurements: list[Measurement], settings: dict[str, Any]) -> list[Sec
     return result
 
 
-def estimate_distance(box: Box, k: SectorK, settings: dict[str, Any]) -> float | None:
+def height_k_at(center_x: float, ks: list[SectorK]) -> float | None:
+    """영상 가로 위치의 높이 K. 칸 가운데 사이는 선형 보간하고 끝 밖은 끝 값을 쓴다.
+
+    앱의 DistanceK.heightKAt 과 같다. K 가 없는 칸은 건너뛰고 있는 칸끼리 잇는다.
+    """
+    known = [(i, k.height_k) for i, k in enumerate(ks) if k.height_k is not None]
+    if not known:
+        return None
+    centers = [(i + 0.5) / len(ks) for i, _ in known]
+    return float(np.interp(center_x, centers, [value for _, value in known]))
+
+
+def width_k(ks: list[SectorK]) -> float | None:
+    """위아래가 잘린 박스의 폭 K. 칸마다 같아 하나만 쓰므로 칸별 값의 중앙값이다."""
+    values = [k.width_k for k in ks if k.width_k is not None]
+    return median(values) if values else None
+
+
+def estimate_distance(
+    box: Box, ks: list[SectorK], settings: dict[str, Any]
+) -> float | None:
     """보정값으로 거리를 추정한다. 앱과 같게 위아래가 잘리면 폭, 아니면 높이를 쓴다."""
     if clipped_vertically(box, settings["clipped_edge"]):
-        return k.width_k / box.width if k.width_k is not None else None
-    return k.height_k / box.height if k.height_k is not None else None
+        k = width_k(ks)
+        return k / box.width if k is not None else None
+    k = height_k_at(box.center_x, ks)
+    return k / box.height if k is not None else None
