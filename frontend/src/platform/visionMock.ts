@@ -13,7 +13,7 @@ const FRAMES_PER_STEP = 12;
  * 신호등은 길안내 중 횡단보도 근처에서만 읽는다.
  */
 type MockStep = {
-    frame: Omit<VisionFrame, 'obstacles'>;
+    frame: Omit<VisionFrame, 'obstacles' | 'signalId'>;
     approach?: VisionApproach;
     obstacle?: VisionObstacle;
 };
@@ -119,6 +119,7 @@ export function startMockVision(
         // 장애물 알림을 보내는 단계는 그 장애물이 화면에도 보이게 한다.
         onFrame({
             ...step.frame,
+            signalId: 0,
             obstacles: step.obstacle ? [step.obstacle] : [],
         });
         if (entering && step.approach) {

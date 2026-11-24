@@ -77,6 +77,7 @@ describe('startVision', () => {
             nearestPersonM: null,
             freeDirections: [11, 12, 1],
             signal: null,
+            signalId: 0,
             obstacles: [],
         });
         expect(plugin.addListener).not.toHaveBeenCalled();
@@ -189,6 +190,7 @@ describe('startVision', () => {
                 nearestPersonM: 2.1,
                 freeDirections: [11],
                 signal: null,
+                signalId: 0,
                 obstacles: [],
             },
         ]);
@@ -207,6 +209,7 @@ describe('startVision', () => {
                 nearestPersonM: null,
                 freeDirections: [],
                 signal: null,
+                signalId: 0,
                 obstacles: [],
             },
         ]);
@@ -230,6 +233,7 @@ describe('startVision', () => {
                 nearestPersonM: null,
                 freeDirections: [12],
                 signal: null,
+                signalId: 0,
                 obstacles: [],
             },
             {
@@ -237,6 +241,7 @@ describe('startVision', () => {
                 nearestPersonM: null,
                 freeDirections: [],
                 signal: null,
+                signalId: 0,
                 obstacles: [],
             },
         ]);
@@ -256,6 +261,29 @@ describe('startVision', () => {
             'other',
             null,
         ]);
+        stop();
+    });
+
+    it('신호등 번호를 받고 잘못된 값은 0 으로 본다', async () => {
+        native.value = true;
+        const frames: VisionFrame[] = [];
+        const stop = await startVision((frame) => frames.push(frame));
+
+        emit({
+            level: 'clear',
+            freeDirections: [],
+            signal: 'red',
+            signalId: 3,
+        });
+        emit({
+            level: 'clear',
+            freeDirections: [],
+            signal: 'red',
+            signalId: 1.5,
+        });
+        emit({ level: 'clear', freeDirections: [], signal: 'red' });
+
+        expect(frames.map((frame) => frame.signalId)).toEqual([3, 0, 0]);
         stop();
     });
 
@@ -380,6 +408,7 @@ describe('startVision', () => {
             nearestPersonM: null,
             freeDirections: [2, 12, 10],
             signal: null,
+            signalId: 0,
             obstacles: [],
         });
         stop();

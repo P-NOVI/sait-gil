@@ -14,8 +14,9 @@ private val SIGNAL_STATES: Map<DetectedClass, SignalState> = mapOf(
 /**
  * 프레임 하나를 본 결과. state 는 확정된 신호등 상태(안 보이면 null),
  * box 는 이번 프레임에 따라간 신호등 박스(못 잡았으면 null), picked 는 이번 프레임에 신호등을 새로 골랐는지다.
+ * id 는 따라가는 신호등 번호로, 새로 고를 때마다 늘어난다. 화면은 번호가 바뀌면 다른 신호등으로 보고 읽은 기록을 지운다.
  */
-data class SignalReading(val state: SignalState?, val box: ObjectBox?, val picked: Boolean)
+data class SignalReading(val state: SignalState?, val box: ObjectBox?, val picked: Boolean, val id: Int)
 
 /** 안내를 시작할 때마다 새로 만든다 */
 class SignalTracker(private val config: VisionConfig = VisionConfig()) {
@@ -26,6 +27,7 @@ class SignalTracker(private val config: VisionConfig = VisionConfig()) {
     private var candidate: SignalState? = null
     private var candidateSinceMs = 0L
     private var candidateSeenMs = 0L
+    private var id = 0
 
     fun update(frame: DetectionFrame): SignalReading {
         val now = frame.timeMs
@@ -39,12 +41,25 @@ class SignalTracker(private val config: VisionConfig = VisionConfig()) {
             picked = seen != null
             if (seen == null) track = null
         }
+        if (picked) startOver(now)
         if (seen != null) {
             track = seen
             trackSeenMs = now
         }
         confirm(seen?.let { SIGNAL_STATES.getValue(it.kind) }, now)
-        return SignalReading(state, seen, picked)
+        return SignalReading(state, seen, picked, id)
+    }
+
+    /**
+     * 새로 고른 신호등은 처음부터 센다. 앞 신호등에서 정한 상태와 세던 시간을 이어 가면
+     * 다른 신호등의 불을 바뀐 것으로 읽거나, 앞 신호등을 잘못 본 시각부터 세어 일찍 확정한다.
+     */
+    private fun startOver(now: Long) {
+        id += 1
+        state = null
+        candidate = null
+        candidateSinceMs = now
+        candidateSeenMs = now
     }
 
     /** 따라가던 신호등과 같은 박스. 빨간불에서 바뀌면 클래스가 달라지므로 클래스는 보지 않는다 */

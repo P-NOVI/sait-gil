@@ -175,7 +175,9 @@ function pointAlong(
 }
 
 /**
- * 가까운 횡단보도를 건너는 방향(북쪽 0도, 시계 방향). 횡단보도 지점(Tmap 안내점)에서 경로를 따라 lookAheadM 간 곳을 본다.
+ * 가까운 횡단보도를 건너는 방향(북쪽 0도, 시계 방향).
+ * Tmap 안내점은 다음 구간(횡단보도)이 시작하는 꼭짓점에 있어, 안내점에서 다음 꼭짓점(횡단보도 끝)까지를 본다.
+ * 정한 거리만큼 더 가서 보면 짧은 횡단보도를 건너 바로 꺾는 길이 섞여 방향이 틀어진다. 긴 횡단보도는 lookAheadM 까지만 본다.
  * 근처에 횡단보도가 없거나 경로가 끝나 방향을 잴 수 없으면 null.
  */
 export function crossingBearing(
@@ -188,8 +190,16 @@ export function crossingBearing(
     if (crosswalk === null) {
         return null;
     }
-    const start = pointAlong(route, crosswalk.distance_m);
-    const end = pointAlong(route, crosswalk.distance_m + settings.lookAheadM);
+    const startM = crosswalk.distance_m;
+    const nextVertexM = route.distances_m.find(
+        (distance) => distance >= startM + settings.minSpanM,
+    );
+    const endM = Math.min(
+        nextVertexM ?? Infinity,
+        startM + settings.lookAheadM,
+    );
+    const start = pointAlong(route, startM);
+    const end = pointAlong(route, endM);
     return distanceM(start, end) > 0 ? bearingDeg(start, end) : null;
 }
 

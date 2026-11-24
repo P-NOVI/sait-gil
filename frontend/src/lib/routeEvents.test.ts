@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { CROSSING_FACING } from '../settings';
 import type { LngLat } from './geo';
 import type { RouteLine } from './navigation';
 import {
@@ -118,6 +119,11 @@ const CORNER_CROSSWALK: RouteEvent = {
     position: CORNER,
     direction: 'right',
 };
+const LNG_METERS = METERS_PER_DEGREE * Math.cos((CORNER[1] * Math.PI) / 180);
+const moved = ([lng, lat]: LngLat, eastM: number, northM: number): LngLat => [
+    lng + eastM / LNG_METERS,
+    lat + northM / METERS_PER_DEGREE,
+];
 
 describe('crossingBearing', () => {
     it('횡단보도 지점에서 경로를 따라 간 방향이다', () => {
@@ -131,6 +137,32 @@ describe('crossingBearing', () => {
         expect(crossingBearing(ROUTE, [CORNER_CROSSWALK], 10)).toBeNull();
     });
 
+    it('짧은 횡단보도를 건너 바로 꺾어도 횡단보도 끝까지의 방향이다', () => {
+        // 동쪽으로 6m 건넌 뒤 바로 북쪽으로 꺾는다. 10m 앞을 보면 꺾은 길이 섞여 약 56도가 된다.
+        const crossed = moved(CORNER, 6, 0);
+        const route: RouteLine = {
+            coordinates: [[127, 37.5], CORNER, crossed, moved(crossed, 0, 20)],
+            distances_m: [0, 100, 106, 126],
+        };
+
+        expect(crossingBearing(route, [CORNER_CROSSWALK], 90)).toBeCloseTo(
+            90,
+            0,
+        );
+    });
+
+    it('다음 꼭짓점이 minSpanM 보다 가까우면 그다음 꼭짓점까지 본다', () => {
+        // 횡단보도 들머리에서 북쪽으로 1m 꺾였다 동쪽으로 8m 건넌다.
+        const jog = moved(CORNER, 0, 1);
+        const route: RouteLine = {
+            coordinates: [[127, 37.5], CORNER, jog, moved(jog, 8, 0)],
+            distances_m: [0, 100, 101, 109],
+        };
+        const bearing = crossingBearing(route, [CORNER_CROSSWALK], 90);
+
+        expect(Math.abs((bearing ?? 0) - 90)).toBeLessThan(10);
+    });
+
     it('경로가 횡단보도에서 끝나면 모른다', () => {
         const ending: RouteLine = {
             coordinates: [[127, 37.5], CORNER],
@@ -142,7 +174,7 @@ describe('crossingBearing', () => {
 });
 
 describe('facingCrossing', () => {
-    const settings = { lookAheadM: 10, maxDeg: 45 };
+    const settings = { ...CROSSING_FACING, maxDeg: 45 };
 
     it('카메라가 건너는 방향에서 maxDeg 안이면 본다', () => {
         expect(facingCrossing(120, 90, settings)).toBe(true);

@@ -210,7 +210,7 @@ class SaitgilVisionPlugin : Plugin() {
         val frame = detected.copy(walkSpeedMps = currentWalkSpeedMps())
         val crowd = analyzer.analyze(frame)
         val objects = objectAnalyzer.analyze(frame)
-        emitCrowdState(crowd.frame.copy(signal = objects.signal, obstacles = objects.seen))
+        emitCrowdState(crowd.frame.copy(signal = objects.signal, signalId = objects.signalId, obstacles = objects.seen))
         crowd.alert?.let(::emitAlert)
         objects.alerts.forEach(::emitAlert)
         // 실기기에서 차 움직임 기준을 맞추려고 추적 중인 차를 프레임마다 남긴다. 튜닝용이라 릴리스 전에 지우거나 디버그 빌드에서만 남긴다.
@@ -229,7 +229,7 @@ class SaitgilVisionPlugin : Plugin() {
             )
         } ?: "못 잡음"
         val picked = if (objects.signalPicked) " (새로 고름)" else ""
-        return "신호등 상태 ${objects.signal?.wire ?: "없음"}, 박스 $box$picked"
+        return "신호등 #${objects.signalId} 상태 ${objects.signal?.wire ?: "없음"}, 박스 $box$picked"
     }
 
     private fun vehicleLog(state: VehicleState, walkSpeedMps: Double?): String {

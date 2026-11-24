@@ -58,6 +58,7 @@ data class ObstacleSighting(val kind: DetectedClass, val direction: Int)
  * alerts 는 이번 프레임에 알릴 장애물이다. 움직이는 차를 앞에, 장애물·서 있는 차는 많아야 하나를 뒤에 둔다.
  * vehicles 는 추적 중인 차의 거리·움직임으로, 실기기 로그로 기준을 맞출 때 쓴다.
  * signalBox·signalPicked 는 따라간 신호등 박스와 이번에 새로 골랐는지로, 실기기에서 어느 신호등을 봤는지 로그로 볼 때 쓴다.
+ * signalId 는 따라가는 신호등 번호로, 화면이 다른 신호등인지 가릴 때 쓴다.
  */
 data class ObjectAnalysis(
     val signal: SignalState?,
@@ -66,6 +67,7 @@ data class ObjectAnalysis(
     val vehicles: List<VehicleState> = emptyList(),
     val signalBox: ObjectBox? = null,
     val signalPicked: Boolean = false,
+    val signalId: Int = 0,
 )
 
 /** 안내를 시작할 때마다 새로 만든다. 앞 프레임들을 기억해 잘못 잡힌 박스와 반복 알림을 거른다. */
@@ -112,6 +114,7 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
             vehicleAnalysis.states,
             signal.box,
             signal.picked,
+            signal.id,
         )
     }
 

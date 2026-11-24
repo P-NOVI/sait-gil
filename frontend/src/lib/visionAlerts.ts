@@ -11,7 +11,12 @@ import type {
     VisionLevel,
     VisionObstacle,
 } from '../platform';
-import { VISION, type VisionSettings } from '../settings';
+import {
+    CROSSING_FACING,
+    type CrossingFacingSettings,
+    VISION,
+    type VisionSettings,
+} from '../settings';
 import type { Alert } from './alertArbiter';
 
 export const DANGER_TEXT = '바로 앞에 사람이 있습니다.';
@@ -112,28 +117,58 @@ export const SIGNAL_SEEN_TEXT = '신호등이 있습니다.';
 // 빨간불이 아닌 신호등에는 깜빡임·꺼짐도 섞여 있어 초록불이라고 말하지 않는다.
 export const SIGNAL_CHANGED_TEXT = '빨간불이 바뀌었습니다.';
 
+/** 신호등을 읽을 때 같이 보는 것 */
+export type SignalView = {
+    /** 카메라가 횡단보도를 건너는 방향을 보는지. 모르면 true */
+    facing: boolean;
+    /** 플러그인이 따라가는 신호등 번호(VisionFrame.signalId) */
+    signalId: number;
+    nowMs: number;
+};
+
 /**
  * 보행 신호등 상태를 받아 알림을 돌려준다. 알릴 것이 없으면 null.
- * facing 은 카메라가 횡단보도를 건너는 방향을 보는지다. 모르면 true 를 준다.
+ * view 에서 빠진 값은 건너는 방향을 봄, 번호 0, 0ms 로 본다.
  */
 export type SignalReader = (
     signal: PedSignal | null,
     atCrosswalk: boolean,
-    facing?: boolean,
+    view?: Partial<SignalView>,
 ) => Alert | null;
 
 /**
  * 안내를 시작할 때마다 새로 만든다. 횡단보도 근처에서 건너는 방향을 볼 때만 신호등 상태가 바뀔 때 알린다.
  * 처음 보이면 빨간불인지 알리고, 빨간불에서 바뀌면 바뀌었다고 알린다.
  * 잠깐 안 보였다 같은 상태로 다시 보이면 또 읽지 않는다. 횡단보도를 벗어나면 기록을 지운다.
- * 옆 방향을 보면 그 신호등은 건널 횡단보도의 것이 아닐 수 있어 읽지 않고 기록도 지운다.
- * 기록을 두면 옆 신호등의 초록불이 남은 채 다시 바라볼 때 "빨간불이 바뀌었습니다"라고 읽을 수 있어서다.
+ * - 플러그인이 다른 신호등을 고르면(번호가 바뀌면) 기록을 지운다. 옆 신호등의 초록불을 "빨간불이 바뀌었습니다"로 읽지 않는다.
+ * - 옆 방향을 보면 읽지 않지만 기록은 둔다. 나침반이 잠깐 튀어도 기다리던 "빨간불이 바뀌었습니다"를 놓치거나
+ *   "빨간불입니다"를 되풀이하지 않는다.
+ * - 옆을 보다 돌아선 뒤 settleMs 동안은 읽지 않는다. 플러그인은 놓친 신호등의 상태를 잠깐 남겨 두므로,
+ *   옆 신호등 상태를 첫 말로 읽지 않게 한다.
  */
-export function signalReader(): SignalReader {
+export function signalReader(
+    settings: CrossingFacingSettings = CROSSING_FACING,
+): SignalReader {
     let told: PedSignal | null = null;
-    return (signal, atCrosswalk, facing = true) => {
-        if (!atCrosswalk || !facing) {
+    let toldId: number | null = null;
+    // 횡단보도 근처에서 마지막으로 옆 방향을 본 시각. 건너는 방향만 봤으면 null
+    let awayAtMs: number | null = null;
+    return (signal, atCrosswalk, view = {}) => {
+        const { facing = true, signalId = 0, nowMs = 0 } = view;
+        if (signalId !== toldId) {
             told = null;
+            toldId = signalId;
+        }
+        if (!atCrosswalk) {
+            told = null;
+            awayAtMs = null;
+            return null;
+        }
+        if (!facing) {
+            awayAtMs = nowMs;
+            return null;
+        }
+        if (awayAtMs !== null && nowMs - awayAtMs < settings.settleMs) {
             return null;
         }
         if (signal === null || signal === told) {

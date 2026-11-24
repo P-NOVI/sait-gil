@@ -168,4 +168,37 @@ class SignalTrackerTest {
         assertNull(reading.box)
         assertNull(reading.state)
     }
+
+    @Test
+    fun newlyPickedSignalStartsOverWithoutEarlierStateOrTime() {
+        // 따라가던 빨간불이 한 프레임 다르게 보인 뒤 버스에 가려 놓치고, 가운데 가까운 다른 신호등(초록)을 골랐다.
+        // 앞 신호등의 빨간불과 잘못 본 시각을 이어 가지 않고, 새 신호등을 고른 때부터 다시 센다.
+        val tracker = SignalTracker(config)
+        val first = tracker.feed(0, 600, signal(red))
+        tracker.update(frame(700, signal(other)))
+        tracker.feed(800, 1_700)
+
+        val repicked = tracker.update(frame(1_800, signal(other, centerX = 0.62)))
+        val waiting = tracker.feed(1_900, 4_700, signal(other, centerX = 0.62))
+        val confirmed = tracker.update(frame(4_800, signal(other, centerX = 0.62)))
+
+        assertTrue(repicked.picked)
+        assertNull(repicked.state)
+        assertEquals(first.id + 1, repicked.id)
+        assertNull(waiting.state)
+        assertEquals(SignalState.OTHER, confirmed.state)
+        assertEquals(repicked.id, confirmed.id)
+    }
+
+    @Test
+    fun signalIdStaysWhileFollowingSameSignal() {
+        // 불이 바뀌거나 잠깐 못 잡아도 같은 신호등이면 번호가 그대로다. 그래야 화면이 바뀐 것을 알린다.
+        val tracker = SignalTracker(config)
+        val first = tracker.feed(0, 600, signal(red))
+        tracker.feed(700, 1_200)
+        val changed = tracker.feed(1_300, 4_300, signal(other))
+
+        assertEquals(SignalState.OTHER, changed.state)
+        assertEquals(first.id, changed.id)
+    }
 }

@@ -188,11 +188,11 @@ export function useVision({
                     current.buzz(CAUTION_VIBRATION);
                 }
                 // 신호등은 바뀔 때 한 번만 알리므로 읽던 말이 끝난 뒤에라도 읽는다.
-                const signal = readSignal(
-                    next.signal,
-                    current.atCrosswalk,
-                    current.facingCrossing,
-                );
+                const signal = readSignal(next.signal, current.atCrosswalk, {
+                    facing: current.facingCrossing,
+                    signalId: next.signalId,
+                    nowMs: Date.now(),
+                });
                 if (signal) {
                     current.report(signal, 'wait');
                 }
