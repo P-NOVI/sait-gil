@@ -93,6 +93,12 @@ def resume_point(session: Session, overlap: timedelta) -> datetime | None:
     return None if latest is None else as_kst(latest) - overlap
 
 
+def is_stale(session: Session, now: datetime, max_age: timedelta) -> bool:
+    """DB의 최신 측정이 now 보다 max_age 넘게 오래됐거나 DB가 비었으면 True."""
+    latest = session.scalar(select(func.max(SdotReading.measured_at)))
+    return latest is None or now - as_kst(latest) > max_age
+
+
 def to_record(row: dict[str, Any], collected: datetime) -> dict[str, Any] | None:
     """API 한 행을 테이블 행으로. 코드·시각·방문자 수가 깨진 행은 None."""
     try:

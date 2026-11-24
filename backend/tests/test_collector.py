@@ -12,7 +12,13 @@ from app.cache import KeyedTtlCache
 from app.collector.copy_tables import copy_table
 from app.collector.kma import kma_http
 from app.collector.models import CollectorBase, SdotReading, WeatherDaily, WeatherNow
-from app.collector.sdot import PageLimitError, collect_sdot, sdot_sync_http, to_record
+from app.collector.sdot import (
+    PageLimitError,
+    collect_sdot,
+    is_stale,
+    sdot_sync_http,
+    to_record,
+)
 from app.collector.weather import (
     collect_weather_daily,
     collect_weather_now,
@@ -188,6 +194,20 @@ def test_collect_sdot_warns_when_api_ends_early(
         assert collect_sdot(session, client, settings, NOW) == 1
 
     assert "빈 구간" in capsys.readouterr().out
+
+
+def test_is_stale_compares_latest_reading_with_max_age(session: Session) -> None:
+    max_age = timedelta(hours=48)
+    assert is_stale(session, NOW, max_age)  # 비어 있으면 낡은 것으로 본다
+
+    session.add(reading(1, "Jung-gu", NOW - timedelta(hours=47)))
+    session.commit()
+    assert not is_stale(session, NOW, max_age)
+
+    session.add(reading(2, "Jung-gu", NOW - timedelta(hours=49)))
+    session.commit()
+    assert not is_stale(session, NOW, max_age)  # 센서 하나라도 최근이면 낡지 않다
+    assert is_stale(session, NOW + timedelta(hours=2), max_age)
 
 
 # --- 자치구 위치 ---
