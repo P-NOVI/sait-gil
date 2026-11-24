@@ -153,7 +153,7 @@ def main() -> None:
         )
 
     if args.model:
-        settings = {**settings, "model": args.model}
+        settings = {**settings, "model": args.model.resolve()}
     measurements, missed = measure(photos, settings)
     ks = fit_k(measurements, settings)
     print(f"사진 {len(photos)}장 중 사람을 찾은 사진 {len(measurements)}장\n")

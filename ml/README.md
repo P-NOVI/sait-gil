@@ -46,7 +46,7 @@ uv run pytest
 
 ## 사람 거리 보정 (`distance_calibration/`)
 
-실측 사진으로 앱의 사람 거리 보정값(K)을 구한다. 앱 모델(`sidewalk_yolo26n.tflite`)로 사진에서 사람 박스를 뽑아, 방향(칸)별로 `거리 = K ÷ 박스 비율`의 K와 거리별 오차를 표로 낸다. 구한 값은 사람이 `VisionConfig.kt`의 `MEASURED_DISTANCE_K`에 옮긴다.
+실측 사진으로 앱의 사람 거리 보정값(K)을 구한다. 앱 모델(`sidewalk_yolo26n_int8.tflite`, 앱 기본 모델)로 사진에서 사람 박스를 뽑아, 방향(칸)별로 `거리 = K ÷ 박스 비율`의 K와 거리별 오차를 표로 낸다. 구한 값은 사람이 `VisionConfig.kt`의 `MEASURED_DISTANCE_K`에 옮긴다.
 
 ```bash
 cd ml
