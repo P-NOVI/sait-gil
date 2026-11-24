@@ -72,7 +72,7 @@ async function listenNative(): Promise<string | null> {
             popup: false,
         });
         console.info(
-            `[listen] 인식 끝 ${Date.now() - startedAt}ms, 결과 ${JSON.stringify(matches)}, 중지됨 ${stopped}`,
+            `[listen] 인식 끝 ${Date.now() - startedAt}ms, 결과 ${matches?.length ?? 0}개, 중지됨 ${stopped}`,
         );
         return stopped ? null : (matches?.[0] ?? null);
     } catch (error) {
