@@ -51,6 +51,27 @@ class VehicleTrackerTest {
     }
 
     @Test
+    fun carIsJudgedByTimeWatchedNotFrameCount() {
+        // int8 처럼 100ms 간격으로 프레임이 많이 와도 vehicleMotionSpanMs 를 지켜보기 전에는 서 있는지 판단하지 않는다.
+        val tracker = VehicleTracker(config)
+        val motions = (0..12).map { index ->
+            val frame = DetectionFrame(
+                index * 100L,
+                emptyList(),
+                widthPx,
+                heightPx,
+                focalLengthPx = focalPx,
+                objects = listOf(car(4.0 - index * 0.12)),
+            )
+            tracker.analyze(frame, clockLabels(frame, config)).states.single().motion
+        }
+
+        val judgedAt = (config.vehicleMotionSpanMs / 100).toInt()
+        assertTrue(motions.take(judgedAt).all { it == VehicleMotion.UNKNOWN })
+        assertEquals(VehicleMotion.STILL, motions[judgedAt])
+    }
+
+    @Test
     fun fastApproachingCarIsWarnedAfterTwoFrames() {
         val alerts = run(listOf(15.0, 10.0).map { car(it) })
 
@@ -59,7 +80,7 @@ class VehicleTrackerTest {
     }
 
     @Test
-    fun parkedCarIsNoticedWhenNearAndAgainWhenCloseButNeverWarned() {
+    fun parkedCarIsNoticedOnceWhenNearButNeverWarned() {
         // 서 있는 차로 약 1.2m/s 로 걸어간다. 후보로 나오면 바로 알렸다고 적는다.
         val distances = (0 until 13).map { 15.0 - it * 0.84 }
         val tracker = VehicleTracker(config)
@@ -70,13 +91,7 @@ class VehicleTrackerTest {
         }
 
         val noticed = analyses.indices.filter { analyses[it].notices.isNotEmpty() }
-        assertEquals(
-            listOf(
-                distances.indexOfFirst { it <= config.vehicleStillNearM },
-                distances.indexOfFirst { it <= config.obstacleCloseM },
-            ),
-            noticed,
-        )
+        assertEquals(listOf(distances.indexOfFirst { it <= config.obstacleNearM }), noticed)
         assertTrue(analyses.all { it.alerts.isEmpty() })
     }
 
@@ -85,9 +100,9 @@ class VehicleTrackerTest {
         // 다른 장애물이 더 가까워 고르지 않은 서 있는 차는 다음 프레임에도 후보다.
         val tracker = VehicleTracker(config)
 
-        // 처음부터 vehicleImmediateM 안이면 움직이는지 모르는 차로 바로 알리므로 그보다 멀리서 시작한다.
+        // obstacleNearM 밖에서 시작해 네 번째 프레임에 들어온다.
         val analyses = (0 until 7).map { index ->
-            val frame = frame(index, car(12.0 - index * 0.84))
+            val frame = frame(index, car(7.0 - index * 0.84))
             tracker.analyze(frame, clockLabels(frame, config))
         }
 
@@ -130,9 +145,9 @@ class VehicleTrackerTest {
 
     @Test
     fun slowlyLeavingCarIsNotNoticedAsParked() {
-        // 약 1.4m/s 로 천천히 멀어지는 6m 앞 차. 서 있는 차로 보고 알리면 안 된다.
+        // 약 1.4m/s 로 천천히 멀어지는 2m 앞 차. 서 있는 차로 보고 알리면 안 된다.
         val states = VehicleTracker(config).let { tracker ->
-            listOf(6.0, 7.0, 8.0, 9.0).mapIndexed { index, distance ->
+            listOf(2.0, 3.0, 4.0, 5.0).mapIndexed { index, distance ->
                 val frame = frame(index, car(distance))
                 tracker.analyze(frame, clockLabels(frame, config))
             }
@@ -144,9 +159,9 @@ class VehicleTrackerTest {
 
     @Test
     fun carLeavingSlowerThanThresholdIsStillNoticed() {
-        // 약 0.3m/s 로 멀어지는 6m 앞 차는 멀어진다고 보지 않고 서 있는 차로 알린다.
+        // 약 0.3m/s 로 멀어지는 4m 앞 차는 멀어진다고 보지 않고 서 있는 차로 알린다.
         val states = VehicleTracker(config).let { tracker ->
-            listOf(6.0, 6.2, 6.4, 6.6).mapIndexed { index, distance ->
+            listOf(4.0, 4.2, 4.4, 4.6).mapIndexed { index, distance ->
                 val frame = frame(index, car(distance))
                 tracker.analyze(frame, clockLabels(frame, config))
             }

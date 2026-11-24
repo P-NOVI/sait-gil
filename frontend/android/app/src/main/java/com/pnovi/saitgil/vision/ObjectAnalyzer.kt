@@ -39,6 +39,26 @@ internal val AHEAD_SECTORS: Set<Int> =
 internal fun overlapsAhead(box: ObjectBox): Boolean =
     (sectorOf(box.left)..sectorOf(box.right)).any { it in AHEAD_SECTORS }
 
+/** distanceM 앞에서 영상 가로 위치 x(0~1)의 옆 위치(m). 카메라 정면 기준이고 오른쪽이 + 다 */
+internal fun lateralM(x: Double, distanceM: Double, frame: DetectionFrame, focalPx: Double): Double =
+    (x - 0.5) * frame.imageWidthPx * distanceM / focalPx
+
+/**
+ * distanceM 앞 박스의 좌우 끝이 걷는 길 통로(카메라 정면 좌우 corridorHalfWidthM)와 겹치는지.
+ * 화면 칸은 멀수록 넓은 곳을 덮어 인도 가장자리 기둥·주차한 차까지 들어오므로 미터로 본다(#133).
+ */
+internal fun inCorridor(
+    box: ObjectBox,
+    distanceM: Double,
+    frame: DetectionFrame,
+    config: VisionConfig,
+    focalPx: Double = focalLengthPx(frame, config),
+): Boolean {
+    val leftM = lateralM(box.left, distanceM, frame, focalPx)
+    val rightM = lateralM(box.right, distanceM, frame, focalPx)
+    return rightM >= -config.corridorHalfWidthM && leftM <= config.corridorHalfWidthM
+}
+
 /**
  * 읽을 시계 방향. 앞쪽 칸에 걸치면 그중 박스 가운데에 가장 가까운 칸, 아니면 박스 가운데 칸이다.
  * 앞쪽에 걸쳐 알렸는데 가운데가 옆 칸이라 "10시 방향"이라고 읽지 않게 한다.
@@ -79,6 +99,12 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
     // 장애물·서 있는 차를 마지막으로 알린 시각. 앞 알림을 읽는 동안 다음 것을 보내지 않는다.
     private var lastNoticeMs: Long? = null
 
+    // 장애물·서 있는 차를 종류·방향마다 마지막으로 알린 시각·거리. 추적이 끊겨 같은 물체가 새로 잡혀도 다시 알리지 않는다.
+    private val lastNoticeBy = mutableMapOf<Pair<DetectedClass, Int>, NoticeMark>()
+
+    // 걸음 속도가 standingSpeedMps 보다 느려지기 시작한 프레임 시각. 걷고 있거나 속도를 모르면 null
+    private var slowSinceMs: Long? = null
+
     fun analyze(frame: DetectionFrame): ObjectAnalysis {
         val labels = clockLabels(frame, config)
         val vehicleAnalysis = vehicles.analyze(frame, labels)
@@ -91,7 +117,7 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val seen = OBSTACLE_CLASSES.mapNotNull { kind ->
             // 같은 클래스가 여럿이면 가장 가까운(아래 끝이 가장 아래인) 것을 본다.
             frame.objects
-                .filter { it.kind == kind && isNear(it, frame) && overlapsAhead(it) && it !in leaving }
+                .filter { it.kind == kind && isAhead(it, frame) && it !in leaving }
                 .maxByOrNull { it.bottom }
                 ?.let { ObstacleSighting(kind, directionOf(it, labels)) }
         }
@@ -105,7 +131,9 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
                 moving = true,
             )
         }
-        val notice = nearestNotice(vehicleAnalysis.notices + obstacles.analyze(frame, labels), frame.timeMs)
+        val stillNotices = vehicleAnalysis.notices + obstacles.analyze(frame, labels)
+        // 서 있으면 장애물·서 있는 차는 알리지 않는다. 알리지 않은 것은 다시 걸을 때 알린다.
+        val notice = if (isStanding(frame)) null else nearestNotice(stillNotices, frame)
         val signal = signals.update(frame)
         return ObjectAnalysis(
             signal.state,
@@ -119,17 +147,47 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
     }
 
     /**
-     * 차·이륜차는 박스 높이로 잰 거리가 정한 거리 안인지, 그 밖은 바닥 기준 거리가 obstacleNearM 안인지.
+     * 같은 종류·방향으로 알렸던 물체를 추적이 끊겨 다시 잡은 것인지. stillRepeatMs 안에, 알린 거리에서 그동안 걸은 만큼
+     * 가까워진 곳(± renoticeToleranceM)에 있으면 같은 물체로 본다. 그보다 멀리 있으면 뒤따라 선 다른 물체다.
+     * 걸음 속도를 모르면 0 ~ renoticeMaxWalkMps 로 걸었을 수 있다고 본다.
+     */
+    private fun isNoticedAgain(notice: StillNotice, frame: DetectionFrame): Boolean {
+        val mark = lastNoticeBy[notice.kind to notice.direction] ?: return false
+        val elapsedMs = frame.timeMs - mark.atMs
+        if (elapsedMs >= config.stillRepeatMs) return false
+        val elapsedS = elapsedMs / 1_000.0
+        val speed = frame.walkSpeedMps
+        val nearestM = mark.distanceM - (speed ?: config.renoticeMaxWalkMps) * elapsedS - config.renoticeToleranceM
+        val farthestM = mark.distanceM - (speed ?: 0.0) * elapsedS + config.renoticeToleranceM
+        return notice.distanceM in nearestM..farthestM
+    }
+
+    /** 알린 시각과 그때 거리 */
+    private class NoticeMark(val atMs: Long, val distanceM: Double)
+
+    /**
+     * 화면에 보일 앞쪽 가까운 장애물인지. 기둥·장애물·계단은 알릴 때처럼 걷는 길 앞 가까이(nearObstacleDistanceM) 있어야 한다.
+     * 차·이륜차는 앞쪽 칸(11~1시)에 걸치고 박스 높이로 잰 거리가 정한 거리 안이어야 한다.
      * 차·이륜차 박스 아래가 영상 끝에 닿아 잘렸으면 바퀴가 안 보일 만큼 가까운 것으로 본다.
      */
-    private fun isNear(box: ObjectBox, frame: DetectionFrame): Boolean {
-        if (box.kind !in VEHICLE_CLASSES) {
-            val distance = groundDistanceM(box, frame, config) ?: return false
-            return distance <= config.obstacleNearM
-        }
+    private fun isAhead(box: ObjectBox, frame: DetectionFrame): Boolean {
+        if (box.kind !in VEHICLE_CLASSES) return nearObstacleDistanceM(box, frame, config) != null
+        if (!overlapsAhead(box)) return false
         if (isCutOffAtBottom(box, config)) return true
         val distance = vehicleDistanceM(box, frame, config) ?: return false
         return distance <= vehicleNearM(box.kind, config)
+    }
+
+    /**
+     * 서 있는지. GPS 걸음 속도가 standingSpeedMps 보다 느린 상태가 standingConfirmMs 이어져야 서 있는 것으로 본다.
+     * 붐비는 곳에서 잠깐 멈칫하거나 GPS 속력이 잠깐 0 으로 튀어도 장애물 알림을 끄지 않는다. 걸음 속도를 모르면 걷는 것으로 본다.
+     * 느려진 시각을 남기므로 프레임마다 부른다.
+     */
+    private fun isStanding(frame: DetectionFrame): Boolean {
+        val slow = frame.walkSpeedMps?.let { it < config.standingSpeedMps } ?: false
+        slowSinceMs = if (slow) slowSinceMs ?: frame.timeMs else null
+        val since = slowSinceMs ?: return false
+        return frame.timeMs - since >= config.standingConfirmMs
     }
 
     /**
@@ -137,13 +195,16 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
      * 화면은 읽는 중에 온 장애물 알림을 잠깐만 기다리므로, 앞 알림 뒤 noticeGapMs 안에는 고르지 않는다.
      * 더 가까운 것이 나타나도 간격을 건너뛰지 않는다. 앞 말을 읽는 중에 보내면 화면이 obstacleMaxWaitMs 뒤 버리는데,
      * 여기서는 알린 것으로 표시해 다시 알리지 않게 된다. 고르지 않은 후보는 간격이 지난 뒤 다시 고른다.
+     * 추적이 끊겨 다시 잡힌, 이미 알린 물체(isNoticedAgain)는 고르지 않는다.
      */
-    private fun nearestNotice(notices: List<StillNotice>, nowMs: Long): VisionAlert? {
+    private fun nearestNotice(notices: List<StillNotice>, frame: DetectionFrame): VisionAlert? {
+        val nowMs = frame.timeMs
         val last = lastNoticeMs
         if (last != null && nowMs - last < config.noticeGapMs) return null
-        val nearest = notices.minByOrNull { it.distanceM } ?: return null
+        val nearest = notices.filterNot { isNoticedAgain(it, frame) }.minByOrNull { it.distanceM } ?: return null
         nearest.notified()
         lastNoticeMs = nowMs
+        lastNoticeBy[nearest.kind to nearest.direction] = NoticeMark(nowMs, nearest.distanceM)
         return VisionAlert(
             kind = AlertKind.OBSTACLE,
             message = nearest.kind.wire,
