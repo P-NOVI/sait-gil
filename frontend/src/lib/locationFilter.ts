@@ -190,11 +190,17 @@ function nextStride(
         return { ...stride, from: here };
     }
     const walkedSteps = motion.steps - stride.from.steps;
-    if (walkedSteps < settings.strideWindowSteps) {
+    if (walkedSteps < settings.strideMinSteps) {
         return stride;
     }
-    const measuredM =
-        distanceM(stride.from.position, here.position) / walkedSteps;
+    const apartM = distanceM(stride.from.position, here.position);
+    if (apartM < settings.strideWindowM) {
+        // 걸음 수만 늘고 거의 나아가지 않았으면(멈춰 서서 제자리걸음) 구간을 새로 시작한다.
+        return walkedSteps * settings.strideMinM > settings.strideWindowM
+            ? { ...stride, from: here }
+            : stride;
+    }
+    const measuredM = apartM / walkedSteps;
     if (measuredM < settings.strideMinM || measuredM > settings.strideMaxM) {
         return { ...stride, from: here };
     }

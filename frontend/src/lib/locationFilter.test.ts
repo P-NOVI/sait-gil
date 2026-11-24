@@ -256,7 +256,7 @@ describe('estimatedFix', () => {
 
 describe('보폭 보정', () => {
     const motion = (steps: number) => ({ steps, expected: null });
-    // 한 걸음 stepM 으로 1초에 2걸음씩 걷는 사람의 위치를 받는다.
+    // 한 걸음 stepM 으로 1초에 2걸음씩(시각장애인 걸음 속도 0.9m/s 안팎) 걷는 사람의 위치를 받는다.
     function walk(stepM: number, seconds: number, from = NEW_LOCATION_FILTER) {
         let state = from;
         for (let second = 0; second <= seconds; second += 1) {
@@ -276,32 +276,32 @@ describe('보폭 보정', () => {
     });
 
     it('믿는 GPS 로 걸으면 실제 보폭에 가깝게 맞춘다', () => {
-        const state = walk(0.7, 100);
+        const state = walk(0.4, 200);
 
-        expect(strideOf(state)).toBeGreaterThan(0.65);
-        expect(strideOf(state)).toBeLessThan(0.75);
+        expect(strideOf(state)).toBeGreaterThan(0.38);
+        expect(strideOf(state)).toBeLessThan(0.44);
     });
 
     it('보폭이 맞춰지면 오래 걸어도 믿지 않는 상태로 빠지지 않는다', () => {
-        const state = walk(0.7, 100);
+        const state = walk(0.4, 200);
         const result = filterFix(
             state,
-            at(100 * 2 * 0.7 + 1.4),
-            101_000,
+            at(200 * 2 * 0.4 + 0.8),
+            201_000,
             LOCATION_FILTER,
-            motion(202),
+            motion(402),
         );
         expect(result.fix).not.toBeNull();
         expect(result.distrusted).toBeUndefined();
     });
 
     it('멈춰 있던 구간(걸음 수만 늘고 거리는 그대로)은 보폭에 반영하지 않는다', () => {
-        let state = walk(0.5, 40);
+        let state = walk(0.45, 80);
         const before = strideOf(state);
-        for (let second = 41; second <= 80; second += 1) {
+        for (let second = 81; second <= 120; second += 1) {
             state = filterFix(
                 state,
-                at(40),
+                at(80 * 2 * 0.45),
                 second * 1_000,
                 LOCATION_FILTER,
                 motion(second * 2),
@@ -313,10 +313,10 @@ describe('보폭 보정', () => {
 
     it('오차가 큰 위치로는 보폭을 재지 않는다', () => {
         let state = NEW_LOCATION_FILTER;
-        for (let second = 0; second <= 60; second += 1) {
+        for (let second = 0; second <= 120; second += 1) {
             state = filterFix(
                 state,
-                at(second * 2 * 0.7, LOCATION_FILTER.strideMaxAccuracyM + 5),
+                at(second * 2 * 0.45, LOCATION_FILTER.strideMaxAccuracyM + 5),
                 second * 1_000,
                 LOCATION_FILTER,
                 motion(second * 2),
@@ -327,7 +327,7 @@ describe('보폭 보정', () => {
     });
 
     it('튄 위치가 끼면 재던 구간을 버린다', () => {
-        const state = walk(0.7, 30);
+        const state = walk(0.45, 30);
         const jumped = filterFix(
             state,
             at(500),
