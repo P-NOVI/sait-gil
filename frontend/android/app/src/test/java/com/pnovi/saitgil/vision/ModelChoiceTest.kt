@@ -5,7 +5,12 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ModelChoiceTest {
-    private val models = DetectorConfig().compareModels
+    // 실제 목록 순서(기본 모델이 앞)와 상관없이 차례를 보도록 테스트용 목록을 둔다
+    private val models = listOf(
+        DetectorModel("fp32", "models/sidewalk_yolo26n.tflite"),
+        DetectorModel("fp16", "models/sidewalk_yolo26n_fp16.tflite"),
+        DetectorModel("int8", "models/sidewalk_yolo26n_int8.tflite"),
+    )
     private val fp32 = models[0].asset
     private val fp16 = models[1].asset
     private val int8 = models[2].asset
