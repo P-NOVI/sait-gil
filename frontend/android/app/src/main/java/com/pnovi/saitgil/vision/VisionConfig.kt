@@ -180,15 +180,15 @@ data class DetectorModel(val label: String, val asset: String)
  */
 data class DetectorConfig(
     /** assets 안 모델 파일 경로. 가중치는 커밋하지 않으므로 앱 빌드 전에 복사한다(ml/README.md) */
-    val modelAsset: String = "models/sidewalk_yolo26n.tflite",
+    val modelAsset: String = "models/sidewalk_yolo26n_int8.tflite",
     /**
      * 디버그 빌드에서 개발용 미리보기를 길게 눌러 차례로 바꿔 가며 비교할 모델(#128). 앞의 것이 기본이다.
      * assets 에 파일이 있는 것만 고른다. 릴리스 빌드는 modelAsset 하나만 쓴다
      */
     val compareModels: List<DetectorModel> = listOf(
+        DetectorModel("int8", "models/sidewalk_yolo26n_int8.tflite"),
         DetectorModel("fp32", "models/sidewalk_yolo26n.tflite"),
         DetectorModel("fp16", "models/sidewalk_yolo26n_fp16.tflite"),
-        DetectorModel("int8", "models/sidewalk_yolo26n_int8.tflite"),
     ),
     /** 모델 입력 한 변(px). 내보낼 때 쓴 imgsz 와 같아야 한다 */
     val inputSize: Int = 640,
