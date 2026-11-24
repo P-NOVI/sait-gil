@@ -117,6 +117,9 @@ export const BLOCK = {
     // 교차로까지 남은 거리가 이보다 길면 블럭 대신 미터로 알린다(m).
     // Tmap 안내점이 없어 한 블럭이 수백 m 로 묶일 수 있어, 이 안에 들어오면 그때 블럭으로 다시 알린다.
     maxM: 150,
+    // 횡단보도 안내점은 건너기 직전 지점이라, 이만큼 더 걸어야 다 건넌 것으로 본다(m).
+    // 건너는 중에는 다음 블럭 안내를 내지 않는다. 실기기에서 맞출 초안 값.
+    crosswalkWidthM: 15,
 } as const;
 
 export type BlockSettings = typeof BLOCK;

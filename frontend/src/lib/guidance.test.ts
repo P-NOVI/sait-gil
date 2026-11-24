@@ -310,6 +310,19 @@ describe('guidanceStep 블럭 안내', () => {
         expect(dueBlockAlert([FIRST, crosswalk], 101, new Set())).toBeNull();
     });
 
+    it('횡단보도를 건너는 중에는 다음 블럭을 알리지 않고, 다 건넌 뒤에 알린다', () => {
+        // 300m 횡단보도 시작점을 막 넘은 곳은 아직 건너는 중이다. 다음 교차로는 600m.
+        const route: GuidedRoute = {
+            ...ROUTE,
+            events: [CROSS, turn(450, 'left')],
+        };
+        const crossing = guidanceStep(route, NEW_GUIDANCE, north(305), 5, 0);
+        const crossed = guidanceStep(route, NEW_GUIDANCE, north(320), 5, 0);
+
+        expect(texts(crossing)).toEqual([]);
+        expect(texts(crossed)).toEqual(['이번 블럭에서 왼쪽입니다.']);
+    });
+
     it('이미 가까이 와서 시작한 블럭은 곧만 알린다', () => {
         const step = guidanceStep(BLOCK_ROUTE, NEW_GUIDANCE, north(90), 5, 0);
 
