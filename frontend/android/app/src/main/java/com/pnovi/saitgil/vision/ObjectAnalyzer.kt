@@ -2,6 +2,7 @@ package com.pnovi.saitgil.vision
 
 // 사람 밖의 클래스 박스로 가까운 장애물과 보행 신호등 상태를 판단한다.
 // 차·이륜차는 VehicleTracker 가 박스 높이로 거리를 재고 움직이는지 보며, 기둥·장애물·계단은 ObstacleTracker 가 바닥 기준 거리를 잰다.
+// 보행 신호등은 SignalTracker 가 하나를 골라 따라가며 상태를 정한다.
 // 움직이는 차는 바로 알리고, 장애물·서 있는 차는 가장 가까운 것부터 하나씩 알린다. 읽을 문장은 화면이 만든다.
 // Android 클래스를 쓰지 않아 가짜 박스로 JVM 단위 테스트를 할 수 있다.
 
@@ -48,12 +49,6 @@ internal fun directionOf(box: ObjectBox, labels: List<Int>): Int {
     return labels[ahead.minByOrNull { abs(it - center) } ?: center]
 }
 
-/** 보행 신호등 클래스와 그 상태 */
-private val SIGNAL_STATES: Map<DetectedClass, SignalState> = mapOf(
-    DetectedClass.PED_SIGNAL_RED to SignalState.RED,
-    DetectedClass.PED_SIGNAL_OTHER to SignalState.OTHER,
-)
-
 /** 이번 프레임에 앞쪽 가까이 보인 장애물 하나. direction 은 시계 방향(10~2시)이다 */
 data class ObstacleSighting(val kind: DetectedClass, val direction: Int)
 
@@ -62,25 +57,27 @@ data class ObstacleSighting(val kind: DetectedClass, val direction: Int)
  * seen 은 이번 프레임에 보인 장애물(클래스마다 하나)로, 확인 없이 화면에 바로 보여 준다.
  * alerts 는 이번 프레임에 알릴 장애물이다. 움직이는 차를 앞에, 장애물·서 있는 차는 많아야 하나를 뒤에 둔다.
  * vehicles 는 추적 중인 차의 거리·움직임으로, 실기기 로그로 기준을 맞출 때 쓴다.
+ * signalBox·signalPicked 는 따라간 신호등 박스와 이번에 새로 골랐는지로, 실기기에서 어느 신호등을 봤는지 로그로 볼 때 쓴다.
+ * signalId 는 따라가는 신호등 번호로, 화면이 다른 신호등인지 가릴 때 쓴다.
  */
 data class ObjectAnalysis(
     val signal: SignalState?,
     val alerts: List<VisionAlert>,
     val seen: List<ObstacleSighting> = emptyList(),
     val vehicles: List<VehicleState> = emptyList(),
+    val signalBox: ObjectBox? = null,
+    val signalPicked: Boolean = false,
+    val signalId: Int = 0,
 )
 
 /** 안내를 시작할 때마다 새로 만든다. 앞 프레임들을 기억해 잘못 잡힌 박스와 반복 알림을 거른다. */
 class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
     private val vehicles = VehicleTracker(config)
     private val obstacles = ObstacleTracker(config)
+    private val signals = SignalTracker(config)
 
     // 장애물·서 있는 차를 마지막으로 알린 시각. 앞 알림을 읽는 동안 다음 것을 보내지 않는다.
     private var lastNoticeMs: Long? = null
-
-    private var signal: SignalState? = null
-    private var signalCandidate: SignalState? = null
-    private var signalCandidateFrames = 0
 
     fun analyze(frame: DetectionFrame): ObjectAnalysis {
         val labels = clockLabels(frame, config)
@@ -109,7 +106,16 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
             )
         }
         val notice = nearestNotice(vehicleAnalysis.notices + obstacles.analyze(frame, labels), frame.timeMs)
-        return ObjectAnalysis(followSignal(frame), warnings + listOfNotNull(notice), seen, vehicleAnalysis.states)
+        val signal = signals.update(frame)
+        return ObjectAnalysis(
+            signal.state,
+            warnings + listOfNotNull(notice),
+            seen,
+            vehicleAnalysis.states,
+            signal.box,
+            signal.picked,
+            signal.id,
+        )
     }
 
     /**
@@ -146,25 +152,5 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
             direction = nearest.direction,
             moving = if (nearest.kind in VEHICLE_CLASSES) false else null,
         )
-    }
-
-    /**
-     * 신호등 상태를 이번 프레임으로 고친다. 교차로에서는 옆 방향 신호등도 보이므로
-     * 가운데가 앞쪽 칸(11~1시)에 있는 신호등만 보고, 여럿이면 가장 큰(가까운) 것의 색을 쓴다. 크기가 같으면 빨간불로 본다.
-     * 같은 상태가 연달아 몇 프레임 보여야 바꾼다.
-     */
-    private fun followSignal(frame: DetectionFrame): SignalState? {
-        val ahead = frame.objects
-            .filter { it.kind in SIGNAL_STATES && sectorOf(it.centerX) in AHEAD_SECTORS }
-            .maxWithOrNull(compareBy({ it.width * it.height }, { it.kind == DetectedClass.PED_SIGNAL_RED }))
-        val seen = ahead?.let { SIGNAL_STATES.getValue(it.kind) }
-        if (seen == signalCandidate) {
-            signalCandidateFrames += 1
-        } else {
-            signalCandidate = seen
-            signalCandidateFrames = 1
-        }
-        if (signalCandidateFrames >= config.signalConfirmFrames) signal = signalCandidate
-        return signal
     }
 }

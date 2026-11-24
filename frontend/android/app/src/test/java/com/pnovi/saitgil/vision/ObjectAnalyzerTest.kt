@@ -459,78 +459,16 @@ class ObjectAnalyzerTest {
     }
 
     @Test
-    fun signalChangesOnlyAfterConfirmFrames() {
+    fun analysisCarriesTrackedSignal() {
+        // 신호등 고르기·확정은 SignalTrackerTest 에서 본다. 여기서는 판단 결과에 실려 나오는지만 본다.
         val red = listOf(box(DetectedClass.PED_SIGNAL_RED, bottom = 0.3))
 
-        val results = run(ObjectAnalyzer(config), repeat(red, 3))
+        val results = run(ObjectAnalyzer(config), repeat(red, 6))
 
-        assertNull(results[1].signal)
-        assertEquals(SignalState.RED, results[2].signal)
+        assertTrue(results[0].signalPicked)
+        assertEquals(DetectedClass.PED_SIGNAL_RED, results[0].signalBox?.kind)
+        assertNull(results[4].signal)
+        assertEquals(SignalState.RED, results[5].signal)
         assertTrue(results.all { it.alerts.isEmpty() })
-    }
-
-    @Test
-    fun redWinsWhenAheadSignalsAreSameSize() {
-        val both = listOf(
-            box(DetectedClass.PED_SIGNAL_OTHER, sector = 1, bottom = 0.3),
-            box(DetectedClass.PED_SIGNAL_RED, sector = 3, bottom = 0.3),
-        )
-
-        val results = run(ObjectAnalyzer(config), repeat(both, 3))
-
-        assertEquals(SignalState.RED, results[2].signal)
-    }
-
-    @Test
-    fun ignoresSignalsInSideSectors() {
-        // 교차로 옆 방향 빨간불은 보지 않고 앞쪽 신호등 색을 쓴다.
-        val signals = listOf(
-            box(DetectedClass.PED_SIGNAL_RED, sector = 0, bottom = 0.3),
-            box(DetectedClass.PED_SIGNAL_RED, sector = 4, bottom = 0.3),
-            box(DetectedClass.PED_SIGNAL_OTHER, sector = 2, bottom = 0.3),
-        )
-
-        val results = run(ObjectAnalyzer(config), repeat(signals, 3))
-
-        assertEquals(SignalState.OTHER, results[2].signal)
-    }
-
-    @Test
-    fun onlySideSignalsMeanNoSignal() {
-        val side = listOf(box(DetectedClass.PED_SIGNAL_RED, sector = 0, bottom = 0.3))
-
-        val results = run(ObjectAnalyzer(config), repeat(side, 3))
-
-        assertTrue(results.all { it.signal == null })
-    }
-
-    @Test
-    fun largestAheadSignalWins() {
-        // 멀리 보이는 작은 빨간불보다 가까운 큰 신호등을 따른다.
-        val signals = listOf(
-            box(DetectedClass.PED_SIGNAL_RED, sector = 1, bottom = 0.3, width = 0.05),
-            box(DetectedClass.PED_SIGNAL_OTHER, sector = 2, bottom = 0.3, width = 0.15),
-        )
-
-        val results = run(ObjectAnalyzer(config), repeat(signals, 3))
-
-        assertEquals(SignalState.OTHER, results[2].signal)
-    }
-
-    @Test
-    fun signalIgnoresOneFrameFlickerAndFollowsSteadyChange() {
-        val red = listOf(box(DetectedClass.PED_SIGNAL_RED, bottom = 0.3))
-        val other = listOf(box(DetectedClass.PED_SIGNAL_OTHER, bottom = 0.3))
-
-        val results = run(
-            ObjectAnalyzer(config),
-            repeat(red, 3) + listOf(other) + repeat(red, 2) + repeat(other, 3) + repeat(emptyList(), 3),
-        )
-
-        assertEquals(SignalState.RED, results[3].signal)
-        assertEquals(SignalState.RED, results[7].signal)
-        assertEquals(SignalState.OTHER, results[8].signal)
-        assertEquals(SignalState.OTHER, results[10].signal)
-        assertNull(results[11].signal)
     }
 }

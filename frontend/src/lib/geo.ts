@@ -24,3 +24,10 @@ export function distanceM(a: LngLat, b: LngLat): number {
     const [x, y] = toLocal(b, a);
     return Math.hypot(x, y);
 }
+
+/** from 에서 to 를 보는 방향(북쪽 0도, 시계 방향, 0 이상 360 미만) */
+export function bearingDeg(from: LngLat, to: LngLat): number {
+    const [east, north] = toLocal(to, from);
+    const degrees = (Math.atan2(east, north) * 180) / Math.PI;
+    return (degrees + 360) % 360;
+}

@@ -61,6 +61,9 @@ class SaitgilVisionPlugin : Plugin() {
     // 마지막으로 로그에 남긴 인파 단계·신호등 상태
     private var loggedState: Pair<CrowdLevel, SignalState?>? = null
 
+    // 마지막으로 박스와 함께 로그에 남긴 신호등 상태
+    private var loggedSignal: SignalState? = null
+
     @PluginMethod
     fun start(call: PluginCall) {
         val requested = call.getString("sensitivity")
@@ -207,11 +210,26 @@ class SaitgilVisionPlugin : Plugin() {
         val frame = detected.copy(walkSpeedMps = currentWalkSpeedMps())
         val crowd = analyzer.analyze(frame)
         val objects = objectAnalyzer.analyze(frame)
-        emitCrowdState(crowd.frame.copy(signal = objects.signal, obstacles = objects.seen))
+        emitCrowdState(crowd.frame.copy(signal = objects.signal, signalId = objects.signalId, obstacles = objects.seen))
         crowd.alert?.let(::emitAlert)
         objects.alerts.forEach(::emitAlert)
         // 실기기에서 차 움직임 기준을 맞추려고 추적 중인 차를 프레임마다 남긴다. 튜닝용이라 릴리스 전에 지우거나 디버그 빌드에서만 남긴다.
         objects.vehicles.forEach { Log.d(TAG, vehicleLog(it, frame.walkSpeedMps)) }
+        // 어느 신호등을 따라갔는지 보려고 새로 고르거나 상태가 바뀔 때 박스 위치·크기를 남긴다(#132).
+        if (objects.signalPicked || objects.signal != loggedSignal) {
+            Log.d(TAG, signalLog(objects))
+            loggedSignal = objects.signal
+        }
+    }
+
+    private fun signalLog(objects: ObjectAnalysis): String {
+        val box = objects.signalBox?.let {
+            "%s 가운데 %.2f 위 %.2f 크기 %.3fx%.3f 점수 %.2f".format(
+                it.kind.wire, it.centerX, it.top, it.width, it.height, it.score,
+            )
+        } ?: "못 잡음"
+        val picked = if (objects.signalPicked) " (새로 고름)" else ""
+        return "신호등 #${objects.signalId} 상태 ${objects.signal?.wire ?: "없음"}, 박스 $box$picked"
     }
 
     private fun vehicleLog(state: VehicleState, walkSpeedMps: Double?): String {

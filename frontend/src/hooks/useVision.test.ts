@@ -16,6 +16,7 @@ const FRAME: VisionFrame = {
     nearestPersonM: 2.1,
     freeDirections: [11],
     signal: null,
+    signalId: 0,
     obstacles: [],
 };
 

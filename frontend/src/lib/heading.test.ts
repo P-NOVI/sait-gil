@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { HEADING } from '../settings';
 import {
     angleDiff,
+    cameraHeadingFromOrientation,
     compassFromOrientation,
     displayHeading,
     learnOffset,
@@ -61,6 +62,42 @@ describe('compassFromOrientation', () => {
         ).toBeNull();
         expect(
             compassFromOrientation({ alpha: null, absolute: true }, 0),
+        ).toBeNull();
+    });
+});
+
+describe('cameraHeadingFromOrientation', () => {
+    const camera = (alpha: number, beta: number, gamma: number) =>
+        cameraHeadingFromOrientation({ alpha, beta, gamma, absolute: true });
+
+    it('세워 든 휴대폰은 뒷면 카메라가 보는 방향이다', () => {
+        expect(camera(0, 90, 0)).toBeCloseTo(0);
+        expect(camera(90, 90, 0)).toBeCloseTo(270);
+        expect(camera(270, 80, 0)).toBeCloseTo(90);
+    });
+
+    it('세운 휴대폰에서 좌우 회전이 gamma 로 와도 같은 방향이다', () => {
+        // beta 가 90도면 alpha 와 gamma 가 둘 다 좌우 회전이라, alpha 만 보면 0도(북쪽)로 틀린다.
+        expect(camera(0, 90, 90)).toBeCloseTo(270);
+        expect(camera(0, 90, -90)).toBeCloseTo(90);
+    });
+
+    it('카메라가 거의 바닥이나 하늘을 보면 모른다', () => {
+        expect(camera(0, 0, 0)).toBeNull();
+        expect(camera(0, 20, 0)).toBeNull();
+    });
+
+    it('북쪽 기준이 아니거나 값이 없으면 모른다', () => {
+        expect(
+            cameraHeadingFromOrientation({
+                alpha: 0,
+                beta: 90,
+                gamma: 0,
+                absolute: false,
+            }),
+        ).toBeNull();
+        expect(
+            cameraHeadingFromOrientation({ alpha: 0, absolute: true }),
         ).toBeNull();
     });
 });

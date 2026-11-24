@@ -34,6 +34,8 @@ export function smoothAngle(
 /** deviceorientation 이벤트에서 쓰는 값 */
 export type OrientationReading = {
     alpha: number | null;
+    beta?: number | null;
+    gamma?: number | null;
     absolute: boolean;
     /** iOS Safari 만 준다. 이미 북쪽 기준 시계 방향이다. */
     webkitCompassHeading?: number;
@@ -56,6 +58,36 @@ export function compassFromOrientation(
         return normalizeDegrees(FULL_TURN - reading.alpha + screenAngle);
     }
     return null;
+}
+
+function toRadians(degrees: number): number {
+    return (degrees * Math.PI) / HALF_TURN;
+}
+
+/**
+ * 뒷면 카메라가 보는 나침반 방향(북쪽 0도, 시계 방향). 목걸이에 세워 건 휴대폰에서 신호등을 볼 방향인지 가릴 때 쓴다.
+ * 세운 휴대폰은 beta 가 90도 가까이 되어 좌우로 도는 만큼을 alpha 와 gamma 가 나눠 가지므로,
+ * alpha 만 보는 compassFromOrientation 대신 세 각도로 카메라 방향(기기 -Z 축)을 땅 기준으로 돌려 구한다.
+ * 북쪽 기준 값이 아니거나 카메라가 거의 위·아래를 보면 null.
+ */
+export function cameraHeadingFromOrientation(
+    reading: OrientationReading,
+    settings: HeadingSettings = HEADING,
+): number | null {
+    const { alpha, beta, gamma } = reading;
+    if (!reading.absolute || alpha === null || beta == null || gamma == null) {
+        return null;
+    }
+    const [a, b, g] = [alpha, beta, gamma].map(toRadians);
+    // 기기 (0, 0, -1) 을 Rz(alpha)·Rx(beta)·Ry(gamma) 로 돌린 땅 기준 동쪽·북쪽 성분
+    const east =
+        -Math.cos(a) * Math.sin(g) - Math.sin(a) * Math.sin(b) * Math.cos(g);
+    const north =
+        -Math.sin(a) * Math.sin(g) + Math.cos(a) * Math.sin(b) * Math.cos(g);
+    if (Math.hypot(east, north) < settings.cameraMinLevel) {
+        return null;
+    }
+    return normalizeDegrees((Math.atan2(east, north) * HALF_TURN) / Math.PI);
 }
 
 function isWalking(

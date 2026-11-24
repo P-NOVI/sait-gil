@@ -38,6 +38,8 @@ type Options = {
     minLevel: CrowdLevel;
     /** 횡단보도 근처인지. 근처에서만 보행 신호등을 알린다. */
     atCrosswalk: boolean;
+    /** 카메라가 횡단보도를 건너는 방향을 보는지. 옆 방향 신호등은 알리지 않는다. 모르면 true. */
+    facingCrossing: boolean;
     /** 신호를 기다리느라 서 있는지. 서 있을 때 앞에 사람이 서도 "앞에 사람이 있습니다"만 한 번 알린다. */
     waiting: boolean;
     /** GPS 위치. 새 위치가 올 때마다 걸음 속도를 플러그인에 알린다. 차의 움직임을 잴 때 내 걸음을 뺀다. */
@@ -119,6 +121,7 @@ export function useVision({
     active,
     minLevel,
     atCrosswalk,
+    facingCrossing,
     waiting,
     walkFix,
     report,
@@ -130,9 +133,23 @@ export function useVision({
         visionControl,
         INITIAL_VISION_CONTROL,
     );
-    const latest = useRef({ minLevel, atCrosswalk, waiting, report, buzz });
+    const latest = useRef({
+        minLevel,
+        atCrosswalk,
+        facingCrossing,
+        waiting,
+        report,
+        buzz,
+    });
     useEffect(() => {
-        latest.current = { minLevel, atCrosswalk, waiting, report, buzz };
+        latest.current = {
+            minLevel,
+            atCrosswalk,
+            facingCrossing,
+            waiting,
+            report,
+            buzz,
+        };
     });
     const running = active && enabled;
 
@@ -171,7 +188,11 @@ export function useVision({
                     current.buzz(CAUTION_VIBRATION);
                 }
                 // 신호등은 바뀔 때 한 번만 알리므로 읽던 말이 끝난 뒤에라도 읽는다.
-                const signal = readSignal(next.signal, current.atCrosswalk);
+                const signal = readSignal(next.signal, current.atCrosswalk, {
+                    facing: current.facingCrossing,
+                    signalId: next.signalId,
+                    nowMs: Date.now(),
+                });
                 if (signal) {
                     current.report(signal, 'wait');
                 }
