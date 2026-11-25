@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { PlannedRoute, RouteKind } from './routeApi';
 import {
     cameraAnswer,
+    hereOnlyAnswer,
+    homeClearCommand,
+    homeCommand,
+    homeSetupCommand,
     navigationCommand,
     permissionAnswer,
     placeAnswer,
@@ -194,5 +198,136 @@ describe('navigationCommand', () => {
         expect(navigationCommand('네')).toBeNull();
         expect(navigationCommand('꺼')).toBeNull();
         expect(navigationCommand('카메라')).toBeNull();
+    });
+});
+
+describe('placeAnswer 짧은 대답', () => {
+    it('"으" 한 글자는 머뭇거리는 소리라 예로 받지 않는다', () => {
+        expect(placeAnswer('으')).toBeNull();
+    });
+
+    it.each(['어', '엉', '으응', '어엉', '응', '네'])('"%s" 는 예', (heard) => {
+        expect(placeAnswer(heard)).toBe('yes');
+    });
+});
+
+describe('homeCommand', () => {
+    it.each([
+        '집으로 갈게',
+        '집으로 갈게요.',
+        '집으로가자',
+        '우리집으로 갈래',
+        '집까지 안내해 줘',
+        '집에 가자',
+        '집 갈게',
+        '네 집으로 가자',
+        '저장된 집으로 가자',
+        '등록한 집까지 안내해 줘',
+        '저희 집으로 가 줘',
+        '이제 집에 갈래',
+    ])('"%s" 는 집으로 가는 말', (heard) => {
+        expect(homeCommand(heard)).toBe(true);
+    });
+
+    it.each([
+        '집 앞 편의점',
+        '집으로 안 갈게',
+        '집으로 말고 회사로 갈게',
+        '여기로 갈게',
+        '중국집 갈래',
+        '맛집 가자',
+        '근처 맛집 안내해 줘',
+        '빵집으로 가 줘',
+        '한식집 가줘',
+        '',
+    ])('"%s" 는 집으로 가는 말이 아님', (heard) => {
+        expect(homeCommand(heard)).toBe(false);
+    });
+});
+
+describe('hereOnlyAnswer', () => {
+    it.each([
+        '지금 위치',
+        '현재 위치',
+        '지금 위치요',
+        '지금 있는 곳',
+        '여기',
+        '이곳',
+        '내 위치',
+        '지금 위치로',
+    ])('"%s" 는 지금 있는 곳', (heard) => {
+        expect(hereOnlyAnswer(heard)).toBe(true);
+    });
+
+    it.each(['서울역', '여기서 먼 곳', '지금 위치 말고', '집 등록할게', ''])(
+        '"%s" 는 지금 있는 곳이 아님',
+        (heard) => {
+            expect(hereOnlyAnswer(heard)).toBe(false);
+        },
+    );
+});
+
+describe('homeClearCommand', () => {
+    it.each([
+        '집 지워 줘',
+        '집 삭제해',
+        '집 해제할게',
+        '집을 지울래',
+        '등록한 집 지워',
+    ])('"%s" 는 집을 지우라는 말', (heard) => {
+        expect(homeClearCommand(heard)).toBe(true);
+    });
+
+    it.each([
+        '집 지우지 마',
+        '집 지우는 거 취소',
+        '집으로 갈게',
+        '집 등록할게',
+        '',
+    ])('"%s" 는 집을 지우라는 말이 아님', (heard) => {
+        expect(homeClearCommand(heard)).toBe(false);
+    });
+});
+
+describe('homeSetupCommand', () => {
+    it.each([
+        '지금 위치를 집으로 설정할게',
+        '현재 위치를 집으로 등록해 줘',
+        '여기를 집으로 저장할게',
+        '이곳을 집으로 설정',
+        '지금 위치를 집으로 해줘',
+        '지금 위치로 집 바꿔줘',
+        '지금 위치를 집으로 해 줘',
+        '여기를 집으로 할게',
+    ])('"%s" 는 지금 위치를 집으로', (heard) => {
+        expect(homeSetupCommand(heard)).toBe('here');
+    });
+
+    it.each([
+        '집 등록할게',
+        '집으로 설정할게요.',
+        '집등록',
+        '집으로 해줘',
+        '집 바꿔줘',
+        '집 변경할게',
+        '집 다시 등록할게',
+    ])('"%s" 는 집으로 등록할 곳을 찾기', (heard) => {
+        expect(homeSetupCommand(heard)).toBe('register');
+    });
+
+    it.each([
+        '집으로 갈게',
+        '집 등록 안 할래',
+        '집 등록 취소',
+        '집 지워 줘',
+        '집으로 안 해줘',
+        '이 집 해물탕',
+        '우리집 삼겹살',
+        '저장된 집으로 가자',
+        '집 갈게',
+        '여기로 갈게',
+        '',
+    ])('"%s" 는 집 등록이 아님', (heard) => {
+        expect(homeSetupCommand(heard)).toBeNull();
     });
 });
