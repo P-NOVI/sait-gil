@@ -522,48 +522,6 @@ button.row .icon {
     grid-column: 1 / -1;
 }
 
-/* ---------- 카메라 인식 줄 ---------- */
-
-.vision {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 6px 6px 6px 14px;
-    border: var(--line-width) dashed var(--color-line);
-    border-radius: var(--radius);
-}
-
-.vision__text {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    margin: 0;
-}
-
-.vision__state {
-    font-weight: 700;
-}
-
-.vision[data-level='crowded'] .vision__state {
-    color: var(--color-accent);
-}
-
-.vision[data-level='danger'] .vision__state {
-    color: var(--color-stop);
-}
-
-.vision__detail {
-    font-size: 0.85rem;
-    color: var(--color-muted);
-}
-
-.vision__toggle {
-    width: auto;
-    min-height: var(--touch-min);
-    padding: 4px 16px;
-}
-
 /* ---------- 설정 ---------- */
 
 .settings {

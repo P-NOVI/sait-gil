@@ -27,7 +27,7 @@ type NavigationPanelProps = {
     onSpeak: (() => void) | null;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
-    /** 카메라 인식 줄 */
+    /** 카메라 인식 끄기·켜기 버튼 */
     vision: ReactNode;
 };
 
@@ -108,12 +108,18 @@ export default function NavigationPanel({
                 </p>
             )}
             {guidance.error && guidance.step && (
-                <p className="message message--error" role="alert">
+                <p
+                    className="message message--error"
+                    role={voice ? undefined : 'alert'}
+                >
                     {guidance.error}
                 </p>
             )}
             {routeError && (
-                <p className="message message--error" role="alert">
+                <p
+                    className="message message--error"
+                    role={voice ? undefined : 'alert'}
+                >
                     {routeError}
                 </p>
             )}
@@ -173,7 +179,10 @@ export default function NavigationPanel({
                 </p>
             )}
             {whereAmI.status === 'error' && (
-                <p className="message message--error" role="alert">
+                <p
+                    className="message message--error"
+                    role={voice ? undefined : 'alert'}
+                >
                     {whereAmI.message}
                 </p>
             )}
