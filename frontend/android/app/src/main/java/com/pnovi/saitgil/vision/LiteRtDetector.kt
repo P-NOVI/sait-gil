@@ -21,6 +21,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.ceil
 
 /**
  * 카메라 프레임을 LiteRT 로 추론해 박스를 뽑는다. 영상은 기기 안에서만 쓰고 박스만 돌려준다.
@@ -78,6 +79,13 @@ class LiteRtDetector private constructor(
     // 같은 구간에서 신호등 칸의 점수 컷 전 신호등 클래스별 최고 점수. 밤에 컷 바로 아래에서 놓치는지 본다.
     private val cropRawBest = FloatArray(DetectedClass.entries.size)
 
+    // 같은 구간의 화질 판정 수와 밝기·편차·선명도 합, 가장 낮은 선명도(#170). 판단 불가 기준을 실기기에서 맞출 때 본다.
+    private val qualityCounts = IntArray(FrameQuality.entries.size)
+    private var lumaSum = 0.0
+    private var stdSum = 0.0
+    private var sharpnessSum = 0.0
+    private var sharpnessMin = Double.MAX_VALUE
+
     override fun analyze(image: ImageProxy): DetectionFrame {
         val started = SystemClock.elapsedRealtime()
         val rotation = image.imageInfo.rotationDegrees
@@ -93,12 +101,24 @@ class LiteRtDetector private constructor(
             placement.postScale(letterbox.scale, letterbox.scale)
             placement.postTranslate(letterbox.padX, letterbox.padY)
             fillInput(bitmap)
+            // 신호등 칸을 찾을 때 pixels 를 다시 채우므로 그 전에 영상이 그려진 칸만 잰다.
+            val stats = measureQuality(
+                pixels,
+                size,
+                left = ceil(letterbox.padX).toInt(),
+                top = ceil(letterbox.padY).toInt(),
+                right = (size - letterbox.padX).toInt(),
+                bottom = (size - letterbox.padY).toInt(),
+                step = config.qualityStep,
+            )
+            val quality = judgeQuality(stats, config)
             val prepared = SystemClock.elapsedRealtime()
             runModel()
             val inferred = SystemClock.elapsedRealtime()
             val detections = decodeDetections(outputValues, candidates, config)
             // 찍은 시각을 쓴다. 정면 접근 속도를 잴 때 추론이 밀려도 프레임 사이 시간이 맞게 한다.
             val frame = toDetectionFrame(detections, letterbox, image.imageInfo.timestamp / NANOS_PER_MS)
+                .copy(quality = quality)
             val decoded = SystemClock.elapsedRealtime()
             val crop = if (farSignals()) signalCrop(letterbox.imageWidth, letterbox.imageHeight, config) else null
             val cropBoxes = crop?.let { searchSignals(image, bitmap, rotation, it, letterbox) }
@@ -109,6 +129,8 @@ class LiteRtDetector private constructor(
                 FrameTimes(prepared - started, inferred - prepared, decoded - inferred, intervalMs, cropMs),
                 detections,
                 cropBoxes,
+                stats,
+                quality,
             )
             return if (crop != null && cropBoxes != null) withCropSignals(frame, cropBoxes, crop, config) else frame
         } finally {
@@ -207,7 +229,13 @@ class LiteRtDetector private constructor(
      * 모델 비교(#128)를 위해 모델 이름·기기·배터리 온도를 같은 줄에 남긴다. "추론 측정" 으로 찾는다.
      * 횡단보도 근처에서 위쪽 가운데를 잘라 한 번 더 추론했으면 그 시간과 찾은 신호등을 따로 남긴다(#134). "신호등 칸" 으로 찾는다.
      */
-    private fun logWindow(times: FrameTimes, detections: List<RawDetection>, cropBoxes: List<ObjectBox>?) {
+    private fun logWindow(
+        times: FrameTimes,
+        detections: List<RawDetection>,
+        cropBoxes: List<ObjectBox>?,
+        stats: QualityStats,
+        quality: FrameQuality,
+    ) {
         if (warmupLeft > 0) {
             warmupLeft -= 1
             return
@@ -231,6 +259,11 @@ class LiteRtDetector private constructor(
             cropFoundCounts[index] += 1
             cropFoundBest[index] = maxOf(cropFoundBest[index], box.score.toFloat())
         }
+        qualityCounts[quality.ordinal] += 1
+        lumaSum += stats.meanLuma
+        stdSum += stats.stdLuma
+        sharpnessSum += stats.sharpness
+        sharpnessMin = minOf(sharpnessMin, stats.sharpness)
         if (timedFrames < config.logEveryFrames) return
 
         val fps = if (intervalMsSum > 0) "%.2f".format(timedFrames * MS_PER_SECOND / intervalMsSum) else "-"
@@ -242,6 +275,13 @@ class LiteRtDetector private constructor(
                 "배터리 $battery (${timedFrames}장)",
         )
         Log.d(TAG, "탐지 합계 (${timedFrames}장): ${foundText(foundCounts, foundBest)}")
+        Log.d(
+            TAG,
+            "화질 (${timedFrames}장): " +
+                FrameQuality.entries.joinToString { "${it.wire} ${qualityCounts[it.ordinal]}" } +
+                ", 밝기 평균 ${"%.1f".format(lumaSum / timedFrames)}, 편차 평균 ${"%.1f".format(stdSum / timedFrames)}, " +
+                "선명도 평균 ${"%.1f".format(sharpnessSum / timedFrames)}(최저 ${"%.1f".format(sharpnessMin)})",
+        )
         if (croppedFrames > 0) {
             Log.d(
                 TAG,
@@ -262,6 +302,11 @@ class LiteRtDetector private constructor(
         cropFoundCounts.fill(0)
         cropFoundBest.fill(0f)
         cropRawBest.fill(0f)
+        qualityCounts.fill(0)
+        lumaSum = 0.0
+        stdSum = 0.0
+        sharpnessSum = 0.0
+        sharpnessMin = Double.MAX_VALUE
     }
 
     /** 클래스별 박스 수·최고 점수를 로그 한 줄로. 하나도 없으면 "없음" */

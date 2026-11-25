@@ -451,4 +451,29 @@ class CrowdAnalyzerTest {
 
         assertNotNull(results.firstNotNullOfOrNull { it.alert })
     }
+
+    @Test
+    fun badQualityWithoutPeopleIsUnknown() {
+        FrameQuality.entries.filter { it != FrameQuality.OK }.forEach { quality ->
+            val analysis = CrowdAnalyzer(config).analyze(frame(0).copy(quality = quality))
+
+            assertEquals(CrowdLevel.UNKNOWN, analysis.frame.level)
+            assertTrue(analysis.frame.freeDirections.isEmpty())
+        }
+    }
+
+    @Test
+    fun badQualityKeepsCaughtDanger() {
+        val near = frame(0, person(2, config.dangerDistanceM - 0.2)).copy(quality = FrameQuality.BLURRY)
+
+        assertEquals(CrowdLevel.DANGER, CrowdAnalyzer(config).analyze(near).frame.level)
+    }
+
+    @Test
+    fun clearViewWithoutPeopleIsClear() {
+        val analysis = CrowdAnalyzer(config).analyze(frame(0))
+
+        assertEquals(CrowdLevel.CLEAR, analysis.frame.level)
+        assertEquals(CLOCK_SECTORS.size, analysis.frame.freeDirections.size)
+    }
 }

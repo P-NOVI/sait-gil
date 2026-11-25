@@ -43,6 +43,8 @@ data class DetectionFrame(
     val walkSpeedMps: Double? = null,
     /** 길안내 경로의 횡단보도 근처인지. 화면이 알려 준다. 신호를 기다리는지 볼 때 쓴다 */
     val nearCrosswalk: Boolean = false,
+    /** 프레임 화질. OK 가 아니면 사람이 안 보여도 여유로 보지 않는다(#170) */
+    val quality: FrameQuality = FrameQuality.OK,
 )
 
 /** 프레임 하나를 판단한 결과. alert 는 정면 접근이 있을 때만 있다. */
@@ -215,7 +217,9 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val frontClipped = front.keys.any { track ->
             track.box.top <= config.clippedEdge && track.box.bottom >= 1 - config.clippedEdge
         }
-        val free = freeDirections(blocked)
+        // 화질이 나쁘면 사람을 놓쳤을 수 있어 빈 방향을 믿지 않는다.
+        val clearView = frame.quality == FrameQuality.OK
+        val free = if (clearView) freeDirections(blocked) else emptyList()
         recentFree.addLast(frame.timeMs to free)
         while (recentFree.first().first < frame.timeMs - config.freeConfirmMs) recentFree.removeFirst()
         // 넓은 순서는 지금 프레임을 따르고, 최근 프레임 내내 비어 있던 방향만 남긴다.
@@ -224,6 +228,8 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val level = when {
             frontClipped -> CrowdLevel.DANGER
             nearestFront != null && nearestFront <= config.dangerDistanceM -> CrowdLevel.DANGER
+            // 잡힌 위험은 먼저 알리고, 그 밖에는 화질이 나쁘면 사람이 적어 보여도 판단하지 않는다.
+            !clearView -> CrowdLevel.UNKNOWN
             blocked.size >= config.crowdedBlockedSectors &&
                 nearPeople >= config.crowdedPeople -> CrowdLevel.CROWDED
             blocked.size >= config.cautionBlockedSectors -> CrowdLevel.CAUTION

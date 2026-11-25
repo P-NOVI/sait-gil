@@ -257,6 +257,14 @@ data class DetectorConfig(
     val logWarmupFrames: Int = 5,
     /** 레터박스 여백 밝기(0~255). 학습 때 Ultralytics 가 채우는 회색과 같다 */
     val padGray: Int = 114,
+    /** 화질을 잴 때 건너뛰는 간격(px). 640 입력을 4px 마다 재면 프레임당 2만 점쯤이다(#170) */
+    val qualityStep: Int = 4,
+    /** 밝기 평균(0~255)이 이보다 낮으면 어두워 판단할 수 없다고 본다. 실기기에서 맞출 초안 값이다 */
+    val darkMeanLuma: Double = 20.0,
+    /** 밝기 표준편차가 이보다 작으면 한 색으로 덮였다(렌즈 가림)고 본다. 실기기에서 맞출 초안 값이다 */
+    val coveredStdLuma: Double = 10.0,
+    /** 선명도(라플라시안 분산)가 이보다 작으면 흐리다(흔들림 포함)고 본다. 실기기 로그로 맞출 초안 값이다 */
+    val blurSharpness: Double = 15.0,
     /**
      * 횡단보도 근처에서 세운 영상의 위쪽 가운데를 잘라 신호등만 한 번 더 찾을 정사각형 한 변(px, #134).
      * 근처에서는 분석 해상도를 올리므로(CameraSession) 모델 입력과 같은 크기로 잘라 줄이지 않고 넣는다.
