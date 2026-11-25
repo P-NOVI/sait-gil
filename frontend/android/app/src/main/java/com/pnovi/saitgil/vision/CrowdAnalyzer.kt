@@ -176,12 +176,14 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
 
     // 옆 진입을 마지막으로 알린 시각(왼쪽 true, 오른쪽 false)
     private val sideAlertedAtMs = mutableMapOf<Boolean, Long>()
-    private var analyzedBefore = false
+    private var lastFrameMs: Long? = null
 
     fun analyze(frame: DetectionFrame): CrowdAnalysis {
-        // 안내를 시작한 첫 프레임에 보이는 사람은 방금 들어온 것이 아니므로 옆 진입으로 보지 않는다.
-        val firstFrame = !analyzedBefore
-        analyzedBefore = true
+        // 안내를 시작한 첫 프레임이나 프레임이 trackLostMs 넘게 끊긴 뒤 첫 프레임(그동안 추적이 모두 지워진다)에 보이는 사람은
+        // 방금 들어온 것이 아니므로 옆 진입으로 보지 않는다.
+        val previousMs = lastFrameMs
+        val tracksRestarted = previousMs == null || frame.timeMs - previousMs > config.trackLostMs
+        lastFrameMs = frame.timeMs
         val seen = match(frame)
         val distances = seen.associateWith { track ->
             estimateDistanceM(track.box, frame, config)
@@ -237,7 +239,9 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
                     freeDirections = steadyFree,
                 )
             }
-        val alert = frontAlert ?: if (firstFrame) null else sideEntryAlert(distances, frame.timeMs)
+        // 혼잡 이상에서는 옆 칸에 늘 사람이 있고 서로 가려 같은 사람이 새 사람으로 잡히므로 옆 진입을 알리지 않는다. 혼잡 알림이 대신한다.
+        val sideAllowed = !tracksRestarted && level != CrowdLevel.CROWDED && level != CrowdLevel.DANGER
+        val alert = frontAlert ?: if (sideAllowed) sideEntryAlert(distances, frame.timeMs) else null
         return CrowdAnalysis(CrowdFrame(level, nearest, free), alert)
     }
 

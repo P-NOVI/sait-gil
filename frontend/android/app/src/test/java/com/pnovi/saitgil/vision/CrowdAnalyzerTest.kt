@@ -364,9 +364,45 @@ class CrowdAnalyzerTest {
         // 멀리, 가운데 칸
         assertNull(analyzer.analyze(frame(100, person(0, 3.0))).alert)
         assertNull(analyzer.analyze(frame(200, person(2, 1.4))).alert)
-        // 이미 보이던 사람이 가까이 오는 것은 새로 나타난 것이 아니다
-        analyzer.analyze(frame(300, person(1, 3.0)))
-        assertNull(analyzer.analyze(frame(400, person(1, 1.4))).alert)
+        // 이미 보이던 사람이 가까이 오는 것은 새로 나타난 것이 아니다. 실제처럼 가까워질수록 폭도 커진다.
+        val approach = listOf(3.0, 2.7, 2.4, 2.1, 1.8, 1.6, 1.4)
+        val results = approach.mapIndexed { index, distance ->
+            analyzer.analyze(frame(300L + index * 100, person(1, distance, width = 0.3 / distance)))
+        }
+        // 맨 처음 3.0m 에서 나타날 때는 멀어서, 그 뒤로는 같은 사람이어서 알리지 않는다
+        assertNull(results.firstNotNullOfOrNull { it.alert })
+    }
+
+    @Test
+    fun sideEntryIsNotAlertedWhenCrowded() {
+        val analyzer = CrowdAnalyzer(config)
+        analyzer.analyze(frame(0))
+
+        val crowded = analyzer.analyze(
+            frame(
+                100,
+                person(0, 1.4),
+                person(0, 3.5),
+                person(1, 3.0),
+                person(1, 3.5),
+                person(3, 3.0),
+            ),
+        )
+
+        assertEquals(CrowdLevel.CROWDED, crowded.frame.level)
+        assertNull(crowded.alert)
+    }
+
+    @Test
+    fun framesBrokenForLongerThanTrackLostMsDoNotMakeSideEntry() {
+        val analyzer = CrowdAnalyzer(config)
+        analyzer.analyze(frame(0))
+        analyzer.analyze(frame(100, person(0, 1.4)))
+        // 프레임이 끊긴 뒤 첫 프레임: 추적이 지워져 옆에 서 있던 사람이 새 사람이 되지만 알리지 않는다
+        assertNull(analyzer.analyze(frame(2_000, person(0, 1.4))).alert)
+        // 그다음 프레임부터 새로 나타난 사람은 알린다
+        val right = analyzer.analyze(frame(2_100, person(0, 1.4), person(4, 1.4))).alert
+        assertEquals(2, right!!.direction)
     }
 
     @Test
@@ -375,8 +411,10 @@ class CrowdAnalyzerTest {
         analyzer.analyze(frame(0))
         assertNotNull(analyzer.analyze(frame(100, person(0, 1.4))).alert)
         // 사람이 사라졌다 같은 쪽에 새 사람으로 다시 잡혀도 간격 안에는 알리지 않는다
-        analyzer.analyze(frame(1_500))
-        assertNull(analyzer.analyze(frame(1_600, person(1, 1.4))).alert)
+        analyzer.analyze(frame(700))
+        analyzer.analyze(frame(1_200))
+        assertNull(analyzer.analyze(frame(1_300, person(1, 1.4))).alert)
+        analyzer.analyze(frame(2_000))
         analyzer.analyze(frame(3_000))
         assertNotNull(analyzer.analyze(frame(3_200, person(1, 1.4))).alert)
     }
