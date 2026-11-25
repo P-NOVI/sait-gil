@@ -43,6 +43,7 @@ import {
 import Icon from './Icon';
 
 const resultCount = (count: number) => `검색 결과 ${count}개`;
+const NO_TYPED_PLACES_TEXT = '검색 결과가 없습니다. 다른 이름으로 찾아보세요.';
 
 type TopSearchProps = {
     inputRef: RefObject<HTMLInputElement | null>;
@@ -60,7 +61,10 @@ type TopSearchProps = {
     onSilence?: () => void;
     /** 말로 찾은 곳을 읽고 대답을 듣는다. */
     onAsk: (text: string) => Promise<Answer>;
-    /** 읽던 말이 끝나면 풀린다. 음성 안내를 켰을 때 포커스를 그 뒤로 미루는 데 쓴다. */
+    /**
+     * 읽던 말이 끝나면 풀린다. 음성 안내를 켰을 때 포커스를 그 뒤로 미루는 데 쓴다.
+     * 말을 모두 멈추면(onSilence·화면 이동·안내 종료) 풀리지 않는다. 그때는 확인 화면을 떠나므로 포커스를 옮기지 않는다.
+     */
     onIdle: () => Promise<void>;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
@@ -280,7 +284,11 @@ export default function TopSearch({
                 .then((near) => onSearch(typed, near))
                 .then((found) => {
                     if (found && voice) {
-                        onAnnounce(resultCount(found.length));
+                        onAnnounce(
+                            found.length > 0
+                                ? resultCount(found.length)
+                                : NO_TYPED_PLACES_TEXT,
+                        );
                     }
                 });
         }
@@ -518,9 +526,7 @@ export default function TopSearch({
                 </p>
             )}
             {results.status === 'success' && places.length === 0 && (
-                <p className="message">
-                    검색 결과가 없습니다. 다른 이름으로 찾아보세요.
-                </p>
+                <p className="message">{NO_TYPED_PLACES_TEXT}</p>
             )}
             <div aria-live={voice ? 'off' : 'polite'}>
                 {notice && <p className="message">{notice}</p>}
