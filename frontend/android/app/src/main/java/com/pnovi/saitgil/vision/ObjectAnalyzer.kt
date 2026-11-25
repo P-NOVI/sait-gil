@@ -106,7 +106,9 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
     private var slowSinceMs: Long? = null
 
     fun analyze(frame: DetectionFrame): ObjectAnalysis {
-        val vehicleAnalysis = vehicles.analyze(frame)
+        val standing = isStanding(frame)
+        // 횡단보도 근처에 서 있으면 신호를 기다리는 것으로 보고, 앞 차도를 옆으로 지나가는 차는 알리지 않는다.
+        val vehicleAnalysis = vehicles.analyze(frame, waitingToCross = standing && frame.nearCrosswalk)
         // 멀어지는 차는 음성뿐 아니라 화면의 앞 장애물에서도 뺀다.
         // 걸음을 뺀 판단이 멀어짐이어도 카메라에서 본 거리가 실제로 늘지 않으면 뺀다. 따라 걸을 때나 GPS 걸음 속도 오차로
         // 서 있는 차·나란히 가는 차가 화면에서 사라지지 않게 한다. 걸음 속도를 모르면(0) 두 판단이 같다.
@@ -132,7 +134,7 @@ class ObjectAnalyzer(private val config: VisionConfig = VisionConfig()) {
         }
         val stillNotices = vehicleAnalysis.notices + obstacles.analyze(frame)
         // 서 있으면 장애물·서 있는 차는 알리지 않는다. 알리지 않은 것은 다시 걸을 때 알린다.
-        val notice = if (isStanding(frame)) null else nearestNotice(stillNotices, frame)
+        val notice = if (standing) null else nearestNotice(stillNotices, frame)
         val signal = signals.update(frame)
         return ObjectAnalysis(
             signal.state,

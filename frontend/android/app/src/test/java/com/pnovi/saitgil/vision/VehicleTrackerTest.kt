@@ -129,6 +129,31 @@ class VehicleTrackerTest {
     }
 
     @Test
+    fun crossingCarIsNotWarnedWhileWaitingToCross() {
+        // 신호를 기다리는 동안 앞 차도를 옆으로 지나가는 차는 알리지 않는다.
+        val tracker = VehicleTracker(config)
+        val alerts = listOf(-4.0, -2.5, -1.0, 0.5).mapIndexed { index, lateral ->
+            tracker.analyze(frame(index, car(10.0, lateralM = lateral)), waitingToCross = true).alerts
+        }
+
+        assertTrue(alerts.all { it.isEmpty() })
+    }
+
+    @Test
+    fun approachingCarIsWarnedWhileWaitingToCross() {
+        // 신호를 기다리는 중이어도 내 쪽으로 다가오는 차는 알린다. 앞서 지나간 차가 알림 간격을 막지도 않는다.
+        val tracker = VehicleTracker(config)
+        listOf(-4.0, -2.5, -1.0).forEachIndexed { index, lateral ->
+            tracker.analyze(frame(index, car(10.0, lateralM = lateral)), waitingToCross = true)
+        }
+        val alerts = listOf(14.0, 11.0, 8.0).mapIndexed { index, distance ->
+            tracker.analyze(frame(10 + index, car(distance)), waitingToCross = true).alerts
+        }
+
+        assertEquals(1, alerts[2].size)
+    }
+
+    @Test
     fun bodyTurnWithParkedCarBesideThePathIsNotWarned() {
         // 몸을 돌려 8m 앞 왼쪽 주차된 차가 화면에서 길 쪽으로 약 1.4m/s 움직인 것처럼 보인다. 걷는 길 밖이라 알리지 않는다.
         val alerts = run(listOf(-4.5, -3.5, -2.5).map { car(8.0, lateralM = it) })

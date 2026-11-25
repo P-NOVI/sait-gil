@@ -41,6 +41,8 @@ data class DetectionFrame(
     val objects: List<ObjectBox> = emptyList(),
     /** 사용자가 걷는 속도(m/s). GPS 로 받는다. 멈춰 있으면 0, 모르면 null 이다. 차의 움직임을 잴 때 내 걸음을 뺀다 */
     val walkSpeedMps: Double? = null,
+    /** 길안내 경로의 횡단보도 근처인지. 화면이 알려 준다. 신호를 기다리는지 볼 때 쓴다 */
+    val nearCrosswalk: Boolean = false,
 )
 
 /** 프레임 하나를 판단한 결과. alert 는 정면 접근이 있을 때만 있다. */
