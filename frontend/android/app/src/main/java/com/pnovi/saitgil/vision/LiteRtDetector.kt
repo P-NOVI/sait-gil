@@ -93,12 +93,15 @@ class LiteRtDetector private constructor(
             placement.postScale(letterbox.scale, letterbox.scale)
             placement.postTranslate(letterbox.padX, letterbox.padY)
             fillInput(bitmap)
+            // 신호등 칸 추론이 pixels 를 덮어쓰기 전에, 여백을 뺀 영상 영역으로 가림·흔들림을 잰다
+            val unreliable = isFrameUnreliable(letterbox)
             val prepared = SystemClock.elapsedRealtime()
             runModel()
             val inferred = SystemClock.elapsedRealtime()
             val detections = decodeDetections(outputValues, candidates, config)
             // 찍은 시각을 쓴다. 정면 접근 속도를 잴 때 추론이 밀려도 프레임 사이 시간이 맞게 한다.
             val frame = toDetectionFrame(detections, letterbox, image.imageInfo.timestamp / NANOS_PER_MS)
+                .copy(unreliable = unreliable)
             val decoded = SystemClock.elapsedRealtime()
             val crop = if (farSignals()) signalCrop(letterbox.imageWidth, letterbox.imageHeight, config) else null
             val cropBoxes = crop?.let { searchSignals(image, bitmap, rotation, it, letterbox) }
@@ -172,6 +175,20 @@ class LiteRtDetector private constructor(
         interpreter.run(input, output)
         output.rewind()
         output.asFloatBuffer().get(outputValues)
+    }
+
+    /** fillInput 직후 pixels 에서 영상이 놓인 영역(레터박스 여백 제외)이 가려지거나 흔들려 못 믿을 상태인지 */
+    private fun isFrameUnreliable(letterbox: Letterbox): Boolean {
+        val stats = frameStats(
+            pixels,
+            size,
+            left = letterbox.padX.toInt(),
+            top = letterbox.padY.toInt(),
+            right = (size - letterbox.padX).toInt(),
+            bottom = (size - letterbox.padY).toInt(),
+            step = config.qualitySampleStep,
+        ) ?: return false
+        return isUnreliable(stats, config)
     }
 
     /** placement 로 프레임을 정사각형 입력에 그리고, 채널 우선(NCHW) 0~1 값으로 채운다. 프레임이 덮지 않는 곳은 여백 회색이다 */

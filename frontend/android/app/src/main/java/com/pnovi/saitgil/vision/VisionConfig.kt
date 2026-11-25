@@ -98,6 +98,8 @@ data class VisionConfig(
     val trackLostMs: Long = 1_000,
     /** 접근 경고에 넣는 빈 방향은 이 시간(ms) 동안 이어서 비어 있던 것만 쓴다. 한 프레임 튀는 방향을 막는다 */
     val freeConfirmMs: Long = 500,
+    /** 가림·흔들림(DetectionFrame.unreliable)이 이 시간(ms) 이어지고 박스가 없으면 "여유"가 아니라 판단 불가로 본다(#170). 한두 프레임 흔들림은 넘긴다 */
+    val unreliableConfirmMs: Long = 1_000,
     /** 목걸이에 건 카메라의 바닥에서 높이(m). 기둥·장애물·계단의 바닥 기준 거리를 잴 때 쓴다 */
     val cameraHeightM: Double = 1.3,
     /**
@@ -287,6 +289,15 @@ data class DetectorConfig(
     val signalCaptureJpegQuality: Int = 85,
     /** 신호등 칸 사진의 평균 밝기를 잴 때 이 픽셀 수마다 하나만 본다 */
     val signalCaptureLumaStep: Int = 16,
+    // 가림·흔들림 판정(#170). 박스가 없을 때 "비었다"고 믿어도 되는 프레임인지 본다. 실기기에서 맞출 초안 값이다.
+    /** 평균 밝기(0~255)가 이보다 낮으면 손이나 옷으로 가린 것으로 본다 */
+    val coveredMeanLumaMax: Double = 15.0,
+    /** 밝기 표준편차가 이보다 낮으면 단색(가림)으로 본다 */
+    val coveredLumaStdMax: Double = 12.0,
+    /** 오른쪽·아래 이웃과 밝기 차이의 평균이 이보다 낮으면 흐리거나 흔들린 것으로 본다 */
+    val blurSharpnessMin: Double = 2.0,
+    /** 가림·흔들림을 잴 때 가로세로 이 픽셀 수마다 하나만 본다 */
+    val qualitySampleStep: Int = 4,
 )
 
 /**
