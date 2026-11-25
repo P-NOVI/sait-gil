@@ -19,6 +19,8 @@ type RoutePanelProps = {
     onChoose: (index: number) => void;
     onSearchDestination: () => void;
     onStart: () => void;
+    /** 켜면 오류를 앱이 읽으므로 화면낭독기 알림을 끈다. */
+    voice: boolean;
 };
 
 /** 경로 선택: 목적지, 경로 3종 중 고르기, 안내 시작. 출발은 늘 내 위치다. */
@@ -33,6 +35,7 @@ export default function RoutePanel({
     onChoose,
     onSearchDestination,
     onStart,
+    voice,
 }: RoutePanelProps) {
     const found =
         routes.status === 'success'
@@ -68,7 +71,10 @@ export default function RoutePanel({
             </p>
             {locationError && (
                 <>
-                    <p className="message message--error" role="alert">
+                    <p
+                        className="message message--error"
+                        role={voice ? undefined : 'alert'}
+                    >
                         {locationError}
                     </p>
                     <button
@@ -82,7 +88,10 @@ export default function RoutePanel({
                 </>
             )}
             {routes.status === 'error' && (
-                <p className="message message--error" role="alert">
+                <p
+                    className="message message--error"
+                    role={voice ? undefined : 'alert'}
+                >
                     {routes.message}
                 </p>
             )}

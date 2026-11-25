@@ -939,6 +939,7 @@ export default function App() {
                     onAnnounce={(text) => announce(text)}
                     onSilence={silence}
                     onAsk={ask}
+                    onIdle={whenIdle}
                     voice={settings.voice}
                     purpose={screen === 'set-home' ? 'home' : 'go'}
                     home={saved.home}
@@ -977,6 +978,7 @@ export default function App() {
                     }
                     onChoose={setChosen}
                     onSearchDestination={() => goTo('search')}
+                    voice={settings.voice}
                     onStart={() => {
                         const route = found[chosen];
                         if (route) {
