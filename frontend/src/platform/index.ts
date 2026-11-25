@@ -38,4 +38,5 @@ export {
     type VisionFrame,
     type VisionLevel,
     type VisionObstacle,
+    type VisionSideEntry,
 } from './vision';

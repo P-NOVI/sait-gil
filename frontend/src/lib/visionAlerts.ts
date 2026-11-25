@@ -10,6 +10,7 @@ import type {
     VisionFrame,
     VisionLevel,
     VisionObstacle,
+    VisionSideEntry,
 } from '../platform';
 import {
     CROSSING_FACING,
@@ -112,6 +113,29 @@ export function obstacleAlert(obstacle: VisionObstacle): Alert {
     };
 }
 
+const SIDE_ENTRY_TEXTS: Readonly<Record<VisionSideEntry['side'], string>> = {
+    left: '왼쪽에서 사람 진입.',
+    right: '오른쪽에서 사람 진입.',
+};
+
+/** 옆 진입을 알릴 말. 가로질러 오는지 추월하는지 모르므로 움직임은 말하지 않고, 빨리 끝나도록 짧게 말한다 */
+export function sideEntryText(entry: VisionSideEntry): string {
+    return SIDE_ENTRY_TEXTS[entry.side];
+}
+
+/**
+ * 옆에서 가까운 사람이 들어왔다는 알림. 위험 등급이다. 다시 알릴 때는 플러그인이 정하므로 쿨다운을 두지 않는다.
+ * 왼쪽과 오른쪽은 키를 따로 둬 서로 막지 않는다.
+ */
+export function sideEntryAlert(entry: VisionSideEntry): Alert {
+    return {
+        key: `${VISION_KEYS.sideEntry}-${entry.side}`,
+        level: 'danger',
+        text: sideEntryText(entry),
+        cooldownMs: 0,
+    };
+}
+
 export const SIGNAL_RED_TEXT = '빨간불입니다.';
 export const SIGNAL_SEEN_TEXT = '신호등이 있습니다.';
 // 빨간불이 아닌 신호등에는 깜빡임·꺼짐도 섞여 있어 초록불이라고 말하지 않는다.
@@ -196,6 +220,8 @@ export const VISION_KEYS = {
     failure: 'vision-failure',
     // 장애물은 클래스마다 따로 둔다(vision-obstacle-pole 등).
     obstacle: 'vision-obstacle',
+    // 옆 진입은 왼쪽·오른쪽마다 따로 둔다(vision-side-entry-left 등).
+    sideEntry: 'vision-side-entry',
     signal: 'vision-signal',
 } as const;
 

@@ -87,6 +87,10 @@ data class VisionConfig(
     val approachMinSpanMs: Long = 600,
     /** 같은 사람의 접근을 다시 알리기 전에 기다리는 시간(ms) */
     val approachRepeatMs: Long = 5_000,
+    /** 옆 칸(10·11·1·2시)에 새로 나타난 사람이 이 거리(m) 안이면 옆에서 들어온다고 알린다 */
+    val sideEntryDistanceM: Double = 1.5,
+    /** 같은 쪽(왼쪽·오른쪽)의 옆 진입을 다시 알리기 전에 기다리는 시간(ms). 추적이 끊겨 같은 사람이 새 사람으로 잡힐 때를 막는다. 실기기에서 맞출 초안 값이다 */
+    val sideEntryRepeatMs: Long = 3_000,
     /** 앞 프레임 박스와 이만큼 이상 겹치면 같은 사람으로 본다(IoU) */
     val trackIouThreshold: Double = 0.3,
     // 추적·확정 기준은 프레임 수가 아니라 시간으로 둬 모델·기기의 fps 와 상관없게 한다(#133).

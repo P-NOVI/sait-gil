@@ -93,6 +93,8 @@ data class CrowdFrame(
 
 enum class AlertKind(val wire: String) {
     DANGER("danger"),
+    /** 옆 칸(10·11·1·2시)에 가까운 사람이 새로 나타남. direction 에 칸의 시계 방향을 담는다 */
+    SIDE_ENTRY("side_entry"),
     OBSTACLE("obstacle"),
     SIGNAL("signal"),
     GATE("gate"),
