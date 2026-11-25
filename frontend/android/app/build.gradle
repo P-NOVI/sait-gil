@@ -28,8 +28,7 @@ android {
         buildConfig = true
     }
     buildTypes {
-        // 개발 중 인식이 잘 되는지 보려고 디버그 빌드에서만 카메라 화면을 띄운다(손으로 크기 조절·이동).
-        // 개발 중에도 끄려면 debug 의 값을 false 로 바꾼다. 배포(release)에서는 띄우지 않는다.
+        // 디버그 빌드에서만 횡단보도 근처 신호등 칸 사진을 폰에 남긴다(#157). 배포(release)에서는 남기지 않는다.
         debug {
             buildConfigField "boolean", "VISION_PREVIEW", "true"
         }

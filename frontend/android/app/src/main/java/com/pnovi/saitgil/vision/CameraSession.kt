@@ -15,19 +15,16 @@ import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
-import androidx.camera.core.Preview
 import androidx.camera.core.UseCase
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import java.util.concurrent.Executors
 
 /**
  * 후면 카메라를 분석용으로 켜고 끈다. 영상은 기기 밖으로 보내지 않는다.
- * previewView 를 주면(개발용) 같은 카메라 화면을 그 뷰에 함께 보여 준다.
  * 화면(액티비티) 수명에 묶여 앱이 뒤로 가면 카메라도 쉬고, 돌아오면 다시 켜진다.
  * CameraX 는 메인 스레드에서 다뤄야 하므로 켜고 끄는 일은 메인 스레드로 넘긴다.
  */
@@ -36,7 +33,6 @@ class CameraSession(
     private val owner: LifecycleOwner,
     private val analyzer: FrameAnalyzer,
     private val onFrame: (DetectionFrame) -> Unit,
-    private val previewView: PreviewView? = null,
 ) {
     private val main = ContextCompat.getMainExecutor(context)
     private val worker = Executors.newSingleThreadExecutor()
@@ -72,7 +68,7 @@ class CameraSession(
             try {
                 val cameraProvider = future.get()
                 if (useCases.isEmpty()) {
-                    useCases = listOfNotNull(buildAnalysis(), previewView?.let(::buildPreview))
+                    useCases = listOf(buildAnalysis())
                 }
                 if (useCases.any { !cameraProvider.isBound(it) }) {
                     val camera = cameraProvider.bindToLifecycle(
@@ -181,9 +177,6 @@ class CameraSession(
         current.targetRotation = target
         Log.i(TAG, if (mount.upsideDown) "폰이 위아래 거꾸로 걸려 영상을 180° 돌려 봅니다" else "폰이 바로 걸려 영상을 돌리지 않습니다")
     }
-
-    private fun buildPreview(view: PreviewView): Preview =
-        Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
 
     private fun analyze(image: ImageProxy) {
         image.use {
