@@ -7,6 +7,7 @@ import {
     mergedKindsNote,
     minutes,
     type PlannedRoute,
+    remainingMinutes,
     routesAnnouncement,
     routeSummary,
     sameKindRoute,
@@ -172,5 +173,20 @@ describe('distanceLabel, minutes', () => {
         expect(distanceLabel(1000)).toBe('1.0km');
         expect(minutes(20)).toBe(1);
         expect(minutes(150)).toBe(3);
+    });
+});
+
+describe('remainingMinutes', () => {
+    it('경로 전체 시간을 남은 거리 비율만큼 쓴다', () => {
+        // 1234m 를 900초에 걷는 경로의 절반쯤 남았다.
+        expect(remainingMinutes(route(), 617)).toBe(8);
+    });
+
+    it('남은 거리가 경로보다 길어도 전체 시간을 넘지 않는다', () => {
+        expect(remainingMinutes(route(), 5000)).toBe(15);
+    });
+
+    it('거리가 0 인 경로는 1분으로 본다', () => {
+        expect(remainingMinutes(route({ distance_m: 0 }), 0)).toBe(1);
     });
 });

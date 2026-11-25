@@ -177,11 +177,16 @@ export async function searchSpoken(
     return fallback ?? last;
 }
 
-/** 결과 하나를 읽고 갈지 묻는 문장 */
+// 말로 찾은 곳을 읽은 뒤 묻는 말. 목적지로 갈 때와 집으로 저장할 때
+export const GO_QUESTION = '이곳으로 갈까요?';
+export const HOME_QUESTION = '이곳을 집으로 할까요?';
+
+/** 결과 하나를 읽고 갈지(또는 집으로 할지) 묻는 문장 */
 export function placeQuestion(
     place: Place,
     index: number,
     total: number,
+    question: string = GO_QUESTION,
 ): string {
     const order = total > 1 ? `검색 결과 ${total}개 중 ${index + 1}번째. ` : '';
     const distance =
@@ -192,7 +197,7 @@ export function placeQuestion(
     // 주소로 찾으면 이름이 곧 주소라 한 번만 읽는다.
     const address =
         compact(place.address) === compact(name) ? '' : ` ${place.address}.`;
-    return `${order}${name}${distance}.${address} 이곳으로 갈까요?`;
+    return `${order}${name}${distance}.${address} ${question}`;
 }
 
 export const NO_MORE_PLACES_TEXT =

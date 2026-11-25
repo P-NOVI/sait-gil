@@ -6,10 +6,9 @@ import {
     routeSummary,
     routeTitle,
 } from '../lib/routeApi';
-import type { LocationFix } from '../platform';
+import Icon from './Icon';
 
 type RoutePanelProps = {
-    myLocation: LocationFix | null;
     locating: boolean;
     locationError: string | null;
     destination: Place | null;
@@ -22,9 +21,8 @@ type RoutePanelProps = {
     onStart: () => void;
 };
 
-/** 길찾기 탭: 출발(내 위치)·도착, 경로 3종 중 고르기, 안내 시작 */
+/** 경로 선택: 목적지, 경로 3종 중 고르기, 안내 시작. 출발은 늘 내 위치다. */
 export default function RoutePanel({
-    myLocation,
     locating,
     locationError,
     destination,
@@ -42,114 +40,101 @@ export default function RoutePanel({
             : routes.status === 'loading'
               ? (routes.previous ?? [])
               : [];
-    const canFind = destination !== null && routes.status !== 'loading';
+    const loading = routes.status === 'loading';
+    // 경로를 못 찾았거나 아직 찾지 않았으면 다시 찾는 버튼을 둔다.
+    const canRetry = destination !== null && !loading && found.length === 0;
+
+    if (!destination) {
+        return (
+            <div className="route">
+                <p className="message">목적지를 먼저 고르세요.</p>
+                <button
+                    type="button"
+                    className="button button--primary"
+                    onClick={onSearchDestination}
+                >
+                    <Icon name="search" />
+                    목적지 찾기
+                </button>
+            </div>
+        );
+    }
 
     return (
-        <div className="route-panel">
-            <dl className="route-panel__endpoints">
-                <div className="route-panel__endpoint">
-                    <dt>출발</dt>
-                    <dd>
-                        {locating
-                            ? '내 위치를 찾는 중'
-                            : myLocation
-                              ? `내 위치 (오차 약 ${Math.round(myLocation.accuracy)}m)`
-                              : '내 위치를 아직 찾지 못했습니다'}
-                    </dd>
+        <div className="route">
+            <p className="route__goal">
+                목적지: {destination.name}
+                <span className="route__address">{destination.address}</span>
+            </p>
+            {locationError && (
+                <>
+                    <p className="message message--error" role="alert">
+                        {locationError}
+                    </p>
                     <button
                         type="button"
-                        className="route-panel__small"
+                        className="button"
                         disabled={locating}
                         onClick={onLocate}
                     >
-                        다시 찾기
+                        {locating ? '위치 찾는 중' : '내 위치 다시 찾기'}
                     </button>
-                </div>
-                <div className="route-panel__endpoint">
-                    <dt>도착</dt>
-                    <dd>
-                        {destination ? (
-                            <>
-                                {destination.name}
-                                <span className="route-panel__address">
-                                    {destination.address}
-                                </span>
-                            </>
-                        ) : (
-                            '목적지를 고르세요'
-                        )}
-                    </dd>
-                    <button
-                        type="button"
-                        className="route-panel__small"
-                        onClick={onSearchDestination}
-                    >
-                        {destination ? '바꾸기' : '검색'}
-                    </button>
-                </div>
-            </dl>
-            {locationError && (
-                <p className="route-panel__error" role="alert">
-                    {locationError}
-                </p>
+                </>
             )}
-
-            <button
-                type="button"
-                className="route-panel__primary"
-                disabled={!canFind}
-                onClick={onFindRoutes}
-            >
-                {routes.status === 'loading' ? '경로를 찾는 중' : '경로 찾기'}
-            </button>
-
             {routes.status === 'error' && (
-                <p className="route-panel__error" role="alert">
+                <p className="message message--error" role="alert">
                     {routes.message}
                 </p>
             )}
-
+            {loading && found.length === 0 && (
+                <p className="message">경로를 찾는 중입니다.</p>
+            )}
             {found.length > 0 && (
-                <>
-                    <h3 className="route-panel__heading">
-                        경로 {found.length}개
-                    </h3>
-                    <ol className="route-panel__options">
-                        {found.map((route, index) => {
-                            const note = mergedKindsNote(route);
-                            return (
-                                <li key={route.kinds.join(',')}>
-                                    <button
-                                        type="button"
-                                        className="route-panel__option"
-                                        aria-pressed={index === chosen}
-                                        onClick={() => onChoose(index)}
-                                    >
-                                        <span className="route-panel__option-title">
+                <ol className="list" aria-label={`경로 ${found.length}개`}>
+                    {found.map((route, index) => {
+                        const note = mergedKindsNote(route);
+                        return (
+                            <li key={route.kinds.join(',')}>
+                                <button
+                                    type="button"
+                                    className="row"
+                                    aria-pressed={index === chosen}
+                                    onClick={() => onChoose(index)}
+                                >
+                                    <span className="row__main">
+                                        <span className="row__name">
                                             {routeTitle(route)}
                                         </span>
-                                        <span className="route-panel__option-detail">
+                                        <span className="row__detail">
                                             {routeSummary(route)}
                                         </span>
                                         {note && (
-                                            <span className="route-panel__option-note">
+                                            <span className="row__detail">
                                                 {note}
                                             </span>
                                         )}
-                                    </button>
-                                </li>
-                            );
-                        })}
-                    </ol>
-                    <button
-                        type="button"
-                        className="route-panel__primary route-panel__start"
-                        disabled={routes.status !== 'success'}
-                        onClick={onStart}
-                    >
-                        {routeTitle(found[chosen] ?? found[0])}로 안내 시작
-                    </button>
-                </>
+                                    </span>
+                                    {index === chosen && <Icon name="check" />}
+                                </button>
+                            </li>
+                        );
+                    })}
+                </ol>
+            )}
+            {canRetry && (
+                <button type="button" className="button" onClick={onFindRoutes}>
+                    경로 다시 찾기
+                </button>
+            )}
+            {found.length > 0 && (
+                <button
+                    type="button"
+                    className="button button--primary route__start"
+                    disabled={routes.status !== 'success'}
+                    onClick={onStart}
+                >
+                    {routeTitle(found[chosen] ?? found[0])}로 안내 시작
+                </button>
             )}
         </div>
     );

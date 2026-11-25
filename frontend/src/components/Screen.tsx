@@ -1,38 +1,51 @@
-import type { ReactNode } from 'react';
-import { useId } from 'react';
+import { type ReactNode, useId } from 'react';
 
-export type ScreenName = 'home' | 'search' | 'route' | 'settings';
+import Icon from './Icon';
+
+export type ScreenName = 'home' | 'search' | 'route' | 'settings' | 'set-home';
 
 type ScreenProps = {
     title: string;
-    /** 없으면 뒤로 버튼을 그리지 않는다. */
+    /** 뒤로·처음 버튼. 둘 다 없으면(첫 화면·길안내) 그 줄을 그리지 않는다. */
     onBack?: () => void;
+    onHome?: () => void;
+    /** 맨 아래 상태 한 줄 */
+    status?: ReactNode;
     children: ReactNode;
 };
 
-/** 홈이 아닌 화면의 틀: 위에 뒤로 버튼과 제목, 아래에 내용. */
-export default function Screen({ title, onBack, children }: ScreenProps) {
+/** 모든 화면의 틀: 위에 제목과 뒤로·처음 줄, 가운데 내용, 맨 아래 상태 한 줄 */
+export default function Screen({
+    title,
+    onBack,
+    onHome,
+    status,
+    children,
+}: ScreenProps) {
     const titleId = useId();
     return (
         <section className="screen" aria-labelledby={titleId}>
-            <header className="screen__header">
-                {onBack && (
-                    <button
-                        type="button"
-                        className="screen__back"
-                        onClick={onBack}
-                    >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M15 5l-7 7 7 7" />
-                        </svg>
-                        뒤로
-                    </button>
-                )}
-                <h2 id={titleId} className="screen__title">
-                    {title}
-                </h2>
-            </header>
+            <h1 id={titleId} className="screen__title">
+                {title}
+            </h1>
+            {(onBack || onHome) && (
+                <nav className="screen__nav" aria-label="화면 이동">
+                    {onBack && (
+                        <button type="button" onClick={onBack}>
+                            <Icon name="back" />
+                            뒤로
+                        </button>
+                    )}
+                    {onHome && (
+                        <button type="button" onClick={onHome}>
+                            <Icon name="home" />
+                            처음
+                        </button>
+                    )}
+                </nav>
+            )}
             <div className="screen__body">{children}</div>
+            {status && <footer className="screen__status">{status}</footer>}
         </section>
     );
 }

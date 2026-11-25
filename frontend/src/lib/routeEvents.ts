@@ -46,6 +46,18 @@ export type RouteEvent = {
 // 좌표를 이 자릿수로 맞춰 이벤트 이름을 짓는다. 소수 5자리는 약 1m 다.
 const KEY_DIGITS = 5;
 
+/** 아직 지나지 않은 이벤트를 가까운 차례로 count 개까지 */
+export function upcomingEvents(
+    events: readonly RouteEvent[],
+    travelledM: number,
+    count: number,
+): RouteEvent[] {
+    return events
+        .filter((event) => event.distance_m >= travelledM)
+        .sort((a, b) => a.distance_m - b.distance_m)
+        .slice(0, count);
+}
+
 /** 경로를 다시 찾아도 같은 지점의 이벤트는 같은 이름이 되도록 좌표로 부른다. */
 export function eventKey({
     kind,

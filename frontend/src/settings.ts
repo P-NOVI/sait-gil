@@ -222,3 +222,9 @@ export const DOUBLE_TAP = {
 } as const;
 
 export type DoubleTapSettings = typeof DOUBLE_TAP;
+
+// 첫 화면에 보일 최근 간 곳 수
+export const RECENT_PLACES_MAX = 3;
+
+// 길안내 화면에 보일 다음 안내 수
+export const UPCOMING_EVENTS_SHOWN = 3;

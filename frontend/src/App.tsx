@@ -13,6 +13,7 @@ import { useGuidance } from './hooks/useGuidance';
 import { useDoubleTap } from './hooks/useDoubleTap';
 import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
+import { useSavedPlaces } from './hooks/useSavedPlaces';
 import { useVision } from './hooks/useVision';
 import { CROWD_ALERT_FROM } from './lib/accessibility';
 import type { Alert } from './lib/alertArbiter';
@@ -37,6 +38,7 @@ import {
     facingCrossing,
     nearCrosswalk,
 } from './lib/routeEvents';
+import { samePlace } from './lib/savedPlaces';
 import { nearForSearch } from './lib/searchNear';
 import {
     cameraAnswer,
@@ -73,20 +75,23 @@ import {
     watchCameraHeading,
 } from './platform';
 
-const SCREEN_TITLES: Record<Exclude<ScreenName, 'home'>, string> = {
+const SCREEN_TITLES: Record<ScreenName, string> = {
+    home: '사잇길',
     search: '목적지 찾기',
-    route: '길찾기',
-    settings: '접근성 설정',
+    route: '경로 선택',
+    settings: '설정',
+    'set-home': '집 등록',
 };
 
-/** 뒤로 버튼이 돌아가는 화면. 길찾기는 목적지를 고른 검색 화면으로 돌아간다. */
-const BACK_TO: Record<Exclude<ScreenName, 'home'>, ScreenName> = {
-    search: 'home',
-    route: 'search',
-    settings: 'home',
-};
+/** 지금 화면과 뒤로 버튼이 돌아갈 화면들. 처음 화면으로 가면 비운다. */
+type Navigation = { screen: ScreenName; history: ScreenName[] };
 
 const TRY_TEXT = '음성과 진동으로 이렇게 알려 드립니다.';
+const HOME_SAVED_TEXT =
+    '집으로 저장했습니다. 첫 화면의 집 버튼을 누르면 바로 안내합니다.';
+const HOME_CLEARED_TEXT = '집을 지웠습니다.';
+const DOUBLE_TAP_HINT = '화면을 두 번 누르면 말하기';
+const SETTINGS_NOTE = '설정은 이 기기에만 저장합니다.';
 const NO_ADDRESS_TEXT = '이곳의 주소를 찾지 못했습니다.';
 const NO_LOCATION_TEXT = '내 위치를 아직 찾지 못했습니다.';
 
@@ -117,8 +122,12 @@ export default function App() {
     const { announce, ask, buzz, silence, listening, busyFor, whenIdle } =
         useAnnouncer(settings);
 
-    const [screen, setScreen] = useState<ScreenName>('home');
+    const [{ screen }, setNavigation] = useState<Navigation>({
+        screen: 'home',
+        history: [],
+    });
     const searchInput = useRef<HTMLInputElement>(null);
+    const saved = useSavedPlaces();
 
     // 출발은 항상 내 위치. 앱을 열면 바로 찾는다.
     const [myLocation, setMyLocation] = useState<LocationFix | null>(null);
@@ -137,6 +146,14 @@ export default function App() {
     // 안내 중인 경로. 경로를 다시 찾으면 바뀐다.
     const [guided, setGuided] = useState<PlannedRoute | null>(null);
     const navigating = guided !== null;
+
+    // 안내를 시작하면 목적지를 최근 간 곳에 남긴다.
+    const { addRecent } = saved;
+    useEffect(() => {
+        if (navigating && destination) {
+            addRecent(destination);
+        }
+    }, [navigating, destination, addRecent]);
 
     // 안내 중 알림을 알림 중재로 보낸다. useGuidance 가 아래에서 만들어져 ref 로 잇는다.
     const reportAlert = useRef<(alert: Alert) => void>(() => undefined);
@@ -300,6 +317,7 @@ export default function App() {
         offered.current = null;
         guidanceRun.current += 1;
         setGuided(route);
+        whereAmI.reset();
         const started = `${routeTitle(route)}로 안내를 시작합니다.`;
         if (canAskByVoice()) {
             // 켜짐 여부는 저장하지 않고 안내마다 묻는다. 끄려는 사람에게 권한 창·실패 안내가
@@ -406,11 +424,12 @@ export default function App() {
         }
     };
 
-    const findRoutes = async (goal: Place) => {
+    /** 내 위치에서 goal 까지 경로를 찾는다. 내 위치를 못 찾았거나 실패하면 null */
+    const routesTo = async (goal: Place) => {
         offered.current = null;
         const start = myLocation?.position ?? (await locate())?.position;
         if (!start) {
-            return;
+            return null;
         }
         const result = await routes.run({
             start,
@@ -419,6 +438,14 @@ export default function App() {
         });
         if (result) {
             setChosen(0);
+        }
+        return result;
+    };
+
+    /** 경로를 찾아 읽고 고르게 한다. */
+    const findRoutes = async (goal: Place) => {
+        const result = await routesTo(goal);
+        if (result) {
             void offerRoutes(result);
         }
     };
@@ -568,18 +595,67 @@ export default function App() {
     // 안내 중 화면 아무 곳이나 두 번 탭하면 말하기 버튼처럼 한 번 듣는다.
     useDoubleTap(navigating && canAskByVoice(), () => void listenCommand());
 
-    const pickPlace = (place: Place) => {
-        setDestination(place);
-        setScreen('route');
-        void findRoutes(place);
-    };
-
     const goTo = (next: ScreenName) => {
-        // 길찾기 화면을 떠나면 경로를 묻던 것은 그만 듣는다.
+        // 경로 선택 화면을 떠나면 경로를 묻던 것은 그만 듣는다.
         if (next !== 'route') {
             offered.current = null;
         }
-        setScreen(next);
+        // 집 등록과 목적지 찾기는 검색 결과를 함께 쓰지 않는다.
+        if (next === 'set-home' || screen === 'set-home') {
+            places.reset();
+        }
+        setNavigation((now) =>
+            now.screen === next
+                ? now
+                : {
+                      screen: next,
+                      history:
+                          next === 'home' ? [] : [...now.history, now.screen],
+                  },
+        );
+    };
+
+    const goBack = () => {
+        offered.current = null;
+        if (screen === 'set-home') {
+            places.reset();
+        }
+        setNavigation((now) => ({
+            screen: now.history.at(-1) ?? 'home',
+            history: now.history.slice(0, -1),
+        }));
+    };
+
+    const pickPlace = (place: Place) => {
+        setDestination(place);
+        goTo('route');
+        void findRoutes(place);
+    };
+
+    /** 집 버튼: 집까지 경로를 찾아 고르지 않고 추천 경로로 바로 안내한다. */
+    const goHome = async (home: Place) => {
+        setDestination(home);
+        goTo('route');
+        const result = await routesTo(home);
+        if (!result) {
+            return;
+        }
+        if (result.length === 0) {
+            announce(routesAnnouncement(result));
+            return;
+        }
+        startGuidance(result[0]);
+    };
+
+    const saveHome = (place: Place) => {
+        saved.setHome(place);
+        announce(HOME_SAVED_TEXT);
+        goBack();
+    };
+
+    const clearHome = () => {
+        saved.setHome(null);
+        announce(HOME_CLEARED_TEXT);
     };
 
     const stopGuidance = () => {
@@ -613,35 +689,76 @@ export default function App() {
         }
     };
 
+    const myLocationText = locating
+        ? '내 위치 찾는 중'
+        : myLocation
+          ? `내 위치 · 오차 ${Math.round(myLocation.accuracy)}m`
+          : '내 위치를 찾지 못함';
+
+    /** 화면 맨 아래 상태 한 줄 */
+    const screenStatus = (): string => {
+        switch (screen) {
+            case 'home':
+                return myLocationText;
+            case 'search':
+            case 'set-home':
+                if (places.state.status === 'loading') {
+                    return '검색 중';
+                }
+                if (places.state.status === 'success') {
+                    return `검색 결과 ${places.state.data.length}곳`;
+                }
+                return screen === 'set-home'
+                    ? '고른 곳을 집으로 저장합니다'
+                    : '말하거나 입력해서 찾으세요';
+            case 'route':
+                return `출발: ${myLocationText}`;
+            case 'settings':
+                return SETTINGS_NOTE;
+        }
+    };
+
     const chooseScreen = () => {
         if (screen === 'home') {
+            const home = saved.home;
             return (
-                <HomeScreen
-                    locating={locating}
-                    locationError={locationError}
-                    onSearch={() => goTo('search')}
-                    onWhereAmI={() => void tellHere()}
-                    onSettings={() => goTo('settings')}
-                    voice={settings.voice}
-                />
+                <Screen title={SCREEN_TITLES.home} status={screenStatus()}>
+                    <HomeScreen
+                        home={home}
+                        recent={saved.recent.filter(
+                            (place) => !home || !samePlace(place, home),
+                        )}
+                        locating={locating}
+                        locationError={locationError}
+                        onSearch={() => goTo('search')}
+                        onPick={pickPlace}
+                        onGoHome={(home) => void goHome(home)}
+                        onSetHome={() => goTo('set-home')}
+                        onWhereAmI={() => void tellHere()}
+                        onSettings={() => goTo('settings')}
+                        voice={settings.voice}
+                    />
+                </Screen>
             );
         }
         const body =
-            screen === 'search' ? (
+            screen === 'search' || screen === 'set-home' ? (
                 <TopSearch
+                    // 목적지 찾기와 집 등록이 검색어·확인 중인 결과를 함께 쓰지 않게 따로 그린다.
+                    key={screen}
                     inputRef={searchInput}
                     results={places.state}
                     onFindNear={findNear}
                     onSearch={(query, near) => places.run(query, near)}
                     onListen={listenOnce}
-                    onPick={pickPlace}
+                    onPick={screen === 'set-home' ? saveHome : pickPlace}
                     onAnnounce={(text) => announce(text)}
                     onAsk={ask}
                     voice={settings.voice}
+                    purpose={screen === 'set-home' ? 'home' : 'go'}
                 />
             ) : screen === 'route' ? (
                 <RoutePanel
-                    myLocation={myLocation}
                     locating={locating}
                     locationError={locationError}
                     destination={destination}
@@ -665,12 +782,17 @@ export default function App() {
                     settings={settings}
                     onChange={updateSettings}
                     onTry={() => announce(TRY_TEXT, 'route')}
+                    home={saved.home}
+                    onSetHome={() => goTo('set-home')}
+                    onClearHome={clearHome}
                 />
             );
         return (
             <Screen
                 title={SCREEN_TITLES[screen]}
-                onBack={() => goTo(BACK_TO[screen])}
+                onBack={goBack}
+                onHome={() => goTo('home')}
+                status={screenStatus()}
             >
                 {body}
             </Screen>
@@ -678,8 +800,7 @@ export default function App() {
     };
 
     return (
-        <div className="app" data-navigating={navigating || undefined}>
-            <h1 className="visually-hidden">사잇길</h1>
+        <div className="app">
             {/* 화면낭독기가 읽으면 마이크에 들어가므로 화면에만 보인다. */}
             {listening && (
                 <p className="voice-listening" aria-hidden="true">
@@ -687,33 +808,45 @@ export default function App() {
                 </p>
             )}
             {guided ? (
-                <NavigationPanel
-                    route={guided}
-                    guidance={guidance}
-                    rerouting={rerouting}
-                    routeError={
-                        routes.state.status === 'error'
-                            ? keptRouteText(routes.state.message)
-                            : null
+                <Screen
+                    title="길안내"
+                    status={
+                        canAskByVoice()
+                            ? DOUBLE_TAP_HINT
+                            : `${routeTitle(guided)} 안내 중`
                     }
-                    whereAmI={whereAmI.state}
-                    onRepeat={(text) => announce(text)}
-                    onWhereAmI={() => void tellWhereIAm()}
-                    onStop={stopGuidance}
-                    onSpeak={
-                        canAskByVoice() ? () => void listenCommand() : null
-                    }
-                    voice={settings.voice}
-                    vision={
-                        <VisionPanel
-                            available={visionAvailable()}
-                            frame={vision.frame}
-                            enabled={vision.enabled}
-                            failure={vision.failure}
-                            onToggle={() => switchVision(!vision.enabled)}
-                        />
-                    }
-                />
+                >
+                    <NavigationPanel
+                        route={guided}
+                        destinationName={
+                            destination?.name ?? routeTitle(guided)
+                        }
+                        guidance={guidance}
+                        rerouting={rerouting}
+                        routeError={
+                            routes.state.status === 'error'
+                                ? keptRouteText(routes.state.message)
+                                : null
+                        }
+                        whereAmI={whereAmI.state}
+                        onRepeat={(text) => announce(text)}
+                        onWhereAmI={() => void tellWhereIAm()}
+                        onStop={stopGuidance}
+                        onSpeak={
+                            canAskByVoice() ? () => void listenCommand() : null
+                        }
+                        voice={settings.voice}
+                        vision={
+                            <VisionPanel
+                                available={visionAvailable()}
+                                frame={vision.frame}
+                                enabled={vision.enabled}
+                                failure={vision.failure}
+                                onToggle={() => switchVision(!vision.enabled)}
+                            />
+                        }
+                    />
+                </Screen>
             ) : (
                 chooseScreen()
             )}

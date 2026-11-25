@@ -1,56 +1,110 @@
+import { useId } from 'react';
+
+import type { Place } from '../lib/placeApi';
+import Icon from './Icon';
+
 type HomeScreenProps = {
+    /** 등록한 집. 없으면 집 버튼이 등록 화면으로 간다. */
+    home: Place | null;
+    /** 최근 안내한 곳. 최근 것이 앞이다. */
+    recent: readonly Place[];
     locating: boolean;
     locationError: string | null;
     onSearch: () => void;
+    onPick: (place: Place) => void;
+    onGoHome: (home: Place) => void;
+    onSetHome: () => void;
     onWhereAmI: () => void;
     onSettings: () => void;
     /** 음성 안내를 켰으면 앱이 이유를 읽으므로 화면낭독기가 또 읽지 않게 한다. */
     voice: boolean;
 };
 
-/** 홈: 큰 버튼 하나로 목적지를 찾고, 아래 큰 버튼 둘로 내 위치와 설정으로 간다. */
+/** 첫 화면: 목적지 찾기, 최근 간 곳, 집으로 안내, 내 위치 듣기, 설정 */
 export default function HomeScreen({
+    home,
+    recent,
     locating,
     locationError,
     onSearch,
+    onPick,
+    onGoHome,
+    onSetHome,
     onWhereAmI,
     onSettings,
     voice,
 }: HomeScreenProps) {
+    const recentId = useId();
     return (
-        <main className="home">
+        <div className="home">
             <button
                 type="button"
-                className="big-button home__main"
+                className="button button--primary"
                 onClick={onSearch}
             >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM15.2 15.2 20 20" />
-                </svg>
+                <Icon name="search" />
                 어디로 갈까요?
             </button>
             {locationError && (
-                <p role={voice ? undefined : 'alert'} className="home__error">
+                <p
+                    role={voice ? undefined : 'alert'}
+                    className="message message--error"
+                >
                     {locationError}
                 </p>
             )}
-            <div className="home__sub">
+            {recent.length > 0 && (
+                <section aria-labelledby={recentId}>
+                    <h2 id={recentId} className="home__label">
+                        최근 간 곳
+                    </h2>
+                    <ul className="list">
+                        {recent.map((place) => (
+                            <li
+                                key={`${place.name}-${place.position.join(',')}`}
+                            >
+                                <button
+                                    type="button"
+                                    className="row"
+                                    onClick={() => onPick(place)}
+                                >
+                                    <span className="row__name">
+                                        {place.name}
+                                    </span>
+                                    <Icon name="next" />
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
+            <div className="home__actions">
                 <button
                     type="button"
-                    className="big-button big-button--secondary"
-                    disabled={locating}
-                    onClick={onWhereAmI}
+                    className="button"
+                    onClick={home ? () => onGoHome(home) : onSetHome}
                 >
-                    {locating ? '내 위치 찾는 중' : '내 위치'}
+                    <Icon name="home" />
+                    {home ? '집으로 안내' : '집 등록하기'}
                 </button>
-                <button
-                    type="button"
-                    className="big-button big-button--secondary"
-                    onClick={onSettings}
-                >
-                    설정
-                </button>
+                <div className="pair">
+                    <button
+                        type="button"
+                        className="button"
+                        disabled={locating}
+                        onClick={onWhereAmI}
+                    >
+                        {locating ? '위치 찾는 중' : '내 위치 듣기'}
+                    </button>
+                    <button
+                        type="button"
+                        className="button"
+                        onClick={onSettings}
+                    >
+                        설정
+                    </button>
+                </div>
             </div>
-        </main>
+        </div>
     );
 }

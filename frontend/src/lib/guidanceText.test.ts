@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     blockText,
+    eventLabel,
     eventText,
     spokenDistance,
     upcomingText,
@@ -71,5 +72,18 @@ describe('upcomingText', () => {
 
     it('남은 이벤트가 없으면 null', () => {
         expect(upcomingText(events, 610)).toBeNull();
+    });
+});
+
+describe('eventLabel', () => {
+    it.each([
+        [event('turn', 'right'), '오른쪽'],
+        [event('turn'), '방향 전환'],
+        [event('crosswalk', 'left'), '왼쪽 횡단보도'],
+        [event('stairs'), '계단'],
+        [event('crowd'), '붐비는 구간'],
+        [event('destination'), '목적지'],
+    ])('%j → %s', (routeEvent, expected) => {
+        expect(eventLabel(routeEvent)).toBe(expected);
     });
 });

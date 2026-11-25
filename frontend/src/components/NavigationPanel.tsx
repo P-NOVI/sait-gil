@@ -2,11 +2,18 @@ import type { ReactNode } from 'react';
 
 import type { Guidance } from '../hooks/useGuidance';
 import type { RequestState } from '../hooks/useRequest';
-import { ARRIVED_TEXT, upcomingText } from '../lib/guidanceText';
-import { distanceLabel, type PlannedRoute, routeTitle } from '../lib/routeApi';
+import { ARRIVED_TEXT, eventLabel, upcomingText } from '../lib/guidanceText';
+import {
+    distanceLabel,
+    type PlannedRoute,
+    remainingMinutes,
+} from '../lib/routeApi';
+import { upcomingEvents } from '../lib/routeEvents';
+import { UPCOMING_EVENTS_SHOWN } from '../settings';
 
 type NavigationPanelProps = {
     route: PlannedRoute;
+    destinationName: string;
     guidance: Guidance;
     rerouting: boolean;
     /** 경로를 다시 찾지 못했을 때의 이유와 전 경로로 계속 안내한다는 말 */
@@ -20,7 +27,7 @@ type NavigationPanelProps = {
     onSpeak: (() => void) | null;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
-    /** 카메라 인파 인식 자리 */
+    /** 카메라 인식 줄 */
     vision: ReactNode;
 };
 
@@ -54,9 +61,10 @@ function situation(
     }
 }
 
-/** 길안내 중 화면: 다음 안내, 남은 거리, 다시 듣기·내 위치·종료, 인파 인식 자리 */
+/** 길안내 화면: 목적지와 남은 거리, 지금 안내, 다음 안내, 카메라 인식, 말하기·다시 듣기·내 위치·종료 */
 export default function NavigationPanel({
     route,
+    destinationName,
     guidance,
     rerouting,
     routeError,
@@ -69,77 +77,101 @@ export default function NavigationPanel({
     vision,
 }: NavigationPanelProps) {
     const now = situation(route, guidance, rerouting);
+    const travelledM = guidance.step?.progress.travelledM ?? 0;
     const remainingM = guidance.step?.progress.remainingM ?? route.distance_m;
+    const next = upcomingEvents(
+        route.events,
+        travelledM,
+        UPCOMING_EVENTS_SHOWN,
+    );
 
     return (
-        <section className="navigation-panel" aria-labelledby="navigation-now">
-            <p className="navigation-panel__route">
-                <span>{routeTitle(route)} 안내 중</span>
-                <span>남은 거리 {distanceLabel(remainingM)}</span>
-            </p>
+        <div className="navigation">
+            <div className="navigation__goal">
+                <p className="navigation__destination">
+                    목적지: {destinationName}
+                </p>
+                <p className="navigation__remaining">
+                    남은 거리 {distanceLabel(remainingM)} · 약{' '}
+                    {remainingMinutes(route, remainingM)}분
+                </p>
+            </div>
             <h2
-                id="navigation-now"
-                className="navigation-panel__now"
+                className="navigation__now"
                 aria-live={voice ? 'off' : 'polite'}
             >
                 {now}
             </h2>
             {guidance.lastAlert && guidance.lastAlert !== now && (
-                <p className="navigation-panel__last">
+                <p className="navigation__note">
                     마지막 안내: {guidance.lastAlert}
                 </p>
             )}
             {guidance.error && guidance.step && (
-                <p className="navigation-panel__error" role="alert">
+                <p className="message message--error" role="alert">
                     {guidance.error}
                 </p>
             )}
             {routeError && (
-                <p className="navigation-panel__error" role="alert">
+                <p className="message message--error" role="alert">
                     {routeError}
                 </p>
+            )}
+            {next.length > 0 && (
+                <ol className="list" aria-label="다음 안내">
+                    {next.map((event) => (
+                        <li
+                            key={`${event.kind}-${event.distance_m}`}
+                            className="row"
+                        >
+                            <span>{eventLabel(event)}</span>
+                            <span className="row__side">
+                                {distanceLabel(event.distance_m - travelledM)}
+                            </span>
+                        </li>
+                    ))}
+                </ol>
             )}
 
             {vision}
 
-            <div className="navigation-panel__actions">
+            <div className="navigation__actions">
                 {onSpeak && (
-                    <button
-                        type="button"
-                        className="navigation-panel__speak"
-                        onClick={onSpeak}
-                    >
+                    <button type="button" className="button" onClick={onSpeak}>
                         말하기
                     </button>
                 )}
-                <button type="button" onClick={() => onRepeat(now)}>
+                <button
+                    type="button"
+                    className="button"
+                    onClick={() => onRepeat(now)}
+                >
                     다시 듣기
                 </button>
                 <button
                     type="button"
+                    className="button"
                     disabled={whereAmI.status === 'loading'}
                     onClick={onWhereAmI}
                 >
-                    {whereAmI.status === 'loading'
-                        ? '주소 찾는 중'
-                        : '내 위치 말하기'}
+                    {whereAmI.status === 'loading' ? '주소 찾는 중' : '내 위치'}
                 </button>
                 <button
                     type="button"
-                    className="navigation-panel__stop"
+                    className="button button--stop"
                     onClick={onStop}
                 >
                     안내 종료
                 </button>
             </div>
             {whereAmI.status === 'success' && (
-                <p className="navigation-panel__address">{whereAmI.data}</p>
+                <p className="navigation__note">{whereAmI.data}</p>
             )}
             {whereAmI.status === 'error' && (
-                <p className="navigation-panel__error" role="alert">
+                <p className="message message--error" role="alert">
                     {whereAmI.message}
                 </p>
             )}
-        </section>
+        </div>
     );
 }
