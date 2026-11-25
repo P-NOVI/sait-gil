@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import BottomSheet from './components/BottomSheet';
-import MenuBar, { type Tab } from './components/MenuBar';
-import MyLocationControl from './components/MyLocationControl';
+import HomeScreen from './components/HomeScreen';
 import NavigationPanel from './components/NavigationPanel';
 import RoutePanel from './components/RoutePanel';
+import Screen, { type ScreenName } from './components/Screen';
 import SettingsPanel from './components/SettingsPanel';
 import TopSearch from './components/TopSearch';
 import VisionPanel from './components/VisionPanel';
@@ -74,9 +73,17 @@ import {
     watchCameraHeading,
 } from './platform';
 
-const SHEET_TITLES: Record<Exclude<Tab, 'search'>, string> = {
+const SCREEN_TITLES: Record<Exclude<ScreenName, 'home'>, string> = {
+    search: '목적지 찾기',
     route: '길찾기',
     settings: '접근성 설정',
+};
+
+/** 뒤로 버튼이 돌아가는 화면. 길찾기는 목적지를 고른 검색 화면으로 돌아간다. */
+const BACK_TO: Record<Exclude<ScreenName, 'home'>, ScreenName> = {
+    search: 'home',
+    route: 'search',
+    settings: 'home',
 };
 
 const TRY_TEXT = '음성과 진동으로 이렇게 알려 드립니다.';
@@ -110,8 +117,7 @@ export default function App() {
     const { announce, ask, buzz, silence, listening, busyFor, whenIdle } =
         useAnnouncer(settings);
 
-    const [tab, setTab] = useState<Tab>('search');
-    const [sheetOpen, setSheetOpen] = useState(true);
+    const [screen, setScreen] = useState<ScreenName>('home');
     const searchInput = useRef<HTMLInputElement>(null);
 
     // 출발은 항상 내 위치. 앱을 열면 바로 찾는다.
@@ -564,22 +570,16 @@ export default function App() {
 
     const pickPlace = (place: Place) => {
         setDestination(place);
-        setTab('route');
-        setSheetOpen(true);
+        setScreen('route');
         void findRoutes(place);
     };
 
-    const selectTab = (next: Tab) => {
-        // 검색 탭을 한 번 더 누르면 검색창으로 간다.
-        if (next === 'search' && tab === 'search') {
-            searchInput.current?.focus();
-        }
-        // 길찾기 탭을 떠나면 경로를 묻던 것은 그만 듣는다.
+    const goTo = (next: ScreenName) => {
+        // 길찾기 화면을 떠나면 경로를 묻던 것은 그만 듣는다.
         if (next !== 'route') {
             offered.current = null;
         }
-        setTab(next);
-        setSheetOpen(true);
+        setScreen(next);
     };
 
     const stopGuidance = () => {
@@ -601,47 +601,84 @@ export default function App() {
         }
     };
 
-    const sheet =
-        tab === 'route' ? (
-            <RoutePanel
-                myLocation={myLocation}
-                locating={locating}
-                locationError={locationError}
-                destination={destination}
-                routes={routes.state}
-                chosen={chosen}
-                onLocate={() => void locate()}
-                onFindRoutes={() => destination && void findRoutes(destination)}
-                onChoose={setChosen}
-                onSearchDestination={() => selectTab('search')}
-                onStart={() => {
-                    const route = found[chosen];
-                    if (route) {
-                        startGuidance(route);
+    /** 내 위치를 새로 찾고 그곳의 주소를 읽는다. */
+    const tellHere = async () => {
+        const fix = await locate();
+        if (!fix) {
+            return;
+        }
+        const text = await whereAmI.run(fix.position);
+        if (text) {
+            announce(text);
+        }
+    };
+
+    const chooseScreen = () => {
+        if (screen === 'home') {
+            return (
+                <HomeScreen
+                    locating={locating}
+                    locationError={locationError}
+                    onSearch={() => goTo('search')}
+                    onWhereAmI={() => void tellHere()}
+                    onSettings={() => goTo('settings')}
+                    voice={settings.voice}
+                />
+            );
+        }
+        const body =
+            screen === 'search' ? (
+                <TopSearch
+                    inputRef={searchInput}
+                    results={places.state}
+                    onFindNear={findNear}
+                    onSearch={(query, near) => places.run(query, near)}
+                    onListen={listenOnce}
+                    onPick={pickPlace}
+                    onAnnounce={(text) => announce(text)}
+                    onAsk={ask}
+                    voice={settings.voice}
+                />
+            ) : screen === 'route' ? (
+                <RoutePanel
+                    myLocation={myLocation}
+                    locating={locating}
+                    locationError={locationError}
+                    destination={destination}
+                    routes={routes.state}
+                    chosen={chosen}
+                    onLocate={() => void locate()}
+                    onFindRoutes={() =>
+                        destination && void findRoutes(destination)
                     }
-                }}
-            />
-        ) : (
-            <SettingsPanel
-                settings={settings}
-                onChange={updateSettings}
-                onTry={() => announce(TRY_TEXT, 'route')}
-            />
+                    onChoose={setChosen}
+                    onSearchDestination={() => goTo('search')}
+                    onStart={() => {
+                        const route = found[chosen];
+                        if (route) {
+                            startGuidance(route);
+                        }
+                    }}
+                />
+            ) : (
+                <SettingsPanel
+                    settings={settings}
+                    onChange={updateSettings}
+                    onTry={() => announce(TRY_TEXT, 'route')}
+                />
+            );
+        return (
+            <Screen
+                title={SCREEN_TITLES[screen]}
+                onBack={() => goTo(BACK_TO[screen])}
+            >
+                {body}
+            </Screen>
         );
+    };
 
     return (
-        <div
-            className="app"
-            data-tab={tab}
-            data-sheet={
-                navigating || tab === 'search'
-                    ? 'none'
-                    : sheetOpen
-                      ? 'open'
-                      : 'collapsed'
-            }
-            data-navigating={navigating || undefined}
-        >
+        <div className="app" data-navigating={navigating || undefined}>
             <h1 className="visually-hidden">사잇길</h1>
             {/* 화면낭독기가 읽으면 마이크에 들어가므로 화면에만 보인다. */}
             {listening && (
@@ -678,37 +715,7 @@ export default function App() {
                     }
                 />
             ) : (
-                <>
-                    {tab === 'search' && (
-                        <TopSearch
-                            inputRef={searchInput}
-                            results={places.state}
-                            onFindNear={findNear}
-                            onSearch={(query, near) => places.run(query, near)}
-                            onListen={listenOnce}
-                            onPick={pickPlace}
-                            onAnnounce={(text) => announce(text)}
-                            onAsk={ask}
-                            voice={settings.voice}
-                        />
-                    )}
-                    <MyLocationControl
-                        locating={locating}
-                        error={tab === 'route' ? null : locationError}
-                        onLocate={() => void locate()}
-                        voice={settings.voice}
-                    />
-                    {tab !== 'search' && (
-                        <BottomSheet
-                            title={SHEET_TITLES[tab]}
-                            open={sheetOpen}
-                            onOpenChange={setSheetOpen}
-                        >
-                            {sheet}
-                        </BottomSheet>
-                    )}
-                    <MenuBar tab={tab} onSelect={selectTab} />
-                </>
+                chooseScreen()
             )}
         </div>
     );

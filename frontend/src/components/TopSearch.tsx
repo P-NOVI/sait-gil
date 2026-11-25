@@ -49,7 +49,7 @@ type TopSearchProps = {
 type Confirming = { places: Place[]; index: number };
 
 /**
- * 지도 위 검색창. 입력하거나 말한 목적지를 검색하고 결과에서 고른다.
+ * 목적지 검색 화면. 입력하거나 말한 목적지를 검색하고 결과에서 고른다.
  * 결과 수는 화면낭독기가 읽도록 status 로 알린다.
  * 말로 찾으면 첫 결과부터 하나씩 읽고 이곳으로 갈지 묻는다. 말로도 버튼으로도 대답한다.
  */
@@ -217,6 +217,17 @@ export default function TopSearch({
 
     return (
         <div className="top-search">
+            <button
+                type="button"
+                className="big-button top-search__voice"
+                disabled={listening}
+                onClick={() => void listen()}
+            >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
+                </svg>
+                {listening ? '듣는 중' : '말로 목적지 찾기'}
+            </button>
             <form className="top-search__field" role="search" onSubmit={submit}>
                 <svg
                     className="top-search__icon"
@@ -237,17 +248,6 @@ export default function TopSearch({
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                 />
-                <button
-                    type="button"
-                    className="top-search__voice"
-                    aria-label={listening ? '듣는 중' : '말로 목적지 찾기'}
-                    disabled={listening}
-                    onClick={() => void listen()}
-                >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
-                    </svg>
-                </button>
             </form>
             <p className="visually-hidden" role="status">
                 {listening
