@@ -21,6 +21,7 @@ import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
 import { REROUTE_FAILED_KEY } from './lib/guidance';
 import {
+    type Address,
     findAddress,
     type Place,
     searchPlaces,
@@ -104,6 +105,8 @@ const TRY_TEXT = '음성과 진동으로 이렇게 알려 드립니다.';
 const HOME_SAVED_TEXT =
     '집으로 저장했습니다. 첫 화면의 집 버튼을 누르면 바로 안내합니다.';
 const HOME_CLEARED_TEXT = '집을 지웠습니다.';
+/** 주소를 알 수 없을 때 지금 위치로 저장한 집의 이름 */
+const HERE_NAME = '현재 위치';
 const DOUBLE_TAP_HINT = '화면을 두 번 누르면 말하기';
 const SETTINGS_NOTE = '설정은 이 기기에만 저장합니다.';
 const NO_ADDRESS_TEXT = '이곳의 주소를 찾지 못했습니다.';
@@ -679,6 +682,26 @@ export default function App() {
         goBack();
     };
 
+    /** 집 등록 화면의 버튼: 지금 위치를 집으로 저장한다. 위치를 못 찾으면 locate 가 이유를 알린다. */
+    const saveHomeHere = async () => {
+        const fix = await locate();
+        if (!fix) {
+            return;
+        }
+        let address: Address | null = null;
+        try {
+            address = await findAddress(fix.position);
+        } catch {
+            // 주소를 못 찾아도 좌표로 집을 저장한다.
+        }
+        saveHome({
+            name: address?.road_address || address?.full_address || HERE_NAME,
+            address: address?.full_address ?? '',
+            position: fix.position,
+            distance_m: null,
+        });
+    };
+
     const clearHome = () => {
         saved.setHome(null);
         announce(HOME_CLEARED_TEXT);
@@ -834,6 +857,18 @@ export default function App() {
                     onAsk={ask}
                     voice={settings.voice}
                     purpose={screen === 'set-home' ? 'home' : 'go'}
+                    home={saved.home}
+                    onGoHome={
+                        screen === 'search'
+                            ? (home) => void goHome(home)
+                            : undefined
+                    }
+                    onUseHere={
+                        screen === 'set-home'
+                            ? () => void saveHomeHere()
+                            : undefined
+                    }
+                    locating={locating}
                     spoken={screen === 'search' ? spokenDestination : null}
                     onSpokenUsed={spokenUsed}
                 />

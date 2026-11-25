@@ -13,6 +13,8 @@ import type { LngLat } from '../lib/geo';
 import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
 import {
+    HOME_MISSING_TEXT,
+    homeCommand,
     NOT_HEARD_TEXT,
     PLACE_ANSWER_HINT,
     type PlaceAnswer,
@@ -48,6 +50,14 @@ type TopSearchProps = {
     voice: boolean;
     /** 고른 곳으로 갈지(go), 집으로 저장할지(home). 묻는 말과 대답 버튼이 달라진다. */
     purpose?: 'go' | 'home';
+    /** 집 등록 화면에서 지금 위치를 집으로 저장한다. 주면 버튼을 보인다. */
+    onUseHere?: () => void;
+    /** 등록한 집. "집으로 갈게"라고 말하면 이곳으로 바로 안내한다. 없으면 null */
+    home?: Place | null;
+    /** 집으로 안내를 시작한다. 주면 말로 "집으로 갈게"를 알아듣는다. */
+    onGoHome?: (home: Place) => void;
+    /** 내 위치를 찾는 중이면 지금 위치 버튼을 막는다. */
+    locating?: boolean;
     /** 앱을 열 때 첫 화면에서 들은 목적지. 주면 말로 찾은 것처럼 한 번 찾고 onSpokenUsed 를 부른다. */
     spoken?: string | null;
     onSpokenUsed?: () => void;
@@ -72,6 +82,10 @@ export default function TopSearch({
     onAsk,
     voice,
     purpose = 'go',
+    onUseHere,
+    home = null,
+    onGoHome,
+    locating = false,
     spoken = null,
     onSpokenUsed,
 }: TopSearchProps) {
@@ -197,6 +211,15 @@ export default function TopSearch({
 
     /** 말로 들은 목적지로 찾고, 찾으면 첫 결과부터 하나씩 묻는다. */
     const searchHeard = async (heard: string) => {
+        // "집으로 갈게"는 검색하지 않고 등록한 집으로 간다.
+        if (onGoHome && homeCommand(heard)) {
+            if (home) {
+                onGoHome(home);
+            } else {
+                onAnnounce(HOME_MISSING_TEXT);
+            }
+            return;
+        }
         const queries = spokenQueries(heard);
         setQuery(queries[0]);
         // 검색어 후보가 여럿이어도 기준 위치는 한 번만 묻는다.
@@ -255,6 +278,17 @@ export default function TopSearch({
                 <Icon name="mic" />
                 {listening ? '듣는 중' : '말로 찾기'}
             </button>
+            {onUseHere && (
+                <button
+                    type="button"
+                    className="button"
+                    disabled={locating}
+                    onClick={onUseHere}
+                >
+                    <Icon name="home" />
+                    {locating ? '내 위치 찾는 중' : '지금 위치를 집으로'}
+                </button>
+            )}
             <form className="search__field" role="search" onSubmit={submit}>
                 <Icon name="search" />
                 <label className="visually-hidden" htmlFor="destination">
