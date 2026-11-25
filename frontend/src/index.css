@@ -25,7 +25,6 @@
     --level-danger: #b3261e;
     --panel-shadow:
         0 1px 2px rgba(31, 41, 55, 0.08), 0 4px 14px rgba(31, 41, 55, 0.1);
-    --sheet-shadow: 0 -2px 18px rgba(31, 41, 55, 0.12);
     --font-size-base: 18px;
     --font-scale: 1;
     --touch-min: 48px;
@@ -59,7 +58,6 @@
     --color-error-text: #ff8a80;
     --color-stop: #ff8a80;
     --panel-shadow: 0 0 0 2px #ffffff;
-    --sheet-shadow: 0 0 0 2px #ffffff;
 }
 
 html,
@@ -118,8 +116,7 @@ input::placeholder {
 
 /* 안내 중: 안내 패널이 화면을 채운다. */
 .app[data-navigating] {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    display: block;
 }
 
 /* ---------- 큰 버튼 ---------- */
@@ -433,25 +430,25 @@ input::placeholder {
 
 .route-panel__endpoints {
     margin: 0;
-    border: 1px solid var(--color-border);
-    border-radius: 16px;
+    border: 2px solid var(--color-border);
+    border-radius: 18px;
 }
 
 .route-panel__endpoint {
     display: grid;
-    grid-template-columns: 2.6rem 1fr auto;
+    grid-template-columns: 3rem 1fr auto;
     align-items: center;
     gap: 8px;
-    min-height: 3.4rem;
-    padding: 4px 8px 4px 14px;
+    min-height: 4.5rem;
+    padding: 8px 10px 8px 16px;
 }
 
 .route-panel__endpoint + .route-panel__endpoint {
-    border-top: 1px solid var(--color-border);
+    border-top: 2px solid var(--color-border);
 }
 
 .route-panel__endpoint dt {
-    font-size: 0.8rem;
+    font-size: 0.9rem;
     font-weight: 700;
     color: var(--color-muted);
 }
@@ -461,12 +458,13 @@ input::placeholder {
     flex-direction: column;
     min-width: 0;
     margin: 0;
+    font-size: 1.05rem;
     font-weight: 600;
 }
 
 .route-panel__address {
     overflow: hidden;
-    font-size: 0.8rem;
+    font-size: 0.9rem;
     font-weight: 400;
     color: var(--color-muted);
     text-overflow: ellipsis;
@@ -475,19 +473,20 @@ input::placeholder {
 
 .route-panel__small {
     min-width: var(--touch-min);
-    min-height: var(--touch-min);
-    padding: 0 12px;
-    border: 1px solid var(--color-border);
-    border-radius: 999px;
-    font-size: 0.85rem;
-    font-weight: 600;
+    min-height: 3.4rem;
+    padding: 0 16px;
+    border: 2px solid var(--color-border);
+    border-radius: 14px;
+    font-size: 1rem;
+    font-weight: 700;
     background: var(--color-surface);
 }
 
 .route-panel__primary {
-    min-height: 3.4rem;
+    min-height: 4.5rem;
     border: 0;
-    border-radius: 16px;
+    border-radius: 20px;
+    font-size: 1.2rem;
     font-weight: 700;
     color: var(--color-on-primary);
     background: var(--color-primary-strong);
@@ -500,16 +499,15 @@ input::placeholder {
 
 .route-panel__error {
     margin: 0;
-    padding: 10px 12px;
-    border-radius: 10px;
-    font-size: 0.9rem;
+    padding: 12px 16px;
+    border-radius: 14px;
     color: var(--color-error-text);
     background: var(--color-error-bg);
 }
 
 .route-panel__heading {
     margin: 4px 0 0;
-    font-size: 0.9rem;
+    font-size: 1rem;
     color: var(--color-muted);
 }
 
@@ -522,15 +520,16 @@ input::placeholder {
     list-style: none;
 }
 
-/* 고른 경로는 지도 위 굵은 선과 같은 주황 테두리. 고르지 않은 경로는 지도처럼 회색 */
+/* 고른 경로는 주황 테두리와 왼쪽 띠로 보인다. 색만으로 구분하지 않게 aria-pressed 로도 알린다. */
 .route-panel__option {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
     width: 100%;
-    padding: 12px 14px 12px 18px;
+    min-height: 5rem;
+    padding: 16px 16px 16px 20px;
     border: 2px solid var(--color-border);
-    border-radius: 16px;
+    border-radius: 18px;
     text-align: left;
     background: var(--color-surface);
 }
@@ -542,16 +541,16 @@ input::placeholder {
 }
 
 .route-panel__option-title {
-    font-size: 1.05rem;
+    font-size: 1.2rem;
     font-weight: 700;
 }
 
 .route-panel__option-detail {
-    font-size: 0.88rem;
+    font-size: 1rem;
 }
 
 .route-panel__option-note {
-    font-size: 0.8rem;
+    font-size: 0.9rem;
     color: var(--color-muted);
 }
 
@@ -562,13 +561,12 @@ input::placeholder {
     z-index: 20;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    max-height: 62vh;
-    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    gap: 14px;
+    box-sizing: border-box;
+    height: 100%;
+    padding: var(--safe-top) 16px var(--safe-bottom);
     overflow-y: auto;
-    border-radius: 24px 24px 0 0;
     background: var(--color-surface);
-    box-shadow: var(--sheet-shadow);
 }
 
 .navigation-panel__route {
@@ -576,14 +574,14 @@ input::placeholder {
     justify-content: space-between;
     gap: 8px;
     margin: 0;
-    font-size: 0.85rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--color-muted);
 }
 
 .navigation-panel__now {
     margin: 0;
-    font-size: 1.55rem;
+    font-size: 2rem;
     line-height: 1.3;
     letter-spacing: -0.02em;
 }
@@ -591,31 +589,31 @@ input::placeholder {
 .navigation-panel__last,
 .navigation-panel__address {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: 1rem;
     color: var(--color-muted);
 }
 
 .navigation-panel__error {
     margin: 0;
-    padding: 8px 12px;
-    border-radius: 10px;
-    font-size: 0.9rem;
+    padding: 12px 16px;
+    border-radius: 14px;
+    font-size: 1rem;
     color: var(--color-error-text);
     background: var(--color-error-bg);
 }
 
 .navigation-panel__actions {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
 }
 
 .navigation-panel__actions button {
-    min-height: 3.4rem;
-    padding: 4px 6px;
+    min-height: 4.5rem;
+    padding: 4px 8px;
     border: 2px solid var(--color-border);
-    border-radius: 14px;
-    font-size: 0.9rem;
+    border-radius: 18px;
+    font-size: 1.1rem;
     font-weight: 700;
     background: var(--color-surface);
 }
@@ -626,6 +624,7 @@ input::placeholder {
 }
 
 .navigation-panel__actions .navigation-panel__stop {
+    grid-column: 1 / -1;
     border-color: var(--color-stop);
     color: var(--color-stop);
 }
@@ -696,11 +695,11 @@ input::placeholder {
 }
 
 .vision-panel__toggle {
-    min-height: 3.4rem;
-    padding: 4px 6px;
+    min-height: 4rem;
+    padding: 4px 8px;
     border: 2px solid var(--color-border);
-    border-radius: 14px;
-    font-size: 0.9rem;
+    border-radius: 16px;
+    font-size: 1rem;
     font-weight: 700;
     background: var(--color-surface);
 }
@@ -751,11 +750,11 @@ input::placeholder {
 .settings-panel__choice span {
     display: flex;
     align-items: center;
-    min-height: var(--touch-min);
-    padding: 0 1rem;
+    min-height: 3.4rem;
+    padding: 0 1.2rem;
     border: 2px solid var(--color-border);
     border-radius: 999px;
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-weight: 600;
 }
 
@@ -774,7 +773,8 @@ input::placeholder {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    min-height: var(--touch-min);
+    min-height: 3.4rem;
+    font-size: 1.05rem;
     font-weight: 700;
 }
 
@@ -816,11 +816,11 @@ input::placeholder {
 
 .settings-panel__try {
     align-self: flex-start;
-    min-height: var(--touch-min);
-    padding: 0 1rem;
+    min-height: 3.4rem;
+    padding: 0 1.2rem;
     border: 2px solid var(--color-primary-strong);
     border-radius: 999px;
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-weight: 700;
     color: var(--color-primary-strong);
     background: var(--color-surface);
@@ -828,7 +828,7 @@ input::placeholder {
 
 .settings-panel__note {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: 0.95rem;
     color: var(--color-muted);
 }
 
