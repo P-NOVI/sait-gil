@@ -807,6 +807,7 @@ export default function App() {
                         )}
                         locating={locating}
                         locationError={locationError}
+                        whereAmI={whereAmI.state}
                         onSearch={() => goTo('search')}
                         onPick={pickPlace}
                         onGoHome={(home) => void goHome(home)}

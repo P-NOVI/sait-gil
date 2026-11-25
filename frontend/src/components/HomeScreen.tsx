@@ -1,5 +1,6 @@
 import { useId } from 'react';
 
+import type { RequestState } from '../hooks/useRequest';
 import type { Place } from '../lib/placeApi';
 import Icon from './Icon';
 
@@ -10,6 +11,8 @@ type HomeScreenProps = {
     recent: readonly Place[];
     locating: boolean;
     locationError: string | null;
+    /** 내 위치 듣기로 찾은 주소 */
+    whereAmI: RequestState<string>;
     onSearch: () => void;
     onPick: (place: Place) => void;
     onGoHome: (home: Place) => void;
@@ -26,6 +29,7 @@ export default function HomeScreen({
     recent,
     locating,
     locationError,
+    whereAmI,
     onSearch,
     onPick,
     onGoHome,
@@ -51,6 +55,19 @@ export default function HomeScreen({
                     className="message message--error"
                 >
                     {locationError}
+                </p>
+            )}
+            {whereAmI.status === 'success' && (
+                <p role={voice ? undefined : 'status'} className="message">
+                    {whereAmI.data}
+                </p>
+            )}
+            {whereAmI.status === 'error' && (
+                <p
+                    role={voice ? undefined : 'alert'}
+                    className="message message--error"
+                >
+                    {whereAmI.message}
                 </p>
             )}
             {recent.length > 0 && (

@@ -165,7 +165,12 @@ export default function NavigationPanel({
                 </button>
             </div>
             {whereAmI.status === 'success' && (
-                <p className="navigation__note">{whereAmI.data}</p>
+                <p
+                    role={voice ? undefined : 'status'}
+                    className="navigation__note"
+                >
+                    {whereAmI.data}
+                </p>
             )}
             {whereAmI.status === 'error' && (
                 <p className="message message--error" role="alert">
