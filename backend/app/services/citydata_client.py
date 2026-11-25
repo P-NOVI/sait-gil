@@ -27,6 +27,10 @@ class CitydataError(Exception):
     """도시데이터 호출이나 응답 해석이 실패했을 때. 메시지에 키가 들어가지 않는다."""
 
 
+class CitydataTransientError(CitydataError):
+    """연결 끊김·시간 초과·5xx 처럼 다시 시도하면 될 수 있는 실패."""
+
+
 def citydata_http(
     settings: Settings, transport: httpx.AsyncBaseTransport | None = None
 ) -> httpx.AsyncClient:
@@ -47,6 +51,15 @@ async def fetch_area(http: httpx.AsyncClient, area_code: str) -> dict[str, Any]:
         result = body["RESULT"]
         code = result.get("RESULT.CODE", result.get("CODE"))
         items = body.get(PAYLOAD_KEY, [])
+    except httpx.HTTPStatusError as error:
+        status = error.response.status_code
+        message = f"도시데이터 응답 실패: HTTP {status}"
+        if status >= 500:
+            raise CitydataTransientError(message) from None
+        raise CitydataError(message) from None
+    except httpx.TransportError as error:
+        reason = type(error).__name__
+        raise CitydataTransientError(f"도시데이터 응답 실패: {reason}") from None
     except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
         raise CitydataError(f"도시데이터 응답 실패: {type(error).__name__}") from None
     if code != OK_CODE:
