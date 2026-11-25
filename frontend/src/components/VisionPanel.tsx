@@ -94,6 +94,10 @@ export default function VisionPanel({
 }: VisionPanelProps) {
     const [state, detail] = panelText(available, enabled, failure, frame);
     const level = enabled && !failure ? frame?.level : undefined;
+    // 판단 불가는 화면에 보이지 않고 음성으로만 알린다.
+    if (level === 'unknown') {
+        return null;
+    }
     return (
         <section className="vision" aria-label="카메라 인식" data-level={level}>
             <p className="vision__text">

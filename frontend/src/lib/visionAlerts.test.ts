@@ -266,8 +266,22 @@ describe('visionReader', () => {
 
         expect(cue).toMatchObject({
             kind: 'alert',
-            alert: { text: UNKNOWN_TEXT, cooldownMs: Infinity },
+            alert: {
+                text: UNKNOWN_TEXT,
+                cooldownMs: Infinity,
+                vibrate: false,
+            },
         });
+    });
+
+    it('판단 불가가 아닌 알림은 진동 여부를 따로 정하지 않는다', () => {
+        const cue = feed(
+            times(VISION.confirmFrames, frame('danger')),
+            'danger',
+        );
+
+        expect(cue).toMatchObject({ kind: 'alert' });
+        expect(cue?.kind === 'alert' && cue.alert.vibrate).toBeFalsy();
     });
 
     it('판단 불가가 이어지는 동안은 같은 key 로, 정상으로 돌아온 뒤 다시 가려지면 새 key 로 넘긴다', () => {

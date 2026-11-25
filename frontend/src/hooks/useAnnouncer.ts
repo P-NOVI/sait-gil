@@ -85,9 +85,9 @@ export function useAnnouncer(settings: AccessibilitySettings) {
     );
 
     const announce = useCallback(
-        (text: string, level?: AlertLevel) => {
+        (text: string, level?: AlertLevel, options?: { vibrate?: boolean }) => {
             interrupt();
-            if (level) {
+            if (level && options?.vibrate !== false) {
                 buzz(VIBRATION_PATTERNS[level]);
             }
             if (voice) {

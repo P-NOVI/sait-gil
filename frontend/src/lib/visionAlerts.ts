@@ -360,6 +360,7 @@ export function visionReader(settings: VisionSettings = VISION): VisionReader {
                 level: 'crowd',
                 text: UNKNOWN_TEXT,
                 cooldownMs: Infinity,
+                vibrate: false,
             });
         }
         if (!atLeast(steady, minLevel)) {
