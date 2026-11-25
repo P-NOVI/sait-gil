@@ -14,7 +14,6 @@ import VisionPanel from './components/VisionPanel';
 import { useAccessibility } from './hooks/useAccessibility';
 import { listened, useAnnouncer } from './hooks/useAnnouncer';
 import { useGuidance } from './hooks/useGuidance';
-import { useDoubleTap } from './hooks/useDoubleTap';
 import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
 import { useSavedPlaces } from './hooks/useSavedPlaces';
@@ -114,7 +113,6 @@ const HERE_NAME = '현재 위치';
 const HERE_CHECKING_TEXT = '지금 위치의 주소를 확인합니다.';
 const homeAccuracyText = (accuracyM: number) =>
     `위치 오차가 ${Math.round(accuracyM)}미터로 큽니다.`;
-const DOUBLE_TAP_HINT = '화면을 두 번 누르면 말하기';
 const SETTINGS_NOTE = '설정은 이 기기에만 저장합니다.';
 const NO_ADDRESS_TEXT = '이곳의 주소를 찾지 못했습니다.';
 const NO_LOCATION_TEXT = '내 위치를 아직 찾지 못했습니다.';
@@ -660,8 +658,6 @@ export default function App() {
         }
     }, [cameraBlocked, settings.voice]);
     const rerouting = routes.state.status === 'loading';
-    // 안내 중 화면 아무 곳이나 두 번 탭하면 말하기 버튼처럼 한 번 듣는다.
-    useDoubleTap(navigating && canAskByVoice(), () => void listenCommand());
 
     /**
      * 집 등록 화면을 드나들 때 이전 화면에서 하던 말을 멈춘다. 집 등록 안내가 길어서
@@ -939,6 +935,7 @@ export default function App() {
                     onAnnounce={(text) => announce(text)}
                     onSilence={silence}
                     onAsk={ask}
+                    onIdle={whenIdle}
                     voice={settings.voice}
                     purpose={screen === 'set-home' ? 'home' : 'go'}
                     home={saved.home}
@@ -977,6 +974,7 @@ export default function App() {
                     }
                     onChoose={setChosen}
                     onSearchDestination={() => goTo('search')}
+                    voice={settings.voice}
                     onStart={() => {
                         const route = found[chosen];
                         if (route) {
@@ -1021,14 +1019,7 @@ export default function App() {
                     voice={settings.voice}
                 />
             ) : guided ? (
-                <Screen
-                    title="길안내"
-                    status={
-                        canAskByVoice()
-                            ? DOUBLE_TAP_HINT
-                            : `${routeTitle(guided)} 안내 중`
-                    }
-                >
+                <Screen title="길안내" status={`${routeTitle(guided)} 안내 중`}>
                     <NavigationPanel
                         route={guided}
                         destinationName={
@@ -1052,9 +1043,7 @@ export default function App() {
                         vision={
                             <VisionPanel
                                 available={visionAvailable()}
-                                frame={vision.frame}
                                 enabled={vision.enabled}
-                                failure={vision.failure}
                                 onToggle={() => switchVision(!vision.enabled)}
                             />
                         }

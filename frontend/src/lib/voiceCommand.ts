@@ -56,8 +56,8 @@ export const NOT_HEARD_TEXT =
 export const VISION_QUESTION = '카메라를 켤까요?';
 /** 대답이 없거나 못 알아들었을 때. 안전을 위해 켜고 끄는 방법을 알려 준다. */
 export const VISION_DEFAULT_ON_TEXT =
-    '카메라를 켭니다. 끄려면 두 번 누르고 카메라 꺼라고 하세요.';
-/** 안내 중 말하기 버튼을 누르거나 화면을 두 번 눌렀을 때 묻는 말 */
+    '카메라를 켭니다. 끄려면 말하기 버튼을 누르고 카메라 꺼라고 하세요.';
+/** 안내 중 말하기 버튼을 눌렀을 때 묻는 말 */
 export const SPEAK_PROMPT = '말씀하세요.';
 /** 안내 중 명령을 못 알아들었을 때 */
 export const NAVIGATION_COMMAND_HINT =
@@ -79,7 +79,7 @@ export const OPEN_CAMERA_SETTINGS_TEXT =
     '설정 화면을 엽니다. 권한에서 카메라를 허용으로 바꾼 뒤 뒤로 가기로 돌아오세요.';
 /** 설정 화면을 열지 않았을 때. 나중에 켜는 방법을 알려 준다. */
 export const CAMERA_PERMISSION_LATER_TEXT =
-    '설정 화면을 열지 않았습니다. 카메라를 허용한 뒤 두 번 누르고 카메라 켜라고 하세요.';
+    '설정 화면을 열지 않았습니다. 카메라를 허용한 뒤 말하기 버튼을 누르고 카메라 켜라고 하세요.';
 /** 권한을 켜고 위치를 찾았을 때 */
 export const LOCATION_FOUND_TEXT = '내 위치를 찾았습니다.';
 
