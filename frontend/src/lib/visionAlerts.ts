@@ -29,7 +29,6 @@ export const WAITING_FRONT_TEXT = '앞에 사람이 있습니다.';
 export const UNKNOWN_TEXT = '주변을 인식할 수 없습니다.';
 export const VISION_ON_TEXT = '카메라를 켰습니다.';
 export const VISION_OFF_TEXT = '카메라를 껐습니다.';
-export const VISION_OFF_STATUS = '카메라가 꺼져 있습니다.';
 export const VISION_DENIED_TEXT =
     '카메라 권한이 없어 인파를 알릴 수 없습니다. 설정에서 허용하세요.';
 export const VISION_FAILED_TEXT =
@@ -77,11 +76,6 @@ const MOVING_OBSTACLES: ReadonlySet<ObstacleKind> = new Set([
     'two_wheeler',
     'car',
 ]);
-
-/** 장애물 이름(차, 기둥 등) */
-export function obstacleName(kind: ObstacleKind): string {
-    return OBSTACLE_NAMES[kind][0];
-}
 
 /** 다가오거나 길로 들어오는 차·이륜차인지. 서 있는 차는 장애물처럼 다룬다 */
 function isMovingVehicle({ kind, still }: VisionObstacle): boolean {
