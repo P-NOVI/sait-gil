@@ -17,6 +17,7 @@ import androidx.camera.core.ImageProxy
 import androidx.core.content.ContextCompat
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
+import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -35,6 +36,8 @@ class LiteRtDetector private constructor(
     private val batteryTempC: () -> Double?,
     /** 횡단보도 근처라 영상 위쪽 가운데를 잘라 먼 신호등을 한 번 더 찾을지(#134) */
     private val farSignals: () -> Boolean,
+    /** 신호등 칸 사진을 저장할 곳. 디버그 빌드에서만 있다 */
+    private val capture: SignalCaptureWriter?,
 ) : FrameAnalyzer {
     private val size = config.inputSize
     private val planeSize = size * size
@@ -71,6 +74,9 @@ class LiteRtDetector private constructor(
     private var cropMsSum = 0L
     private val cropFoundCounts = IntArray(DetectedClass.entries.size)
     private val cropFoundBest = FloatArray(DetectedClass.entries.size)
+
+    // 같은 구간에서 신호등 칸의 점수 컷 전 신호등 클래스별 최고 점수. 밤에 컷 바로 아래에서 놓치는지 본다.
+    private val cropRawBest = FloatArray(DetectedClass.entries.size)
 
     override fun analyze(image: ImageProxy): DetectionFrame {
         val started = SystemClock.elapsedRealtime()
@@ -110,7 +116,10 @@ class LiteRtDetector private constructor(
         }
     }
 
-    override fun close() = interpreter.close()
+    override fun close() {
+        interpreter.close()
+        capture?.close()
+    }
 
     /** placement 를 프레임을 세운 방향으로 돌리고 왼쪽 위를 (0, 0) 에 두는 변환으로 되돌린다 */
     private fun placeUpright(image: ImageProxy, rotation: Int) {
@@ -138,8 +147,25 @@ class LiteRtDetector private constructor(
         fillInput(frame)
         runModel()
         val detections = decodeDetections(outputValues, candidates, config)
+        val rawScores = bestClassScores(outputValues, candidates, SIGNAL_CLASSES)
+        rawScores.forEach { (kind, score) -> cropRawBest[kind.ordinal] = maxOf(cropRawBest[kind.ordinal], score) }
+        captureCrop(rawScores)
         return signalBoxesFromCrop(detections, crop, letterbox.imageWidth, letterbox.imageHeight)
     }
+
+    /** 차례가 되면 방금 추론한 신호등 칸(모델 입력 그대로)을 저장하고 밝기·점수를 로그로 남긴다. "신호등 칸 저장" 으로 찾는다 */
+    private fun captureCrop(rawScores: Map<DetectedClass, Float>) {
+        val writer = capture ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (!writer.due(now)) return
+        val luma = meanLuma(pixels, config.signalCaptureLumaStep)
+        val name = signalCaptureName(System.currentTimeMillis(), luma, rawScores)
+        writer.save(square, name, now)
+        Log.d(TAG, "신호등 칸 저장 $name 밝기 ${"%.0f".format(luma)} 점수 컷 전 최고 ${rawText(rawScores)}")
+    }
+
+    private fun rawText(scores: Map<DetectedClass, Float>): String =
+        scores.entries.joinToString { (kind, score) -> "${kind.wire} ${"%.2f".format(score)}" }
 
     private fun runModel() {
         output.rewind()
@@ -220,7 +246,8 @@ class LiteRtDetector private constructor(
             Log.d(
                 TAG,
                 "신호등 칸 추론 평균 ${cropMsSum / croppedFrames}ms (${croppedFrames}장), " +
-                    "찾은 신호등: ${foundText(cropFoundCounts, cropFoundBest)}",
+                    "찾은 신호등: ${foundText(cropFoundCounts, cropFoundBest)}, " +
+                    "점수 컷 전 최고 ${rawText(SIGNAL_CLASSES.associateWith { cropRawBest[it.ordinal] })}",
             )
         }
         timedFrames = 0
@@ -234,6 +261,7 @@ class LiteRtDetector private constructor(
         cropMsSum = 0
         cropFoundCounts.fill(0)
         cropFoundBest.fill(0f)
+        cropRawBest.fill(0f)
     }
 
     /** 클래스별 박스 수·최고 점수를 로그 한 줄로. 하나도 없으면 "없음" */
@@ -254,12 +282,14 @@ class LiteRtDetector private constructor(
         /**
          * assets 의 모델(asset)로 만든다. 모델 파일이 없거나(가중치는 커밋하지 않는다) 입출력이 앱과 다르면 null 이다.
          * farSignals 가 true 인 프레임은 위쪽 가운데를 잘라 신호등을 한 번 더 찾는다.
+         * captureDir 이 있으면 그 칸 사진을 signalCaptureEveryMs 마다 저장한다(디버그 빌드에서만 넘긴다).
          * 모델을 읽는 데 시간이 걸리므로 메인 스레드에서 부르지 않는다.
          */
         fun load(
             context: Context,
             config: DetectorConfig = DetectorConfig(),
             asset: String = config.modelAsset,
+            captureDir: File? = null,
             farSignals: () -> Boolean = { false },
         ): LiteRtDetector? {
             val model = try {
@@ -295,7 +325,17 @@ class LiteRtDetector private constructor(
             val label = modelLabel(config.compareModels, asset)
             Log.i(TAG, "모델을 불러왔습니다: $label $asset (${model.size / BYTES_PER_KB}KB, 후보 ${outputShape[2]}개)")
             val appContext = context.applicationContext
-            return LiteRtDetector(interpreter, config, outputShape[2], label, { batteryTempC(appContext) }, farSignals)
+            val capture = captureDir?.let { SignalCaptureWriter(it, config) }
+            captureDir?.let { Log.i(TAG, "횡단보도 근처 신호등 칸 사진을 저장합니다: ${it.absolutePath}") }
+            return LiteRtDetector(
+                interpreter,
+                config,
+                outputShape[2],
+                label,
+                { batteryTempC(appContext) },
+                farSignals,
+                capture,
+            )
         }
 
         /** 배터리 온도(°C). 시스템이 늘 들고 있는 배터리 상태 방송을 읽기만 하고 수신기는 등록하지 않는다 */
