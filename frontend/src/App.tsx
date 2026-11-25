@@ -790,7 +790,8 @@ export default function App() {
 
     /**
      * 앱을 열 때. 처음 열면 시작 안내를 읽으며 위치·마이크·카메라·신체 활동 권한을 차례로 묻는다.
-     * 그다음 내 위치를 찾고, 음성 안내를 켰고 마이크를 쓸 수 있으면 첫 화면에서 어디로 갈지 묻는다.
+     * 그다음 내 위치를 찾고, 찾은 뒤 음성 안내를 켰고 마이크를 쓸 수 있으면 첫 화면에서 어디로 갈지 묻는다.
+     * 위치를 못 찾으면 그 이유를 읽거나 위치 권한을 켤지 묻고, 그 말과 겹치지 않게 목적지는 묻지 않는다.
      * 알아들으면 목적지 찾기 화면에서 그 말로 찾는다.
      */
     const startUp = async () => {
@@ -811,10 +812,15 @@ export default function App() {
             setLocating(false);
             setLocationError(LOCATION_PERMISSION_LATER_TEXT);
         } else {
-            // 음성 안내를 껐으면 announce 는 읽지 않고, 화면낭독기가 화면의 오류를 읽는다.
-            void settle(getCurrentPosition(), (error) =>
-                tellLocationErrorNow.current(error),
-            );
+            let failure: unknown = null;
+            const fix = await settle(getCurrentPosition(), (error) => {
+                failure = error;
+            });
+            if (!fix) {
+                // 음성 안내를 껐으면 announce 는 읽지 않고, 화면낭독기가 화면의 오류를 읽는다.
+                tellLocationErrorNow.current(failure);
+                return;
+            }
         }
         if (!isNativeApp() || !settings.voice || !(await micPermitted())) {
             return;
