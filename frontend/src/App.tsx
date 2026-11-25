@@ -164,6 +164,9 @@ export default function App() {
         null,
     );
     const spokenUsed = useCallback(() => setSpokenDestination(null), []);
+    // "집 등록할게"라고 말해 집 등록 화면에 왔으면 열자마자 등록할 곳을 묻는다.
+    const [askHomeOnOpen, setAskHomeOnOpen] = useState(false);
+    const askHomeUsed = useCallback(() => setAskHomeOnOpen(false), []);
 
     // 출발은 항상 내 위치. 앱을 열면 바로 찾는다.
     const [myLocation, setMyLocation] = useState<LocationFix | null>(null);
@@ -863,11 +866,17 @@ export default function App() {
                             ? (home) => void goHome(home)
                             : undefined
                     }
-                    onUseHere={
-                        screen === 'set-home'
-                            ? () => void saveHomeHere()
+                    onUseHere={() => void saveHomeHere()}
+                    onRegisterHome={
+                        screen === 'search'
+                            ? () => {
+                                  setAskHomeOnOpen(true);
+                                  goTo('set-home');
+                              }
                             : undefined
                     }
+                    askOnOpen={screen === 'set-home' && askHomeOnOpen}
+                    onAskUsed={askHomeUsed}
                     locating={locating}
                     spoken={screen === 'search' ? spokenDestination : null}
                     onSpokenUsed={spokenUsed}

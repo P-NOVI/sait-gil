@@ -14,7 +14,9 @@ import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
 import {
     HOME_MISSING_TEXT,
+    HOME_REGISTER_PROMPT,
     homeCommand,
+    homeSetupCommand,
     NOT_HEARD_TEXT,
     PLACE_ANSWER_HINT,
     type PlaceAnswer,
@@ -56,6 +58,11 @@ type TopSearchProps = {
     home?: Place | null;
     /** 집으로 안내를 시작한다. 주면 말로 "집으로 갈게"를 알아듣는다. */
     onGoHome?: (home: Place) => void;
+    /** 목적지 찾기 화면에서 "집 등록할게"라고 말하면 집 등록 화면으로 간다. */
+    onRegisterHome?: () => void;
+    /** 열자마자 집으로 등록할 곳을 말로 묻는다. 물은 뒤 onAskUsed 를 부른다. */
+    askOnOpen?: boolean;
+    onAskUsed?: () => void;
     /** 내 위치를 찾는 중이면 지금 위치 버튼을 막는다. */
     locating?: boolean;
     /** 앱을 열 때 첫 화면에서 들은 목적지. 주면 말로 찾은 것처럼 한 번 찾고 onSpokenUsed 를 부른다. */
@@ -85,6 +92,9 @@ export default function TopSearch({
     onUseHere,
     home = null,
     onGoHome,
+    onRegisterHome,
+    askOnOpen = false,
+    onAskUsed,
     locating = false,
     spoken = null,
     onSpokenUsed,
@@ -209,8 +219,33 @@ export default function TopSearch({
         await searchHeard(heard);
     };
 
+    /** 집 등록 화면이면 등록할 곳을 말로 묻고 찾는다. 목적지 찾기 화면이면 집 등록 화면으로 간다. */
+    const registerHome = async () => {
+        if (purpose === 'go') {
+            onRegisterHome?.();
+            return;
+        }
+        const heard = await onAsk(HOME_REGISTER_PROMPT);
+        if (heard.status === 'heard') {
+            await searchHeard(heard.text);
+        } else if (listened(heard)) {
+            setListenFailed(true);
+            onAnnounce(LISTEN_FAILED_TEXT);
+        }
+    };
+
     /** 말로 들은 목적지로 찾고, 찾으면 첫 결과부터 하나씩 묻는다. */
     const searchHeard = async (heard: string) => {
+        // "지금 위치를 집으로 설정할게", "집 등록할게"는 검색하지 않고 집을 등록한다.
+        const setup = homeSetupCommand(heard);
+        if (setup === 'here' && onUseHere) {
+            onUseHere();
+            return;
+        }
+        if (setup && (purpose === 'home' || onRegisterHome)) {
+            await registerHome();
+            return;
+        }
         // "집으로 갈게"는 검색하지 않고 등록한 집으로 간다.
         if (onGoHome && homeCommand(heard)) {
             if (home) {
@@ -258,6 +293,18 @@ export default function TopSearch({
         }
     }, [spoken, onSpokenUsed]);
 
+    // 말로 집 등록 화면에 왔으면 한 번만 묻는다. 다시 그려져도 또 묻지 않게 부모에게 알린다.
+    const registerHomeNow = useRef(registerHome);
+    useEffect(() => {
+        registerHomeNow.current = registerHome;
+    });
+    useEffect(() => {
+        if (askOnOpen) {
+            onAskUsed?.();
+            void registerHomeNow.current();
+        }
+    }, [askOnOpen, onAskUsed]);
+
     const current = confirming ? confirming.places[confirming.index] : null;
 
     const places =
@@ -278,7 +325,7 @@ export default function TopSearch({
                 <Icon name="mic" />
                 {listening ? '듣는 중' : '말로 찾기'}
             </button>
-            {onUseHere && (
+            {purpose === 'home' && onUseHere && (
                 <button
                     type="button"
                     className="button"

@@ -4,6 +4,7 @@ import type { PlannedRoute, RouteKind } from './routeApi';
 import {
     cameraAnswer,
     homeCommand,
+    homeSetupCommand,
     navigationCommand,
     permissionAnswer,
     placeAnswer,
@@ -218,5 +219,34 @@ describe('homeCommand', () => {
         '',
     ])('"%s" 는 집으로 가는 말이 아님', (heard) => {
         expect(homeCommand(heard)).toBe(false);
+    });
+});
+
+describe('homeSetupCommand', () => {
+    it.each([
+        '지금 위치를 집으로 설정할게',
+        '현재 위치를 집으로 등록해 줘',
+        '여기를 집으로 저장할게',
+        '이곳을 집으로 설정',
+    ])('"%s" 는 지금 위치를 집으로', (heard) => {
+        expect(homeSetupCommand(heard)).toBe('here');
+    });
+
+    it.each(['집 등록할게', '집으로 설정할게요.', '집등록'])(
+        '"%s" 는 집으로 등록할 곳을 찾기',
+        (heard) => {
+            expect(homeSetupCommand(heard)).toBe('register');
+        },
+    );
+
+    it.each([
+        '집으로 갈게',
+        '집 등록 안 할래',
+        '집 등록 취소',
+        '집 지워 줘',
+        '여기로 갈게',
+        '',
+    ])('"%s" 는 집 등록이 아님', (heard) => {
+        expect(homeSetupCommand(heard)).toBeNull();
     });
 });

@@ -3,6 +3,9 @@
 
 import type { PlannedRoute, RouteKind } from './routeApi';
 
+/** 집을 등록하라는 말. here: 지금 위치로, register: 찾아서 */
+export type HomeSetupCommand = 'here' | 'register';
+
 /** 말로 찾은 곳을 확인할 때의 대답 */
 export type PlaceAnswer = 'yes' | 'next' | 'list';
 
@@ -11,6 +14,8 @@ export type RouteAnswer =
     { action: 'start'; index: number | null } | { action: 'repeat' };
 
 /** 집을 등록하지 않았을 때 "집으로 갈게"에 대한 안내 */
+export const HOME_REGISTER_PROMPT =
+    '집으로 등록할 곳을 말씀하세요. 지금 있는 곳이면 지금 위치를 집으로 설정할게, 라고 말하세요.';
 export const HOME_MISSING_TEXT =
     '집이 등록되어 있지 않아요. 목적지를 검색해 집으로 등록해 주세요.';
 
@@ -94,6 +99,12 @@ const CAMERA_WORDS = /카메라|인식/;
 // "집으로 갈게", "집으로 가자", "집까지 안내". 집이 들어간 다른 말("집 앞 편의점")과 헷갈리지 않게 집으로 가는 말만 받는다.
 const HOME_WORDS =
     /^(?:우리)?집(?:으로|까지|에)(?:갈게|가자|갈래|가요|가줘|갈래요|안내|데려다)/;
+// "집 등록할게", "집으로 설정할게". 집을 지우거나 하지 않겠다는 말은 뺀다.
+const SET_HOME_WORDS =
+    /집.*(?:등록|설정|저장|지정)|(?:등록|설정|저장|지정).*집/;
+const NOT_SET_HOME_WORDS = /해제|삭제|지워|지우|취소|안할|안해|말고|아니/;
+// 집으로 등록할 곳이 지금 있는 곳이라는 말
+const HERE_WORDS = /지금|현재|여기|이곳|내위치/;
 const ALLOW_WORDS = /허용/;
 const DONT_ALLOW_WORDS = /안해|안할|안함|허용안/;
 // "2번", "두 번째", "둘째"
@@ -140,6 +151,18 @@ export function placeAnswer(heard: string): PlaceAnswer | null {
 export function homeCommand(heard: string): boolean {
     const said = compact(heard);
     return !REFUSE_WORDS.test(said) && HOME_WORDS.test(said);
+}
+
+/**
+ * 집을 등록하라는 말. here: "지금 위치를 집으로 설정할게" 처럼 지금 있는 곳을 바로 집으로,
+ * register: "집 등록할게" 처럼 집으로 등록할 곳을 찾아서 정한다. 아니면 null.
+ */
+export function homeSetupCommand(heard: string): HomeSetupCommand | null {
+    const said = compact(heard);
+    if (NOT_SET_HOME_WORDS.test(said) || !SET_HOME_WORDS.test(said)) {
+        return null;
+    }
+    return HERE_WORDS.test(said) ? 'here' : 'register';
 }
 
 /** "카메라 인식을 켤까요?"에 대한 대답. "네", "켜 줘" 는 켬, "아니요", "꺼 줘" 는 끔 */
