@@ -113,7 +113,7 @@ const HOME_CLEARED_TEXT = '집을 지웠습니다.';
 const HERE_NAME = '현재 위치';
 const HERE_CHECKING_TEXT = '지금 위치의 주소를 확인합니다.';
 const homeAccuracyText = (accuracyM: number) =>
-    `위치 오차가 약 ${Math.round(accuracyM)}미터로 커서 정확하지 않을 수 있습니다. 밖으로 나가 다시 확인하면 더 정확합니다.`;
+    `위치 오차가 ${Math.round(accuracyM)}미터로 큽니다.`;
 const DOUBLE_TAP_HINT = '화면을 두 번 누르면 말하기';
 const SETTINGS_NOTE = '설정은 이 기기에만 저장합니다.';
 const NO_ADDRESS_TEXT = '이곳의 주소를 찾지 못했습니다.';
@@ -150,7 +150,7 @@ export default function App() {
     const { announce, ask, buzz, silence, listening, busyFor, whenIdle } =
         useAnnouncer(settings);
 
-    const [{ screen }, setNavigation] = useState<Navigation>({
+    const [{ screen, history }, setNavigation] = useState<Navigation>({
         screen: 'home',
         history: [],
     });
@@ -636,7 +636,25 @@ export default function App() {
     // 안내 중 화면 아무 곳이나 두 번 탭하면 말하기 버튼처럼 한 번 듣는다.
     useDoubleTap(navigating && canAskByVoice(), () => void listenCommand());
 
+    /**
+     * 집 등록 화면을 드나들 때 이전 화면에서 하던 말을 멈춘다. 집 등록 안내가 길어서
+     * 다른 버튼을 누르거나 화면을 옮겨도 이어서 나오는 것을 막는다.
+     * 설정을 오갈 때는 멈추지 않아 안내 중 설정을 보고 와도 길안내 음성이 끊기지 않는다.
+     */
+    const stopSpeechOnMove = (from: ScreenName, to: ScreenName) => {
+        const homeSetup = from === 'set-home' || to === 'set-home';
+        if (
+            homeSetup &&
+            from !== to &&
+            from !== 'settings' &&
+            to !== 'settings'
+        ) {
+            silence();
+        }
+    };
+
     const goTo = (next: ScreenName) => {
+        stopSpeechOnMove(screen, next);
         // 경로 선택 화면을 떠나면 경로를 묻던 것은 그만 듣는다.
         if (next !== 'route') {
             offered.current = null;
@@ -658,12 +676,14 @@ export default function App() {
 
     /** 지금 화면을 기록에 남기지 않고 다른 화면으로 바꾼다. 뒤로 가면 지금 화면 전 화면으로 간다. */
     const replaceWith = (next: ScreenName) => {
+        stopSpeechOnMove(screen, next);
         offered.current = null;
         places.reset();
         setNavigation((now) => ({ screen: next, history: now.history }));
     };
 
     const goBack = () => {
+        stopSpeechOnMove(screen, history.at(-1) ?? 'home');
         offered.current = null;
         if (screen === 'set-home') {
             places.reset();
@@ -697,15 +717,16 @@ export default function App() {
 
     const saveHome = (place: Place) => {
         saved.setHome(place);
-        announce(HOME_SAVED_TEXT);
+        // 화면을 옮기며 이전 말을 멈추므로, 저장 안내는 옮긴 뒤에 읽는다.
         goBack();
+        announce(HOME_SAVED_TEXT);
     };
 
     /** 집 등록 화면: 지금 위치와 주소를 알아낸다. 위치를 못 찾으면 locate 가 이유를 알리고 null. */
     const findHere = async (): Promise<HereFix | null> => {
         announce(
             saved.home
-                ? `지금 집은 ${saved.home.name}입니다. ${HERE_CHECKING_TEXT}`
+                ? `지금 집은 ${saved.home.name}입니다. 새 위치를 확인합니다.`
                 : HERE_CHECKING_TEXT,
         );
         const fix = await locate();
@@ -883,6 +904,7 @@ export default function App() {
                     onListen={listenOnce}
                     onPick={screen === 'set-home' ? saveHome : pickPlace}
                     onAnnounce={(text) => announce(text)}
+                    onSilence={silence}
                     onAsk={ask}
                     voice={settings.voice}
                     purpose={screen === 'set-home' ? 'home' : 'go'}

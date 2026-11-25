@@ -51,6 +51,8 @@ type TopSearchProps = {
     onPick: (place: Place) => void;
     /** 말로 찾다가 생긴 안내를 음성으로 읽는다. */
     onAnnounce: (text: string) => void;
+    /** 읽고 있던 안내와 묻던 질문을 멈춘다. 말로 찾기를 누르면 부른다. */
+    onSilence?: () => void;
     /** 말로 찾은 곳을 읽고 대답을 듣는다. */
     onAsk: (text: string) => Promise<Answer>;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
@@ -106,6 +108,7 @@ export default function TopSearch({
     onListen,
     onPick,
     onAnnounce,
+    onSilence,
     onAsk,
     voice,
     purpose = 'go',
@@ -244,6 +247,8 @@ export default function TopSearch({
     };
 
     const listen = async () => {
+        // 읽던 안내가 마이크에 들어가거나 겹치지 않게 먼저 멈춘다.
+        onSilence?.();
         setListening(true);
         setListenFailed(false);
         setConfirming(null);
@@ -377,12 +382,19 @@ export default function TopSearch({
     useEffect(() => {
         openActionNow.current = openHomeAction;
     });
+    // 집 등록 화면은 어떻게 들어와도 열자마자 집 위치를 말해 달라고 묻고 마이크를 켠다.
+    // 말로 들어왔으면 들은 방법(지금 위치 등)을 따르고, 개발 모드에서 효과가 두 번 불려도 한 번만 한다.
+    const opened = useRef(false);
     useEffect(() => {
         if (openAction) {
+            opened.current = true;
             onOpenActionUsed?.();
             void openActionNow.current(openAction);
+        } else if (purpose === 'home' && !opened.current) {
+            opened.current = true;
+            void openActionNow.current('register');
         }
-    }, [openAction, onOpenActionUsed]);
+    }, [openAction, onOpenActionUsed, purpose]);
 
     const current = confirming ? confirming.places[confirming.index] : null;
 
