@@ -60,6 +60,21 @@ class SaitgilStepsPlugin : Plugin() {
         }
     }
 
+    /** 센서를 켜지 않고 걸음 권한만 묻는다(앱 첫 실행 안내). 허용했거나 권한이 필요 없는 기기면 granted 가 true 다. */
+    @PluginMethod
+    fun prepare(call: PluginCall) {
+        if (permitted()) {
+            call.resolve(granted())
+        } else {
+            requestPermissionForAlias(ALIAS, call, "onPreparePermission")
+        }
+    }
+
+    @PermissionCallback
+    private fun onPreparePermission(call: PluginCall) {
+        call.resolve(granted())
+    }
+
     @PluginMethod
     fun stop(call: PluginCall) {
         stopped = true
@@ -111,6 +126,8 @@ class SaitgilStepsPlugin : Plugin() {
     }
 
     private fun available(value: Boolean): JSObject = JSObject().put("available", value)
+
+    private fun granted(): JSObject = JSObject().put("granted", permitted())
 
     companion object {
         const val ALIAS = "activity"

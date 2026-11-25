@@ -5,6 +5,7 @@ import {
     LISTEN_RETRY_DELAY_MS,
 } from '../settings';
 import { startBluetoothMic, stopBluetoothMic } from './bluetoothMic';
+import { inPermissionOrder } from './permissionQueue';
 import { isNativeApp, SPEECH_LANG } from './runtime';
 
 interface WebRecognitionResult {
@@ -41,6 +42,37 @@ let nativeRun = 0;
 /** 이 기기에서 말을 알아들을 수 있는지 */
 export function canListen(): boolean {
     return isNativeApp() || webRecognition() !== undefined;
+}
+
+/** 앱에서 마이크(음성 인식) 권한을 묻는다. 허용하면 true. 웹은 처음 들을 때 브라우저가 묻는다. */
+export async function requestMicPermission(): Promise<boolean> {
+    if (!isNativeApp()) {
+        return false;
+    }
+    try {
+        const { available } = await NativeRecognition.available();
+        if (!available) return false;
+        const { speechRecognition } = await inPermissionOrder(() =>
+            NativeRecognition.requestPermissions(),
+        );
+        return speechRecognition === 'granted';
+    } catch {
+        return false;
+    }
+}
+
+/** 앱에서 마이크 권한을 이미 허용했는지. 묻지 않는다. 웹은 모르므로 false. */
+export async function micPermitted(): Promise<boolean> {
+    if (!isNativeApp()) {
+        return false;
+    }
+    try {
+        const { speechRecognition } =
+            await NativeRecognition.checkPermissions();
+        return speechRecognition === 'granted';
+    } catch {
+        return false;
+    }
 }
 
 /** 듣고 있으면 멈춘다. 멈춘 listenOnce 는 null 을 돌려준다. */
