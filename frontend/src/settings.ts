@@ -226,5 +226,8 @@ export type DoubleTapSettings = typeof DOUBLE_TAP;
 // 첫 화면에 보일 최근 간 곳 수
 export const RECENT_PLACES_MAX = 3;
 
+// 지금 위치를 집으로 등록할 때, 위치 오차(m)가 이보다 크면 정확하지 않을 수 있다고 알린다.
+export const HOME_MAX_ACCURACY_M = 50;
+
 // 길안내 화면에 보일 다음 안내 수
 export const UPCOMING_EVENTS_SHOWN = 3;

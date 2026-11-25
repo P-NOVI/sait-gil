@@ -13,9 +13,14 @@ import type { LngLat } from '../lib/geo';
 import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
 import {
+    HOME_CLEAR_QUESTION,
+    HOME_KEPT_TEXT,
     HOME_MISSING_TEXT,
+    HOME_NONE_TEXT,
     HOME_REGISTER_PROMPT,
+    homeClearCommand,
     homeCommand,
+    type HomeSetupCommand,
     homeSetupCommand,
     NOT_HEARD_TEXT,
     PLACE_ANSWER_HINT,
@@ -52,17 +57,19 @@ type TopSearchProps = {
     voice: boolean;
     /** 고른 곳으로 갈지(go), 집으로 저장할지(home). 묻는 말과 대답 버튼이 달라진다. */
     purpose?: 'go' | 'home';
-    /** 집 등록 화면에서 지금 위치를 집으로 저장한다. 주면 버튼을 보인다. */
-    onUseHere?: () => void;
+    /** 집 등록 화면에서 지금 위치와 주소를 알아낸다. 못 알아내면 null. 돌려준 곳을 집으로 할지 묻는다. */
+    onUseHere?: () => Promise<HereFix | null>;
+    /** 등록한 집을 지운다. "집 지워 줘"라고 말하고 확인하면 부른다. */
+    onClearHome?: () => void;
     /** 등록한 집. "집으로 갈게"라고 말하면 이곳으로 바로 안내한다. 없으면 null */
     home?: Place | null;
     /** 집으로 안내를 시작한다. 주면 말로 "집으로 갈게"를 알아듣는다. */
     onGoHome?: (home: Place) => void;
     /** 목적지 찾기 화면에서 "집 등록할게"라고 말하면 집 등록 화면으로 간다. */
-    onRegisterHome?: () => void;
-    /** 열자마자 집으로 등록할 곳을 말로 묻는다. 물은 뒤 onAskUsed 를 부른다. */
-    askOnOpen?: boolean;
-    onAskUsed?: () => void;
+    onRegisterHome?: (action: HomeSetup) => void;
+    /** 집 등록 화면을 열자마자 할 일. 한 번 하고 onOpenActionUsed 를 부른다. */
+    openAction?: HomeSetup | null;
+    onOpenActionUsed?: () => void;
     /** 내 위치를 찾는 중이면 지금 위치 버튼을 막는다. */
     locating?: boolean;
     /** 앱을 열 때 첫 화면에서 들은 목적지. 주면 말로 찾은 것처럼 한 번 찾고 onSpokenUsed 를 부른다. */
@@ -70,8 +77,21 @@ type TopSearchProps = {
     onSpokenUsed?: () => void;
 };
 
+/** 지금 위치. note 는 위치 오차가 클 때처럼 확인할 때 함께 알릴 말 */
+export type HereFix = { place: Place; note?: string };
+
+/** 집 등록 방법. here: 지금 위치로, register: 찾아서 */
+export type HomeSetup = HomeSetupCommand;
+
 /** 말로 찾은 결과 중 지금 묻고 있는 것 */
-type Confirming = { places: Place[]; index: number };
+type Confirming = {
+    places: Place[];
+    index: number;
+    /** 지금 위치 확인. 다음 결과 대신 위치를 다시 찾는다. */
+    here?: boolean;
+    /** 질문 앞에 함께 알릴 말 */
+    note?: string;
+};
 
 /**
  * 목적지 검색 화면. 입력하거나 말한 목적지를 검색하고 결과에서 고른다.
@@ -90,11 +110,12 @@ export default function TopSearch({
     voice,
     purpose = 'go',
     onUseHere,
+    onClearHome,
     home = null,
     onGoHome,
     onRegisterHome,
-    askOnOpen = false,
-    onAskUsed,
+    openAction = null,
+    onOpenActionUsed,
     locating = false,
     spoken = null,
     onSpokenUsed,
@@ -159,12 +180,21 @@ export default function TopSearch({
     };
 
     /** 이곳으로 갈지 읽고 묻는다. 못 알아들으면 고를 수 있는 말을 알려 주고 한 번 더 듣는다. */
-    const ask = async (places: Place[], index: number) => {
-        const about = { places, index };
+    const ask = async (
+        places: Place[],
+        index: number,
+        here = false,
+        note?: string,
+    ) => {
+        const about = { places, index, here, note };
         setConfirming(about);
-        let heard = await onAsk(
-            placeQuestion(places[index], index, places.length, question),
+        const asking = placeQuestion(
+            places[index],
+            index,
+            places.length,
+            question,
         );
+        let heard = await onAsk(note ? `${note} ${asking}` : asking);
         let reply = heard.status === 'heard' ? placeAnswer(heard.text) : null;
         if (
             heard.status === 'heard' &&
@@ -180,12 +210,21 @@ export default function TopSearch({
         if (reply) {
             answer(reply, about);
         } else if (listened(heard)) {
+            // 무엇으로 들었는지 화면에 남겨, 인식이 틀렸는지 말이 안 들어갔는지 알 수 있게 한다.
+            setNotice(
+                heard.status === 'heard'
+                    ? `들은 말: ${heard.text}`
+                    : '아무 말도 듣지 못했습니다.',
+            );
             onAnnounce(NOT_HEARD_TEXT);
         }
     };
 
-    const showNext = ({ places, index }: Confirming) => {
-        if (index + 1 < places.length) {
+    const showNext = ({ places, index, here }: Confirming) => {
+        if (here) {
+            // 지금 위치가 아니라고 하면 위치와 주소를 다시 찾아 한 번 더 묻는다.
+            void checkHere();
+        } else if (index + 1 < places.length) {
             void ask(places, index + 1);
         } else {
             setNotice(NO_MORE_PLACES_TEXT);
@@ -219,13 +258,44 @@ export default function TopSearch({
         await searchHeard(heard);
     };
 
-    /** 집 등록 화면이면 등록할 곳을 말로 묻고 찾는다. 목적지 찾기 화면이면 집 등록 화면으로 간다. */
-    const registerHome = async () => {
-        if (purpose === 'go') {
-            onRegisterHome?.();
+    /** 지금 위치의 주소를 알아내 읽어 주고 집으로 할지 묻는다. */
+    const checkHere = async () => {
+        setConfirming(null);
+        setNotice(null);
+        const here = await onUseHere?.();
+        if (here) {
+            // 위치 오차가 클 때처럼 알릴 말은 화면에도 남긴다.
+            setNotice(here.note ?? null);
+            void ask([here.place], 0, true, here.note);
+        }
+    };
+
+    /** 등록한 집을 지울지 묻고, 그렇다고 하면 지운다. */
+    const clearHome = async () => {
+        if (!home) {
+            setNotice(HOME_NONE_TEXT);
+            onAnnounce(HOME_NONE_TEXT);
             return;
         }
-        const heard = await onAsk(HOME_REGISTER_PROMPT);
+        const heard = await onAsk(HOME_CLEAR_QUESTION);
+        if (heard.status === 'heard' && placeAnswer(heard.text) === 'yes') {
+            onClearHome?.();
+        } else if (listened(heard)) {
+            setNotice(HOME_KEPT_TEXT);
+            onAnnounce(HOME_KEPT_TEXT);
+        }
+    };
+
+    const openHomeAction = (action: HomeSetup) =>
+        action === 'here' ? checkHere() : registerHome();
+
+    /** 집으로 등록할 곳을 말로 묻고 찾는다. */
+    const registerHome = async () => {
+        const heard = await onAsk(
+            home
+                ? `지금 집은 ${home.name}입니다. ${HOME_REGISTER_PROMPT}`
+                : HOME_REGISTER_PROMPT,
+        );
         if (heard.status === 'heard') {
             await searchHeard(heard.text);
         } else if (listened(heard)) {
@@ -236,13 +306,22 @@ export default function TopSearch({
 
     /** 말로 들은 목적지로 찾고, 찾으면 첫 결과부터 하나씩 묻는다. */
     const searchHeard = async (heard: string) => {
-        // "지금 위치를 집으로 설정할게", "집 등록할게"는 검색하지 않고 집을 등록한다.
-        const setup = homeSetupCommand(heard);
-        if (setup === 'here' && onUseHere) {
-            onUseHere();
+        // "집 지워 줘"는 검색하지 않고 등록한 집을 지울지 묻는다.
+        if (onClearHome && homeClearCommand(heard)) {
+            await clearHome();
             return;
         }
-        if (setup && (purpose === 'home' || onRegisterHome)) {
+        // "지금 위치를 집으로 설정할게", "집 등록할게"는 검색하지 않고 집을 등록한다.
+        const setup = homeSetupCommand(heard);
+        if (setup && purpose === 'go' && onRegisterHome) {
+            onRegisterHome(setup);
+            return;
+        }
+        if (setup === 'here' && purpose === 'home') {
+            await checkHere();
+            return;
+        }
+        if (setup === 'register' && purpose === 'home') {
             await registerHome();
             return;
         }
@@ -293,17 +372,17 @@ export default function TopSearch({
         }
     }, [spoken, onSpokenUsed]);
 
-    // 말로 집 등록 화면에 왔으면 한 번만 묻는다. 다시 그려져도 또 묻지 않게 부모에게 알린다.
-    const registerHomeNow = useRef(registerHome);
+    // 말로 집 등록 화면에 왔으면 한 번만 한다. 다시 그려져도 또 하지 않게 부모에게 알린다.
+    const openActionNow = useRef(openHomeAction);
     useEffect(() => {
-        registerHomeNow.current = registerHome;
+        openActionNow.current = openHomeAction;
     });
     useEffect(() => {
-        if (askOnOpen) {
-            onAskUsed?.();
-            void registerHomeNow.current();
+        if (openAction) {
+            onOpenActionUsed?.();
+            void openActionNow.current(openAction);
         }
-    }, [askOnOpen, onAskUsed]);
+    }, [openAction, onOpenActionUsed]);
 
     const current = confirming ? confirming.places[confirming.index] : null;
 
@@ -330,7 +409,7 @@ export default function TopSearch({
                     type="button"
                     className="button"
                     disabled={locating}
-                    onClick={onUseHere}
+                    onClick={() => void checkHere()}
                 >
                     <Icon name="home" />
                     {locating ? '내 위치 찾는 중' : '지금 위치를 집으로'}
@@ -409,7 +488,7 @@ export default function TopSearch({
                             className="button"
                             onClick={() => showNext(confirming)}
                         >
-                            다음 결과
+                            {confirming.here ? '위치 다시 확인' : '다음 결과'}
                         </button>
                         <button
                             type="button"

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PlannedRoute, RouteKind } from './routeApi';
 import {
     cameraAnswer,
+    homeClearCommand,
     homeCommand,
     homeSetupCommand,
     navigationCommand,
@@ -199,6 +200,12 @@ describe('navigationCommand', () => {
     });
 });
 
+describe('placeAnswer 짧은 대답', () => {
+    it.each(['어', '엉', '으응', '어엉', '응', '네'])('"%s" 는 예', (heard) => {
+        expect(placeAnswer(heard)).toBe('yes');
+    });
+});
+
 describe('homeCommand', () => {
     it.each([
         '집으로 갈게',
@@ -222,28 +229,60 @@ describe('homeCommand', () => {
     });
 });
 
+describe('homeClearCommand', () => {
+    it.each([
+        '집 지워 줘',
+        '집 삭제해',
+        '집 해제할게',
+        '집을 지울래',
+        '등록한 집 지워',
+    ])('"%s" 는 집을 지우라는 말', (heard) => {
+        expect(homeClearCommand(heard)).toBe(true);
+    });
+
+    it.each([
+        '집 지우지 마',
+        '집 지우는 거 취소',
+        '집으로 갈게',
+        '집 등록할게',
+        '',
+    ])('"%s" 는 집을 지우라는 말이 아님', (heard) => {
+        expect(homeClearCommand(heard)).toBe(false);
+    });
+});
+
 describe('homeSetupCommand', () => {
     it.each([
         '지금 위치를 집으로 설정할게',
         '현재 위치를 집으로 등록해 줘',
         '여기를 집으로 저장할게',
         '이곳을 집으로 설정',
+        '지금 위치를 집으로 해줘',
+        '지금 위치로 집 바꿔줘',
+        '지금 위치를 집으로 해 줘',
+        '여기를 집으로 할게',
     ])('"%s" 는 지금 위치를 집으로', (heard) => {
         expect(homeSetupCommand(heard)).toBe('here');
     });
 
-    it.each(['집 등록할게', '집으로 설정할게요.', '집등록'])(
-        '"%s" 는 집으로 등록할 곳을 찾기',
-        (heard) => {
-            expect(homeSetupCommand(heard)).toBe('register');
-        },
-    );
+    it.each([
+        '집 등록할게',
+        '집으로 설정할게요.',
+        '집등록',
+        '집으로 해줘',
+        '집 바꿔줘',
+        '집 변경할게',
+        '집 다시 등록할게',
+    ])('"%s" 는 집으로 등록할 곳을 찾기', (heard) => {
+        expect(homeSetupCommand(heard)).toBe('register');
+    });
 
     it.each([
         '집으로 갈게',
         '집 등록 안 할래',
         '집 등록 취소',
         '집 지워 줘',
+        '집으로 안 해줘',
         '여기로 갈게',
         '',
     ])('"%s" 는 집 등록이 아님', (heard) => {

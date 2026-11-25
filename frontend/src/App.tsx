@@ -6,7 +6,10 @@ import OnboardingScreen from './components/OnboardingScreen';
 import RoutePanel from './components/RoutePanel';
 import Screen, { type ScreenName } from './components/Screen';
 import SettingsPanel from './components/SettingsPanel';
-import TopSearch from './components/TopSearch';
+import TopSearch, {
+    type HereFix,
+    type HomeSetup,
+} from './components/TopSearch';
 import VisionPanel from './components/VisionPanel';
 import { useAccessibility } from './hooks/useAccessibility';
 import { listened, useAnnouncer } from './hooks/useAnnouncer';
@@ -72,6 +75,7 @@ import {
 } from './lib/voiceCommand';
 import { VISION_OFF_TEXT, VISION_ON_TEXT } from './lib/visionAlerts';
 import { isStandingStill } from './lib/walkSpeed';
+import { HOME_MAX_ACCURACY_M } from './settings';
 import {
     canListen,
     canOpenAppSettings,
@@ -107,6 +111,9 @@ const HOME_SAVED_TEXT =
 const HOME_CLEARED_TEXT = '집을 지웠습니다.';
 /** 주소를 알 수 없을 때 지금 위치로 저장한 집의 이름 */
 const HERE_NAME = '현재 위치';
+const HERE_CHECKING_TEXT = '지금 위치의 주소를 확인합니다.';
+const homeAccuracyText = (accuracyM: number) =>
+    `위치 오차가 약 ${Math.round(accuracyM)}미터로 커서 정확하지 않을 수 있습니다. 밖으로 나가 다시 확인하면 더 정확합니다.`;
 const DOUBLE_TAP_HINT = '화면을 두 번 누르면 말하기';
 const SETTINGS_NOTE = '설정은 이 기기에만 저장합니다.';
 const NO_ADDRESS_TEXT = '이곳의 주소를 찾지 못했습니다.';
@@ -164,9 +171,11 @@ export default function App() {
         null,
     );
     const spokenUsed = useCallback(() => setSpokenDestination(null), []);
-    // "집 등록할게"라고 말해 집 등록 화면에 왔으면 열자마자 등록할 곳을 묻는다.
-    const [askHomeOnOpen, setAskHomeOnOpen] = useState(false);
-    const askHomeUsed = useCallback(() => setAskHomeOnOpen(false), []);
+    // 말로 집 등록 화면에 왔으면 열자마자 할 일(지금 위치로 / 등록할 곳 묻기)
+    const [homeOpenAction, setHomeOpenAction] = useState<HomeSetup | null>(
+        null,
+    );
+    const homeOpenActionUsed = useCallback(() => setHomeOpenAction(null), []);
 
     // 출발은 항상 내 위치. 앱을 열면 바로 찾는다.
     const [myLocation, setMyLocation] = useState<LocationFix | null>(null);
@@ -647,6 +656,13 @@ export default function App() {
         );
     };
 
+    /** 지금 화면을 기록에 남기지 않고 다른 화면으로 바꾼다. 뒤로 가면 지금 화면 전 화면으로 간다. */
+    const replaceWith = (next: ScreenName) => {
+        offered.current = null;
+        places.reset();
+        setNavigation((now) => ({ screen: next, history: now.history }));
+    };
+
     const goBack = () => {
         offered.current = null;
         if (screen === 'set-home') {
@@ -685,11 +701,16 @@ export default function App() {
         goBack();
     };
 
-    /** 집 등록 화면의 버튼: 지금 위치를 집으로 저장한다. 위치를 못 찾으면 locate 가 이유를 알린다. */
-    const saveHomeHere = async () => {
+    /** 집 등록 화면: 지금 위치와 주소를 알아낸다. 위치를 못 찾으면 locate 가 이유를 알리고 null. */
+    const findHere = async (): Promise<HereFix | null> => {
+        announce(
+            saved.home
+                ? `지금 집은 ${saved.home.name}입니다. ${HERE_CHECKING_TEXT}`
+                : HERE_CHECKING_TEXT,
+        );
         const fix = await locate();
         if (!fix) {
-            return;
+            return null;
         }
         let address: Address | null = null;
         try {
@@ -697,12 +718,17 @@ export default function App() {
         } catch {
             // 주소를 못 찾아도 좌표로 집을 저장한다.
         }
-        saveHome({
-            name: address?.road_address || address?.full_address || HERE_NAME,
-            address: address?.full_address ?? '',
+        // 도로명 주소(신주소) 하나만 쓴다. 이름과 주소를 같게 두면 읽고 보여 줄 때 한 번만 나온다.
+        const shown = address?.road_address || address?.full_address || '';
+        const place = {
+            name: shown || HERE_NAME,
+            address: shown,
             position: fix.position,
             distance_m: null,
-        });
+        };
+        return fix.accuracy > HOME_MAX_ACCURACY_M
+            ? { place, note: homeAccuracyText(fix.accuracy) }
+            : { place };
     };
 
     const clearHome = () => {
@@ -866,17 +892,19 @@ export default function App() {
                             ? (home) => void goHome(home)
                             : undefined
                     }
-                    onUseHere={() => void saveHomeHere()}
+                    onUseHere={findHere}
+                    onClearHome={clearHome}
                     onRegisterHome={
                         screen === 'search'
-                            ? () => {
-                                  setAskHomeOnOpen(true);
-                                  goTo('set-home');
+                            ? (action) => {
+                                  setHomeOpenAction(action);
+                                  // 저장하고 돌아올 때 검색 화면이 아니라 첫 화면으로 가게 검색 화면을 대신한다.
+                                  replaceWith('set-home');
                               }
                             : undefined
                     }
-                    askOnOpen={screen === 'set-home' && askHomeOnOpen}
-                    onAskUsed={askHomeUsed}
+                    openAction={screen === 'set-home' ? homeOpenAction : null}
+                    onOpenActionUsed={homeOpenActionUsed}
                     locating={locating}
                     spoken={screen === 'search' ? spokenDestination : null}
                     onSpokenUsed={spokenUsed}

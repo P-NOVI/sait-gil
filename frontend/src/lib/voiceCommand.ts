@@ -16,6 +16,9 @@ export type RouteAnswer =
 /** 집을 등록하지 않았을 때 "집으로 갈게"에 대한 안내 */
 export const HOME_REGISTER_PROMPT =
     '집으로 등록할 곳을 말씀하세요. 지금 있는 곳이면 지금 위치를 집으로 설정할게, 라고 말하세요.';
+export const HOME_CLEAR_QUESTION = '등록한 집을 지울까요?';
+export const HOME_NONE_TEXT = '등록한 집이 없습니다.';
+export const HOME_KEPT_TEXT = '집을 그대로 두었습니다.';
 export const HOME_MISSING_TEXT =
     '집이 등록되어 있지 않아요. 목적지를 검색해 집으로 등록해 주세요.';
 
@@ -83,7 +86,8 @@ export type CameraAnswer = 'on' | 'off';
 export type NavigationCommand = { action: 'camera'; answer: CameraAnswer };
 
 // "네", "응" 처럼 대답만 한 말. 다른 말 속의 "어", "네" 와 헷갈리지 않게 말 전체와 맞춘다.
-const SHORT_YES = /^(?:네|예|응|어|웅|그래|좋아|맞아|오케이|확인)+요?$/;
+const SHORT_YES =
+    /^(?:네|예|응|어|웅|엉|으응|어엉|어응|으|그래|좋아|맞아|오케이|확인)+요?$/;
 // "말고", "안 가" 처럼 거절하는 말. 승낙하는 말("가요")이 섞여 있어도 먼저 본다.
 const REFUSE_WORDS = /아니|아뇨|말고|안가|안좋|싫어/;
 const NEXT_WORDS = /^노|다음|다른|딴/;
@@ -99,12 +103,16 @@ const CAMERA_WORDS = /카메라|인식/;
 // "집으로 갈게", "집으로 가자", "집까지 안내". 집이 들어간 다른 말("집 앞 편의점")과 헷갈리지 않게 집으로 가는 말만 받는다.
 const HOME_WORDS =
     /^(?:우리)?집(?:으로|까지|에)(?:갈게|가자|갈래|가요|가줘|갈래요|안내|데려다)/;
-// "집 등록할게", "집으로 설정할게". 집을 지우거나 하지 않겠다는 말은 뺀다.
+// "집 등록할게", "집으로 설정할게", "집으로 해 줘". 집을 지우거나 하지 않겠다는 말은 뺀다.
 const SET_HOME_WORDS =
-    /집.*(?:등록|설정|저장|지정)|(?:등록|설정|저장|지정).*집/;
+    /집.*(?:등록|설정|저장|지정|바꿔|바꿀|바꾸|변경|수정|고쳐)|(?:등록|설정|저장|지정).*집|집(?:으로|을|로)?(?:해|할|하자|삼)/;
 const NOT_SET_HOME_WORDS = /해제|삭제|지워|지우|취소|안할|안해|말고|아니/;
 // 집으로 등록할 곳이 지금 있는 곳이라는 말
 const HERE_WORDS = /지금|현재|여기|이곳|내위치/;
+// "집 지워 줘", "집 삭제". 지우지 말라는 말은 뺀다.
+const CLEAR_HOME_WORDS =
+    /집.*(?:지워|지우|지울|삭제|해제|없애)|(?:지워|삭제|해제).*집/;
+const NOT_CLEAR_HOME_WORDS = /지마|말고|취소|아니|안지|안해/;
 const ALLOW_WORDS = /허용/;
 const DONT_ALLOW_WORDS = /안해|안할|안함|허용안/;
 // "2번", "두 번째", "둘째"
@@ -163,6 +171,12 @@ export function homeSetupCommand(heard: string): HomeSetupCommand | null {
         return null;
     }
     return HERE_WORDS.test(said) ? 'here' : 'register';
+}
+
+/** "집 지워 줘" 처럼 등록한 집을 지우라는 말인지. 지우지 말라는 말이 섞이면 아니다. */
+export function homeClearCommand(heard: string): boolean {
+    const said = compact(heard);
+    return CLEAR_HOME_WORDS.test(said) && !NOT_CLEAR_HOME_WORDS.test(said);
 }
 
 /** "카메라 인식을 켤까요?"에 대한 대답. "네", "켜 줘" 는 켬, "아니요", "꺼 줘" 는 끔 */
