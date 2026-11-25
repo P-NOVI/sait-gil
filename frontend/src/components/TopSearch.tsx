@@ -42,6 +42,9 @@ import {
 } from '../lib/voiceSearch';
 import Icon from './Icon';
 
+const resultCount = (count: number) => `검색 결과 ${count}개`;
+const NO_TYPED_PLACES_TEXT = '검색 결과가 없습니다. 다른 이름으로 찾아보세요.';
+
 type TopSearchProps = {
     inputRef: RefObject<HTMLInputElement | null>;
     results: RequestState<Place[]>;
@@ -58,6 +61,11 @@ type TopSearchProps = {
     onSilence?: () => void;
     /** 말로 찾은 곳을 읽고 대답을 듣는다. */
     onAsk: (text: string) => Promise<Answer>;
+    /**
+     * 읽던 말이 끝나면 풀린다. 음성 안내를 켰을 때 포커스를 그 뒤로 미루는 데 쓴다.
+     * 말을 모두 멈추면(onSilence·화면 이동·안내 종료) 풀리지 않는다. 그때는 확인 화면을 떠나므로 포커스를 옮기지 않는다.
+     */
+    onIdle: () => Promise<void>;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
     /** 고른 곳으로 갈지(go), 집으로 저장할지(home). 묻는 말과 대답 버튼이 달라진다. */
@@ -113,6 +121,7 @@ export default function TopSearch({
     onAnnounce,
     onSilence,
     onAsk,
+    onIdle,
     voice,
     purpose = 'go',
     onUseHere,
@@ -143,16 +152,32 @@ export default function TopSearch({
 
     useEffect(() => {
         asked.current = confirming;
+        // 음성 안내를 켜면 앱이 읽거나 듣는 동안 포커스를 옮기지 않는다.
+        // 옮기면 화면낭독기가 버튼 이름을 읽어 앱 말을 끊거나 마이크에 들어간다. 확인 버튼은 ask 가 듣기를 마친 뒤 옮긴다.
         if (confirming) {
-            confirmButton.current?.focus();
+            if (!voice) {
+                confirmButton.current?.focus();
+            }
             return;
         }
         if (restoreFocus.current) {
             restoreFocus.current = false;
-            const first = resultList.current?.querySelector('button');
-            (first ?? inputRef.current)?.focus();
+            const input = inputRef.current;
+            const restore = () => {
+                // 기다리는 사이 다시 묻기 시작했거나 화면을 떠났으면 옮기지 않는다.
+                if (asked.current || !input?.isConnected) {
+                    return;
+                }
+                const first = resultList.current?.querySelector('button');
+                (first ?? input).focus();
+            };
+            if (voice) {
+                void onIdle().then(restore);
+            } else {
+                restore();
+            }
         }
-    }, [confirming, inputRef]);
+    }, [confirming, inputRef, voice, onIdle]);
 
     useEffect(
         () => () => {
@@ -213,8 +238,11 @@ export default function TopSearch({
             return;
         }
         if (reply) {
+            // 대답에 따라 고르거나, 다음 결과를 다시 묻거나, 목록으로 돌아가 거기서 포커스를 옮긴다.
             answer(reply, about);
-        } else if (listened(heard)) {
+            return;
+        }
+        if (listened(heard)) {
             // 무엇으로 들었는지 화면에 남겨, 인식이 틀렸는지 말이 안 들어갔는지 알 수 있게 한다.
             setNotice(
                 heard.status === 'heard'
@@ -222,6 +250,13 @@ export default function TopSearch({
                     : '아무 말도 듣지 못했습니다.',
             );
             onAnnounce(NOT_HEARD_TEXT);
+        }
+        // 못 알아들었거나 들을 수 없었으면, 읽던 말이 끝난 뒤 확인 버튼으로 포커스를 보내 버튼으로 고르게 한다.
+        if (voice) {
+            await onIdle();
+            if (asked.current === about) {
+                confirmButton.current?.focus();
+            }
         }
     };
 
@@ -244,7 +279,18 @@ export default function TopSearch({
         setNotice(null);
         const typed = query.trim();
         if (typed) {
-            void onFindNear().then((near) => onSearch(typed, near));
+            // 음성 안내를 켜면 아래 상태 줄을 화면낭독기가 읽지 않으므로 결과 개수를 앱이 읽는다.
+            void onFindNear()
+                .then((near) => onSearch(typed, near))
+                .then((found) => {
+                    if (found && voice) {
+                        onAnnounce(
+                            found.length > 0
+                                ? resultCount(found.length)
+                                : NO_TYPED_PLACES_TEXT,
+                        );
+                    }
+                });
         }
     };
 
@@ -453,29 +499,34 @@ export default function TopSearch({
                     onChange={(event) => setQuery(event.target.value)}
                 />
             </form>
-            <p className="visually-hidden" role="status">
+            {/* 음성 안내를 켜면 화면낭독기가 앱 질문과 겹쳐 읽지 않게 끈다. 결과 개수는 앱이 읽는다. */}
+            <p className="visually-hidden" role={voice ? undefined : 'status'}>
                 {listening
                     ? '목적지를 말하세요.'
                     : results.status === 'loading'
                       ? '검색 중입니다.'
                       : results.status === 'success'
-                        ? `검색 결과 ${results.data.length}개`
+                        ? resultCount(results.data.length)
                         : ''}
             </p>
             {listenFailed && (
-                <p className="message message--error" role="alert">
+                <p
+                    className="message message--error"
+                    role={voice ? undefined : 'alert'}
+                >
                     {LISTEN_FAILED_TEXT}
                 </p>
             )}
             {results.status === 'error' && (
-                <p className="message message--error" role="alert">
+                <p
+                    className="message message--error"
+                    role={voice ? undefined : 'alert'}
+                >
                     {results.message}
                 </p>
             )}
             {results.status === 'success' && places.length === 0 && (
-                <p className="message">
-                    검색 결과가 없습니다. 다른 이름으로 찾아보세요.
-                </p>
+                <p className="message">{NO_TYPED_PLACES_TEXT}</p>
             )}
             <div aria-live={voice ? 'off' : 'polite'}>
                 {notice && <p className="message">{notice}</p>}

@@ -108,12 +108,18 @@ export default function NavigationPanel({
                 </p>
             )}
             {guidance.error && guidance.step && (
-                <p className="message message--error" role="alert">
+                <p
+                    className="message message--error"
+                    role={voice ? undefined : 'alert'}
+                >
                     {guidance.error}
                 </p>
             )}
             {routeError && (
-                <p className="message message--error" role="alert">
+                <p
+                    className="message message--error"
+                    role={voice ? undefined : 'alert'}
+                >
                     {routeError}
                 </p>
             )}
@@ -173,7 +179,10 @@ export default function NavigationPanel({
                 </p>
             )}
             {whereAmI.status === 'error' && (
-                <p className="message message--error" role="alert">
+                <p
+                    className="message message--error"
+                    role={voice ? undefined : 'alert'}
+                >
                     {whereAmI.message}
                 </p>
             )}
