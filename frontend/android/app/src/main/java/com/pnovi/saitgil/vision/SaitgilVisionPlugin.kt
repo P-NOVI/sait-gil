@@ -30,6 +30,9 @@ import com.pnovi.saitgil.BuildConfig
 class SaitgilVisionPlugin : Plugin() {
     private var running = false
     private var camera: CameraSession? = null
+    // 관리자 빌드에서 화면이 preview 로 켜면 띄우는 카메라 화면·인식 박스. 메인 스레드에서 다룬다.
+    @Volatile
+    private var preview: AdminPreview? = null
 
     // 카메라 판정이 붙으면 모드별 인식과 알림 기준에 쓴다.
     private var mode = VisionMode.CROWD
@@ -115,6 +118,10 @@ class SaitgilVisionPlugin : Plugin() {
 
     // CameraX 는 메인 스레드에서 다룬다.
     private fun startCamera(call: PluginCall) = activity.runOnUiThread {
+        // 카메라를 처음 묶을 때 미리보기도 함께 묶어야 해서 첫 start 의 값으로 정한다.
+        if (camera == null && call.getBoolean("preview") == true && preview == null) {
+            preview = AdminPreview(activity) { camera?.upsideDown == true }
+        }
         val session = camera
             ?: CameraSession(
                 context,
@@ -128,11 +135,13 @@ class SaitgilVisionPlugin : Plugin() {
                     LiteRtDetector.load(context, detectorConfig, asset, captureDir) { nearCrosswalk }
                 },
                 ::onDetections,
+                preview?.view,
             ).also { camera = it }
         session.setHighRes(nearCrosswalk)
         session.start(
             onStarted = {
                 running = true
+                preview?.show()
                 call.resolve()
             },
             onFailed = { error ->
@@ -149,6 +158,7 @@ class SaitgilVisionPlugin : Plugin() {
         walkSpeedMps = null
         walkSpeedAtMs = 0L
         camera?.stop()
+        activity.runOnUiThread { preview?.hide() }
         call.resolve()
     }
 
@@ -192,6 +202,8 @@ class SaitgilVisionPlugin : Plugin() {
         mainHandler.removeCallbacks(lowerResolution)
         camera?.close()
         camera = null
+        preview?.remove()
+        preview = null
         super.handleOnDestroy()
     }
 
@@ -202,6 +214,7 @@ class SaitgilVisionPlugin : Plugin() {
     @Synchronized
     private fun onDetections(detected: DetectionFrame) {
         if (!running) return
+        preview?.draw(detected)
         val frame = detected.copy(walkSpeedMps = currentWalkSpeedMps(), nearCrosswalk = nearCrosswalk)
         val crowd = analyzer.analyze(frame)
         val objects = objectAnalyzer.analyze(frame)

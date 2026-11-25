@@ -2,6 +2,7 @@
 // 사람 거리·밀집도·빈 방향 같은 추론 결과만 이 어댑터로 넘긴다(영상은 기기 밖으로 보내지 않는다).
 // 웹에서는 개발용 mock 을 켰을 때만 결과를 보낸다. 화면은 VisionPanel 이 쓴다.
 
+import { ADMIN_MODE } from '../lib/adminMode';
 import { type PluginListenerHandle, registerPlugin } from '@capacitor/core';
 
 import { inPermissionOrder } from './permissionQueue';
@@ -92,7 +93,8 @@ export function visionFailure(error: unknown): VisionFailure {
 
 /** Kotlin 플러그인 SaitgilVision 의 화면 쪽 모양. alert 는 정면 접근(danger)·옆 진입(side_entry)·장애물(obstacle)만 받는다. */
 type SaitgilVisionPlugin = {
-    start(): Promise<void>;
+    /** preview 면 카메라 화면과 인식 박스를 화면 가득 띄운다(관리자 빌드). */
+    start(options: { preview: boolean }): Promise<void>;
     stop(): Promise<void>;
     /** Capacitor 기본 메서드. 카메라를 켜지 않고 권한만 묻는다. */
     requestPermissions(): Promise<{ camera: string }>;
@@ -321,7 +323,9 @@ export async function startVision(
         Promise.all(listeners.map((listener) => listener.remove()));
     try {
         await inOrder(async () => {
-            await inPermissionOrder(() => vision.start());
+            await inPermissionOrder(() =>
+                vision.start({ preview: ADMIN_MODE }),
+            );
             owner = session;
         });
     } catch (error) {

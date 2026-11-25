@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import HomeScreen from './components/HomeScreen';
+import MapView from './components/MapView';
 import NavigationPanel from './components/NavigationPanel';
 import OnboardingScreen from './components/OnboardingScreen';
 import RoutePanel from './components/RoutePanel';
@@ -19,6 +20,7 @@ import { useRequest } from './hooks/useRequest';
 import { useSavedPlaces } from './hooks/useSavedPlaces';
 import { useVision } from './hooks/useVision';
 import { CROWD_ALERT_FROM } from './lib/accessibility';
+import { ADMIN_MODE } from './lib/adminMode';
 import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
 import { REROUTE_FAILED_KEY } from './lib/guidance';
@@ -33,9 +35,9 @@ import {
     fetchRoutes,
     type PlannedRoute,
     type RouteRequest,
+    routeLogText,
     routesAnnouncement,
     routeTitle,
-    routeLogText,
     sameKindRoute,
 } from './lib/routeApi';
 import {
@@ -187,6 +189,8 @@ export default function App() {
 
     // 출발은 항상 내 위치. 앱을 열면 바로 찾는다.
     const [myLocation, setMyLocation] = useState<LocationFix | null>(null);
+    // 관리자 빌드 지도에 핀을 꽂을, 말로 찾아 확인하고 있는 곳
+    const [preview, setPreview] = useState<Place | null>(null);
     const [locating, setLocating] = useState(true);
     const [locationError, setLocationError] = useState<string | null>(null);
 
@@ -393,11 +397,12 @@ export default function App() {
         offered.current = null;
         guidanceRun.current += 1;
         setGuided(route);
+        logRoute('안내 시작', route);
         whereAmI.reset();
         const started = `${routeTitle(route)}로 안내를 시작합니다.`;
-        if (canAskByVoice()) {
+        // 관리자 빌드는 시연 때 인식 화면을 바로 보이려고 묻지 않고 카메라를 켠다.
+        if (canAskByVoice() && !ADMIN_MODE) {
             // 켜짐 여부는 저장하지 않고 안내마다 묻는다. 끄려는 사람에게 권한 창·실패 안내가
-        logRoute('안내 시작', route);
             // 뜨지 않도록 대답을 듣기 전에는 카메라를 켜지 않는다.
             vision.setEnabled(false);
             void askVision(started);
@@ -542,12 +547,12 @@ export default function App() {
             if (result && next) {
                 setChosen(result.indexOf(next));
                 setGuided(next);
+                logRoute('다시 찾은 경로로 안내', next);
                 announce(
                     `경로를 다시 찾았습니다. ${routeTitle(next)}로 안내합니다.`,
                     'route',
                 );
             }
-                logRoute('다시 찾은 경로로 안내', next);
         },
         [guided, destination, routes, announce],
     );
@@ -944,6 +949,7 @@ export default function App() {
                     onSearch={(query, near) => places.run(query, near)}
                     onListen={listenOnce}
                     onPick={screen === 'set-home' ? saveHome : pickPlace}
+                    onPreview={setPreview}
                     onAnnounce={(text) => announce(text)}
                     onSilence={silence}
                     onAsk={ask}
@@ -1011,6 +1017,26 @@ export default function App() {
                 onHome={() => goTo('home')}
                 status={screenStatus()}
             >
+                {ADMIN_MODE && screen === 'search' && (
+                    <MapView
+                        paths={[]}
+                        chosen={0}
+                        goal={preview?.position ?? null}
+                        preview={preview?.position ?? null}
+                        myLocation={myLocation}
+                        follow={null}
+                    />
+                )}
+                {ADMIN_MODE && screen === 'route' && (
+                    <MapView
+                        paths={found.map((route) => route.coordinates)}
+                        chosen={chosen}
+                        goal={destination?.position ?? null}
+                        myLocation={myLocation}
+                        follow={null}
+                        onPathClick={setChosen}
+                    />
+                )}
                 {body}
             </Screen>
         );
