@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import BottomSheet from './components/BottomSheet';
-import MapView from './components/MapView';
 import MenuBar, { type Tab } from './components/MenuBar';
 import MyLocationControl from './components/MyLocationControl';
 import NavigationPanel from './components/NavigationPanel';
@@ -19,7 +18,7 @@ import { useVision } from './hooks/useVision';
 import { CROWD_ALERT_FROM } from './lib/accessibility';
 import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
-import { REROUTE_FAILED_KEY, shownFix } from './lib/guidance';
+import { REROUTE_FAILED_KEY } from './lib/guidance';
 import {
     findAddress,
     type Place,
@@ -121,8 +120,6 @@ export default function App() {
     const [locationError, setLocationError] = useState<string | null>(null);
 
     const [destination, setDestination] = useState<Place | null>(null);
-    // 말로 찾은 결과 중 확인하고 있는 곳. 지도에 핀을 꽂고 그리로 옮긴다.
-    const [preview, setPreview] = useState<Place | null>(null);
     const [chosen, setChosen] = useState(0);
     // 말로 대답이 왔을 때 쓸 지금 고른 경로와 묻고 있는 경로 목록.
     // 목록이 바뀌었거나 안내를 시작했으면 늦게 온 대답은 버린다.
@@ -562,19 +559,10 @@ export default function App() {
         }
     }, [cameraBlocked, settings.voice]);
     const rerouting = routes.state.status === 'loading';
-    // 안내 중 지도에 그릴 내 위치. 이탈이 확정되기 전에는 경로 선 위에 붙인다.
-    // 새 객체를 매번 만들면 지도가 마커를 다시 그리므로 위치가 바뀔 때만 만든다.
-    const guidedFix = useMemo(
-        () => guidance.fix && shownFix(guidance.fix, guidance.step, rerouting),
-        [guidance.fix, guidance.step, rerouting],
-    );
-    const shownLocation = guidedFix ?? myLocation;
-    const heading = useHeading(shownLocation?.course ?? null);
     // 안내 중 화면 아무 곳이나 두 번 탭하면 말하기 버튼처럼 한 번 듣는다.
     useDoubleTap(navigating && canAskByVoice(), () => void listenCommand());
 
     const pickPlace = (place: Place) => {
-        setPreview(null);
         setDestination(place);
         setTab('route');
         setSheetOpen(true);
@@ -612,11 +600,6 @@ export default function App() {
             announce(text);
         }
     };
-
-    const paths = useMemo(
-        () => (guided ? [guided.coordinates] : found.map((r) => r.coordinates)),
-        [guided, found],
-    );
 
     const sheet =
         tab === 'route' ? (
@@ -666,16 +649,6 @@ export default function App() {
                     듣고 있어요. 말씀하세요.
                 </p>
             )}
-            <MapView
-                paths={paths}
-                chosen={guided ? 0 : chosen}
-                goal={preview?.position ?? destination?.position ?? null}
-                preview={preview?.position ?? null}
-                myLocation={shownLocation}
-                heading={heading}
-                follow={guidedFix?.position ?? null}
-                onPathClick={guided ? undefined : setChosen}
-            />
             {guided ? (
                 <NavigationPanel
                     route={guided}
@@ -714,7 +687,6 @@ export default function App() {
                             onSearch={(query, near) => places.run(query, near)}
                             onListen={listenOnce}
                             onPick={pickPlace}
-                            onPreview={setPreview}
                             onAnnounce={(text) => announce(text)}
                             onAsk={ask}
                             voice={settings.voice}

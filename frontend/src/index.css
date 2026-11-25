@@ -18,7 +18,6 @@
     --color-error-bg: #fdecea;
     --color-error-text: #8a1c12;
     --color-stop: #8a1c12;
-    --color-my-location: #1a73e8;
     /* 인파 4단계. 색만으로 구분하지 않게 칸마다 글자를 함께 쓴다. */
     --level-clear: #1b7f3b;
     --level-caution: #8a6100;
@@ -121,127 +120,15 @@ input::placeholder {
     /* 편 시트가 덮는 높이 */
     --sheet-height: 60%;
     --safe-top: calc(env(safe-area-inset-top) + 12px);
-    --map-bottom: var(--nav-height);
 
     position: relative;
     overflow: hidden;
-}
-
-.app[data-sheet='collapsed'] {
-    --map-bottom: calc(var(--nav-height) + var(--sheet-peek));
-}
-
-.app[data-sheet='open'] {
-    --map-bottom: var(--sheet-height);
 }
 
 /* 안내 중: 위는 지도, 아래는 안내 패널. 지도는 패널 위에서 끝나 내 위치가 가리지 않는다. */
 .app[data-navigating] {
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
-}
-
-/* ---------- 지도 ---------- */
-
-.map-view {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: var(--map-bottom);
-    left: 0;
-    background: var(--color-soft);
-}
-
-.app[data-navigating] .map-view {
-    position: relative;
-    inset: auto;
-}
-
-.map-view__canvas {
-    width: 100%;
-    height: 100%;
-}
-
-.map-view--empty {
-    display: grid;
-    place-items: center;
-    background:
-        repeating-linear-gradient(
-            0deg,
-            transparent 0 47px,
-            var(--color-border) 47px 48px
-        ),
-        repeating-linear-gradient(
-            90deg,
-            transparent 0 47px,
-            var(--color-border) 47px 48px
-        ),
-        var(--color-soft);
-}
-
-.map-view--empty p {
-    margin: 0 24px;
-    padding: 8px 14px;
-    border-radius: 10px;
-    font-size: 0.85rem;
-    color: var(--color-muted);
-    background: var(--color-surface);
-}
-
-.map-view__error {
-    position: absolute;
-    top: calc(var(--safe-top) + 4.4rem);
-    left: 12px;
-    right: 68px;
-    z-index: 10;
-    margin: 0;
-    padding: 8px 12px;
-    border-radius: 8px;
-    color: var(--color-error-text);
-    background: var(--color-error-bg);
-}
-
-/* 도착 핀: 아래 끝이 도착점을 가리킨다(MapView 의 GOAL_PIN). */
-.map-pin {
-    display: block;
-    overflow: visible;
-    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
-}
-
-.map-pin path {
-    fill: var(--color-primary-strong);
-    stroke: #ffffff;
-    stroke-width: 2.5;
-}
-
-.map-pin circle {
-    fill: #ffffff;
-}
-
-/* 56×56 칸 가운데에 점, 그 위에 바라보는 방향 부채꼴 */
-.my-location-marker {
-    position: relative;
-    width: 56px;
-    height: 56px;
-}
-
-.my-location-heading {
-    position: absolute;
-    inset: 0;
-    transform-origin: 50% 50%;
-}
-
-.my-location-dot {
-    position: absolute;
-    top: 18px;
-    left: 18px;
-    box-sizing: border-box;
-    width: 20px;
-    height: 20px;
-    border: 3px solid #ffffff;
-    border-radius: 50%;
-    background: var(--color-my-location);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 /* ---------- 검색창 ---------- */
