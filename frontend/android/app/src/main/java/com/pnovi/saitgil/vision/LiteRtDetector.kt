@@ -63,6 +63,9 @@ class LiteRtDetector private constructor(
     private var inferMsSum = 0L
     private var decodeMsSum = 0L
 
+    // 같은 구간의 가림·흔들림 판정 값(#170). "화면 품질" 로 찾는다. 기준값(DetectorConfig)을 실기기에서 맞출 때 본다.
+    private val qualityWindow = QualityWindow()
+
     // 앞 프레임 분석을 시작한 시각과 프레임 사이 시간 합. 카메라를 기다린 시간까지 들어가 실제 fps 가 된다.
     private var lastStartedMs = 0L
     private var intervalMsSum = 0L
@@ -93,12 +96,16 @@ class LiteRtDetector private constructor(
             placement.postScale(letterbox.scale, letterbox.scale)
             placement.postTranslate(letterbox.padX, letterbox.padY)
             fillInput(bitmap)
+            // 신호등 칸 추론이 pixels 를 덮어쓰기 전에, 여백을 뺀 영상 영역으로 가림·흔들림을 잰다
+            val stats = measureFrame(letterbox)
+            val unreliable = stats != null && isUnreliable(stats, config)
             val prepared = SystemClock.elapsedRealtime()
             runModel()
             val inferred = SystemClock.elapsedRealtime()
             val detections = decodeDetections(outputValues, candidates, config)
             // 찍은 시각을 쓴다. 정면 접근 속도를 잴 때 추론이 밀려도 프레임 사이 시간이 맞게 한다.
             val frame = toDetectionFrame(detections, letterbox, image.imageInfo.timestamp / NANOS_PER_MS)
+                .copy(unreliable = unreliable)
             val decoded = SystemClock.elapsedRealtime()
             val crop = if (farSignals()) signalCrop(letterbox.imageWidth, letterbox.imageHeight, config) else null
             val cropBoxes = crop?.let { searchSignals(image, bitmap, rotation, it, letterbox) }
@@ -109,6 +116,7 @@ class LiteRtDetector private constructor(
                 FrameTimes(prepared - started, inferred - prepared, decoded - inferred, intervalMs, cropMs),
                 detections,
                 cropBoxes,
+                stats?.let { it to unreliable },
             )
             return if (crop != null && cropBoxes != null) withCropSignals(frame, cropBoxes, crop, config) else frame
         } finally {
@@ -174,6 +182,17 @@ class LiteRtDetector private constructor(
         output.asFloatBuffer().get(outputValues)
     }
 
+    /** fillInput 직후 pixels 에서 영상이 놓인 영역(레터박스 여백 제외)의 밝기·선명도. 영역이 비면 null */
+    private fun measureFrame(letterbox: Letterbox): FrameStats? = frameStats(
+        pixels,
+        size,
+        left = letterbox.padX.toInt(),
+        top = letterbox.padY.toInt(),
+        right = (size - letterbox.padX).toInt(),
+        bottom = (size - letterbox.padY).toInt(),
+        step = config.qualitySampleStep,
+    )
+
     /** placement 로 프레임을 정사각형 입력에 그리고, 채널 우선(NCHW) 0~1 값으로 채운다. 프레임이 덮지 않는 곳은 여백 회색이다 */
     private fun fillInput(frame: Bitmap) {
         canvas.drawColor(padColor)
@@ -207,12 +226,18 @@ class LiteRtDetector private constructor(
      * 모델 비교(#128)를 위해 모델 이름·기기·배터리 온도를 같은 줄에 남긴다. "추론 측정" 으로 찾는다.
      * 횡단보도 근처에서 위쪽 가운데를 잘라 한 번 더 추론했으면 그 시간과 찾은 신호등을 따로 남긴다(#134). "신호등 칸" 으로 찾는다.
      */
-    private fun logWindow(times: FrameTimes, detections: List<RawDetection>, cropBoxes: List<ObjectBox>?) {
+    private fun logWindow(
+        times: FrameTimes,
+        detections: List<RawDetection>,
+        cropBoxes: List<ObjectBox>?,
+        quality: Pair<FrameStats, Boolean>?,
+    ) {
         if (warmupLeft > 0) {
             warmupLeft -= 1
             return
         }
         timedFrames += 1
+        quality?.let { (stats, unreliable) -> qualityWindow.add(stats, unreliable) }
         prepareMsSum += times.prepareMs
         inferMsSum += times.inferMs
         decodeMsSum += times.decodeMs
@@ -242,6 +267,8 @@ class LiteRtDetector private constructor(
                 "배터리 $battery (${timedFrames}장)",
         )
         Log.d(TAG, "탐지 합계 (${timedFrames}장): ${foundText(foundCounts, foundBest)}")
+        qualityWindow.text()?.let { Log.d(TAG, "화면 품질 $it") }
+        qualityWindow.reset()
         if (croppedFrames > 0) {
             Log.d(
                 TAG,
@@ -262,6 +289,44 @@ class LiteRtDetector private constructor(
         cropFoundCounts.fill(0)
         cropFoundBest.fill(0f)
         cropRawBest.fill(0f)
+    }
+
+    /** 구간 동안 프레임 밝기·밝기 편차·선명도의 평균·최소·최대와 못 믿을 프레임 수. 숫자 통계만 남기고 영상은 남기지 않는다 */
+    private class QualityWindow {
+        private var frames = 0
+        private var unreliableFrames = 0
+        private val sums = DoubleArray(METRICS)
+        private val mins = DoubleArray(METRICS) { Double.MAX_VALUE }
+        private val maxs = DoubleArray(METRICS) { -Double.MAX_VALUE }
+
+        fun add(stats: FrameStats, unreliable: Boolean) {
+            frames += 1
+            if (unreliable) unreliableFrames += 1
+            doubleArrayOf(stats.meanLuma, stats.lumaStd, stats.sharpness).forEachIndexed { index, value ->
+                sums[index] += value
+                mins[index] = minOf(mins[index], value)
+                maxs[index] = maxOf(maxs[index], value)
+            }
+        }
+
+        fun text(): String? {
+            if (frames == 0) return null
+            fun metric(name: String, index: Int) =
+                "$name ${"%.1f".format(sums[index] / frames)}(${"%.1f".format(mins[index])}~${"%.1f".format(maxs[index])})"
+            return "${metric("밝기", 0)}, ${metric("편차", 1)}, ${metric("선명도", 2)}, 못 믿음 ${unreliableFrames}/${frames}장"
+        }
+
+        fun reset() {
+            frames = 0
+            unreliableFrames = 0
+            sums.fill(0.0)
+            mins.fill(Double.MAX_VALUE)
+            maxs.fill(-Double.MAX_VALUE)
+        }
+
+        private companion object {
+            const val METRICS = 3
+        }
     }
 
     /** 클래스별 박스 수·최고 점수를 로그 한 줄로. 하나도 없으면 "없음" */

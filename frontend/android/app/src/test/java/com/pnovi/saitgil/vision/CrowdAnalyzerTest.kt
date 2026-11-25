@@ -216,6 +216,45 @@ class CrowdAnalyzerTest {
         assertNull(result.alert)
     }
 
+    private fun blindFrame(timeMs: Long, vararg boxes: PersonBox) =
+        DetectionFrame(timeMs, boxes.toList(), widthPx, heightPx, unreliable = true)
+
+    @Test
+    fun emptyUnreliableViewBecomesUnknownAfterConfirmTime() {
+        val analyzer = CrowdAnalyzer(config)
+
+        val early = analyzer.analyze(blindFrame(0))
+        val justBefore = analyzer.analyze(blindFrame(config.unreliableConfirmMs - 1))
+        val confirmed = analyzer.analyze(blindFrame(config.unreliableConfirmMs))
+
+        assertEquals(CrowdLevel.CLEAR, early.frame.level)
+        assertEquals(CrowdLevel.CLEAR, justBefore.frame.level)
+        assertEquals(CrowdLevel.UNKNOWN, confirmed.frame.level)
+        assertTrue(confirmed.frame.freeDirections.isEmpty())
+        assertNull(confirmed.alert)
+    }
+
+    @Test
+    fun reliableFrameRestartsUnreliableCount() {
+        val analyzer = CrowdAnalyzer(config)
+        analyzer.analyze(blindFrame(0))
+        analyzer.analyze(frame(500))
+
+        val result = analyzer.analyze(blindFrame(config.unreliableConfirmMs))
+
+        assertEquals(CrowdLevel.CLEAR, result.frame.level)
+    }
+
+    @Test
+    fun unreliableViewWithPeopleIsJudgedAsUsual() {
+        val analyzer = CrowdAnalyzer(config)
+        analyzer.analyze(blindFrame(0, person(0, 3.0)))
+
+        val result = analyzer.analyze(blindFrame(config.unreliableConfirmMs, person(0, 3.0)))
+
+        assertEquals(CrowdLevel.CAUTION, result.frame.level)
+    }
+
     @Test
     fun levelFollowsBlockedSectorCount() {
         val analyzer = CrowdAnalyzer(config)

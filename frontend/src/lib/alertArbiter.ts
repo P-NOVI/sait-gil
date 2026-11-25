@@ -12,6 +12,8 @@ export type Alert = {
     text: string;
     /** 이 알림만 따로 쓰는 쿨다운(ms). 없으면 단계별 쿨다운 */
     cooldownMs?: number;
+    /** false 면 말만 하고 진동하지 않는다. 없으면 단계별 진동 */
+    vibrate?: boolean;
 };
 
 const PRIORITY: Record<AlertLevel, number> = {

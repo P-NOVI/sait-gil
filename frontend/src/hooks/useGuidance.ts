@@ -46,7 +46,11 @@ export type Guidance = {
 type Options = {
     active: boolean;
     route: GuidedRoute | null;
-    announce: (text: string, level?: AlertLevel) => void;
+    announce: (
+        text: string,
+        level?: AlertLevel,
+        options?: { vibrate?: boolean },
+    ) => void;
     /** level 알림이 읽던 말을 끊지 못해 기다려야 하는지 */
     busyFor: (level: AlertLevel) => boolean;
     /** 읽던 말이 끝나면 풀린다. */
@@ -128,7 +132,9 @@ export function useGuidance({
                 return;
             }
             spokenAt.current.set(alert.key, now);
-            current.announce(alert.text, alert.level);
+            current.announce(alert.text, alert.level, {
+                vibrate: alert.vibrate,
+            });
         };
         tell();
     }, []);
@@ -233,7 +239,9 @@ export function useGuidance({
                 if (alert) {
                     spokenAt.current.set(alert.key, now);
                     state = markAnnounced(state, alert);
-                    current.announce(alert.text, alert.level);
+                    current.announce(alert.text, alert.level, {
+                        vibrate: alert.vibrate,
+                    });
                 }
                 if (step.reroute) {
                     current.onReroute(fix.position);

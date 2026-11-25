@@ -43,6 +43,8 @@ data class DetectionFrame(
     val walkSpeedMps: Double? = null,
     /** 길안내 경로의 횡단보도 근처인지. 화면이 알려 준다. 신호를 기다리는지 볼 때 쓴다 */
     val nearCrosswalk: Boolean = false,
+    /** 영상이 가려지거나 흔들려 못 믿을 프레임인지. 박스가 0개여도 "사람 없음"이 아닐 수 있다(#170) */
+    val unreliable: Boolean = false,
 )
 
 /** 프레임 하나를 판단한 결과. alert 는 정면 접근이 있을 때만 있다. */
@@ -180,6 +182,9 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
     private val sideAlertedAtMs = mutableMapOf<Boolean, Long>()
     private var lastFrameMs: Long? = null
 
+    // 못 믿을 프레임이 이어지기 시작한 시각. 믿을 프레임이 오면 지운다
+    private var unreliableSinceMs: Long? = null
+
     fun analyze(frame: DetectionFrame): CrowdAnalysis {
         // 안내를 시작한 첫 프레임이나 프레임이 trackLostMs 넘게 끊긴 뒤 첫 프레임(그동안 추적이 모두 지워진다)에 보이는 사람은
         // 방금 들어온 것이 아니므로 옆 진입으로 보지 않는다.
@@ -221,7 +226,13 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
         // 넓은 순서는 지금 프레임을 따르고, 최근 프레임 내내 비어 있던 방향만 남긴다.
         val steadyFree = free.filter { direction -> recentFree.all { direction in it.second } }
 
+        unreliableSinceMs = if (frame.unreliable) unreliableSinceMs ?: frame.timeMs else null
+        // 박스가 있으면 카메라가 일부라도 보이는 것이므로 기존대로 판단한다. 박스가 없는데 못 믿을 화면이면 "비었다"고 말할 수 없다.
+        val blind = frame.boxes.isEmpty() &&
+            unreliableSinceMs?.let { frame.timeMs - it >= config.unreliableConfirmMs } == true
+
         val level = when {
+            blind -> CrowdLevel.UNKNOWN
             frontClipped -> CrowdLevel.DANGER
             nearestFront != null && nearestFront <= config.dangerDistanceM -> CrowdLevel.DANGER
             blocked.size >= config.crowdedBlockedSectors &&
@@ -244,7 +255,8 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
         // 혼잡 이상에서는 옆 칸에 늘 사람이 있고 서로 가려 같은 사람이 새 사람으로 잡히므로 옆 진입을 알리지 않는다. 혼잡 알림이 대신한다.
         val sideAllowed = !tracksRestarted && level != CrowdLevel.CROWDED && level != CrowdLevel.DANGER
         val alert = frontAlert ?: if (sideAllowed) sideEntryAlert(distances, frame.timeMs) else null
-        return CrowdAnalysis(CrowdFrame(level, nearest, free), alert)
+        // 판단 불가이면 비어 있는 방향도 모른다
+        return CrowdAnalysis(CrowdFrame(level, nearest, if (blind) emptyList() else free), alert)
     }
 
     /**
