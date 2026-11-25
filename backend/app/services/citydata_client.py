@@ -18,6 +18,9 @@ from app.services.sdot_client import KST
 SERVICE_NAME = "citydata_ppltn"
 PAYLOAD_KEY = f"SeoulRtd.{SERVICE_NAME}"
 OK_CODE = "INFO-000"
+# HTTP 200 본문으로 오는 서버 쪽 오류(ERROR-500 서버, ERROR-600 DB 연결).
+# 다시 시도해 볼 만하다.
+TRANSIENT_CODES = frozenset({"ERROR-500", "ERROR-600"})
 TIME_FORMAT = "%Y-%m-%d %H:%M"
 # 혼잡 단계 글자 → 1~4. 띄어쓰기는 빼고 비교한다.
 CONGESTION_LEVELS = {"여유": 1, "보통": 2, "약간붐빔": 3, "붐빔": 4}
@@ -62,6 +65,8 @@ async def fetch_area(http: httpx.AsyncClient, area_code: str) -> dict[str, Any]:
         raise CitydataTransientError(f"도시데이터 응답 실패: {reason}") from None
     except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
         raise CitydataError(f"도시데이터 응답 실패: {type(error).__name__}") from None
+    if code in TRANSIENT_CODES:
+        raise CitydataTransientError(f"도시데이터 오류 코드 {code}")
     if code != OK_CODE:
         raise CitydataError(f"도시데이터 오류 코드 {code}")
     if not items:
