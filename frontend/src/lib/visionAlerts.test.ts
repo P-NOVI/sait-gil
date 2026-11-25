@@ -270,6 +270,29 @@ describe('visionReader', () => {
         });
     });
 
+    it('판단 불가가 이어지는 동안은 같은 key 로, 정상으로 돌아온 뒤 다시 가려지면 새 key 로 넘긴다', () => {
+        const read = visionReader();
+        const unknownKey = (cue: ReturnType<typeof feed>) =>
+            cue?.kind === 'alert' ? cue.alert.key : undefined;
+
+        const first = feed(
+            times(VISION.confirmFrames, frame('unknown')),
+            'danger',
+            read,
+        );
+        const stillBlind = feed([frame('unknown')], 'danger', read);
+        feed(times(VISION.confirmFrames, frame('clear')), 'danger', read);
+        const second = feed(
+            times(VISION.confirmFrames, frame('unknown')),
+            'danger',
+            read,
+        );
+
+        expect(unknownKey(stillBlind)).toBe(unknownKey(first));
+        expect(unknownKey(second)).toBeDefined();
+        expect(unknownKey(second)).not.toBe(unknownKey(first));
+    });
+
     it('여유는 알리지 않는다', () => {
         expect(feed(times(VISION.confirmFrames, frame('clear')))).toBeNull();
     });

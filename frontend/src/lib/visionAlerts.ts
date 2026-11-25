@@ -276,6 +276,8 @@ export function visionReader(settings: VisionSettings = VISION): VisionReader {
     let dangerSince: number | null = null;
     // 서 있는 동안 앞에 사람이 있다고 이미 알렸는지. 사람이 사라지거나 다시 걸으면 지운다.
     let toldWaiting = false;
+    // 판단 불가가 이어진 횟수. 정상으로 돌아온 뒤 다시 가려지면 새 key 로 다시 읽는다.
+    let unknownEpisode = 0;
 
     // 서 있는 동안에는 앞에 사람이 서도 한 번만 알린다. 이어진 프레임이 모두 사람이 있는 단계여야 믿는다.
     const waitingCue = (
@@ -325,6 +327,13 @@ export function visionReader(settings: VisionSettings = VISION): VisionReader {
                 : undefined;
         const previous = lastSteady;
         lastSteady = steady ?? lastSteady;
+        if (
+            previous === 'unknown' &&
+            steady !== undefined &&
+            steady !== 'unknown'
+        ) {
+            unknownEpisode += 1;
+        }
 
         // 위험은 민감도와 상관없이 알린다.
         if (dangerSince !== null) {
@@ -344,10 +353,10 @@ export function visionReader(settings: VisionSettings = VISION): VisionReader {
         if (steady === undefined) {
             return null;
         }
-        // 판단 불가는 안내마다 한 번만 읽는다.
+        // 판단 불가는 이어지는 동안 한 번만 읽는다. 정상으로 돌아온 뒤 다시 가려지면 다시 읽는다.
         if (steady === 'unknown') {
             return alertCue({
-                key: VISION_KEYS.unknown,
+                key: `${VISION_KEYS.unknown}-${unknownEpisode}`,
                 level: 'crowd',
                 text: UNKNOWN_TEXT,
                 cooldownMs: Infinity,
