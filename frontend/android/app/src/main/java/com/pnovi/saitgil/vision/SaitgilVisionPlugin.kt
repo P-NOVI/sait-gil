@@ -132,7 +132,12 @@ class SaitgilVisionPlugin : Plugin() {
                 context,
                 activity,
                 LazyModelAnalyzer({ modelAsset }) { asset ->
-                    LiteRtDetector.load(context, detectorConfig, asset) { nearCrosswalk }
+                    // 디버그 빌드는 횡단보도 근처 신호등 칸 사진을 앱 폴더(Android/data/.../files/signal_captures)에 남긴다.
+                    val captureDir = if (BuildConfig.VISION_PREVIEW) context.getExternalFilesDir(SIGNAL_CAPTURE_DIR) else null
+                    if (BuildConfig.VISION_PREVIEW && captureDir == null) {
+                        Log.w(TAG, "앱 외부 저장소를 쓸 수 없어 신호등 칸 사진을 저장하지 않습니다")
+                    }
+                    LiteRtDetector.load(context, detectorConfig, asset, captureDir) { nearCrosswalk }
                 },
                 ::onDetections,
                 preview?.view,
@@ -291,6 +296,7 @@ class SaitgilVisionPlugin : Plugin() {
     companion object {
         const val CAMERA = "camera"
         private const val TAG = "SaitgilVision"
+        private const val SIGNAL_CAPTURE_DIR = "signal_captures"
         // 사용자가 카메라 권한 창에서 거부한 적이 있는지 적어 두는 저장소
         private const val PREFS = "saitgil_vision"
         private const val KEY_CAMERA_DENIED = "camera_denied"

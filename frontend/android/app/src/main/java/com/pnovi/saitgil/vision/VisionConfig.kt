@@ -277,6 +277,17 @@ data class DetectorConfig(
     val signalMergeOverlap: Double = 0.5,
     /** 자른 칸의 끝(영상 끝이 아닌 쪽)에서 이 거리(px) 안까지 닿은 신호등 박스는 칸에 걸려 잘린 것으로 본다 */
     val signalCropEdgePx: Int = 4,
+    /**
+     * 디버그 빌드에서 횡단보도 근처일 때 신호등 칸 사진을 이 간격(ms)마다 한 장 폰에 저장한다(SignalCaptureWriter).
+     * 밤에 신호등을 못 찾는 까닭(점수가 낮은지, 불빛이 번지는지)을 사진으로 보려고 둔다
+     */
+    val signalCaptureEveryMs: Long = 2_000,
+    /** 폰에 남길 신호등 칸 사진 수 상한. 넘으면 오래된 것부터 지운다(640×640 JPEG 한 장 약 50~150KB) */
+    val signalCaptureMaxFiles: Int = 300,
+    /** 신호등 칸 사진 JPEG 품질(0~100) */
+    val signalCaptureJpegQuality: Int = 85,
+    /** 신호등 칸 사진의 평균 밝기를 잴 때 이 픽셀 수마다 하나만 본다 */
+    val signalCaptureLumaStep: Int = 16,
 )
 
 /**

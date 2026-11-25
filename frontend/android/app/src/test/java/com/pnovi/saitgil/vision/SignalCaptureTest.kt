@@ -1,0 +1,95 @@
+package com.pnovi.saitgil.vision
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.util.TimeZone
+
+// 신호등 칸 사진의 밝기·이름과 점수 컷 전 최고 점수를 확인한다. Android 클래스는 쓰지 않는다.
+class SignalCaptureTest {
+    @get:Rule
+    val folder = TemporaryFolder()
+
+    private fun argb(red: Int, green: Int, blue: Int) = (0xFF shl 24) or (red shl 16) or (green shl 8) or blue
+
+    @Test
+    fun meanLumaWeighsChannelsLikeRec601() {
+        assertEquals(255.0, meanLuma(IntArray(4) { argb(255, 255, 255) }, step = 1), 1e-6)
+        assertEquals(0.299 * 255, meanLuma(IntArray(4) { argb(255, 0, 0) }, step = 1), 1e-6)
+    }
+
+    @Test
+    fun meanLumaLooksAtEveryStepPixel() {
+        // 0·2 번째만 보므로 흰 픽셀만 센다.
+        val pixels = intArrayOf(argb(255, 255, 255), argb(0, 0, 0), argb(255, 255, 255), argb(0, 0, 0))
+
+        assertEquals(255.0, meanLuma(pixels, step = 2), 1e-6)
+        assertEquals(0.0, meanLuma(IntArray(0), step = 2), 1e-6)
+    }
+
+    @Test
+    fun captureNameHasTimeBrightnessAndSignalScores() {
+        val utc = TimeZone.getTimeZone("UTC")
+        val scores = mapOf(DetectedClass.PED_SIGNAL_RED to 0.184f, DetectedClass.PED_SIGNAL_OTHER to 0.05f)
+
+        // 2026-11-25 10:30:12.345 UTC
+        val name = signalCaptureName(1_795_602_612_345L, 42.7, scores, utc)
+
+        assertEquals("20261125_103012_345_l042_red18_other05.jpg", name)
+        assertEquals("20261125_103012_345_l042_red00_other00.jpg", signalCaptureName(1_795_602_612_345L, 42.7, emptyMap(), utc))
+    }
+
+    @Test
+    fun bestClassScoresLooksPastScoreCutAndWinningClass() {
+        val candidates = 3
+        val output = FloatArray(OUTPUT_CHANNELS * candidates)
+        fun score(kind: DetectedClass, candidate: Int, value: Float) {
+            output[(OUTPUT_CHANNELS - DetectedClass.entries.size + kind.ordinal) * candidates + candidate] = value
+        }
+        // 후보 0 은 사람이 이기지만 빨간불 점수도 0.2 다. 후보 2 는 컷(0.25) 아래 빨간불 0.1 이다.
+        score(DetectedClass.PERSON, 0, 0.9f)
+        score(DetectedClass.PED_SIGNAL_RED, 0, 0.2f)
+        score(DetectedClass.PED_SIGNAL_RED, 2, 0.1f)
+        score(DetectedClass.PED_SIGNAL_OTHER, 1, 0.07f)
+
+        val best = bestClassScores(output, candidates, SIGNAL_CLASSES)
+
+        assertEquals(0.2f, best.getValue(DetectedClass.PED_SIGNAL_RED), 1e-6f)
+        assertEquals(0.07f, best.getValue(DetectedClass.PED_SIGNAL_OTHER), 1e-6f)
+    }
+
+    @Test
+    fun claimAllowsOneCapturePerInterval() {
+        val writer = SignalCaptureWriter(folder.root, DetectorConfig(signalCaptureEveryMs = 2_000))
+
+        assertTrue(writer.claim(10_000))
+        assertFalse(writer.claim(11_999))
+        assertTrue(writer.claim(12_000))
+        // 차례가 아니었던 시도는 간격을 늦추지 않는다
+        assertFalse(writer.claim(13_000))
+        assertTrue(writer.claim(14_000))
+        writer.close()
+    }
+
+    @Test
+    fun pruneKeepsNewestCapturesOnly() {
+        val writer = SignalCaptureWriter(folder.root, DetectorConfig(signalCaptureMaxFiles = 2))
+        val names = listOf(
+            "20261125_193012_345_l042_red18_other05.jpg",
+            "20261125_193010_000_l040_red10_other05.jpg",
+            "20261125_193014_000_l041_red20_other05.jpg",
+        )
+        names.forEach { folder.newFile(it) }
+        // jpg 가 아닌 파일은 세지도 지우지도 않는다
+        folder.newFile("note.txt")
+
+        writer.prune()
+
+        val left = folder.root.list()!!.sorted()
+        assertEquals(listOf(names[0], names[2], "note.txt"), left)
+        writer.close()
+    }
+}
