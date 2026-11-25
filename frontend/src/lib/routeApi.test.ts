@@ -8,6 +8,7 @@ import {
     minutes,
     type PlannedRoute,
     remainingMinutes,
+    routeLogText,
     routesAnnouncement,
     routeSummary,
     sameKindRoute,
@@ -188,5 +189,21 @@ describe('remainingMinutes', () => {
 
     it('거리가 0 인 경로는 1분으로 본다', () => {
         expect(remainingMinutes(route({ distance_m: 0 }), 0)).toBe(1);
+    });
+});
+
+describe('routeLogText', () => {
+    it('기준·거리·시간·혼잡·붐비는 구간·경사를 좌표 없이 한 줄로 쓴다', () => {
+        const text = routeLogText(
+            route({
+                kinds: ['recommended', 'less_crowded'],
+                congestion_score: 0.4567,
+                events: [crowd],
+            }),
+        );
+
+        expect(text).toBe(
+            'recommended+less_crowded 거리 1234m 시간 900s 혼잡 0.457 붐비는 구간 1 경사 0.000',
+        );
     });
 });

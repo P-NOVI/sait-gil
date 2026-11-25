@@ -35,6 +35,7 @@ import {
     type RouteRequest,
     routesAnnouncement,
     routeTitle,
+    routeLogText,
     sameKindRoute,
 } from './lib/routeApi';
 import {
@@ -127,8 +128,17 @@ const requestPlaces = (
     near: LngLat | null,
 ) => searchPlaces(query, near, signal);
 
-const requestRoutes = (signal: AbortSignal, request: RouteRequest) =>
-    fetchRoutes(request, signal);
+// 시연 때 경로별 혼잡 점수를 비교하려고 실기기 로그(Capacitor/Console)에 남긴다.
+const logRoute = (label: string, route: PlannedRoute) =>
+    console.info(`[route] ${label} ${routeLogText(route)}`);
+
+const requestRoutes = async (signal: AbortSignal, request: RouteRequest) => {
+    const found = await fetchRoutes(request, signal);
+    found.forEach((route, index) =>
+        logRoute(`후보 ${index + 1}/${found.length}`, route),
+    );
+    return found;
+};
 
 const requestAddress = async (signal: AbortSignal, position: LngLat) => {
     const address = await findAddress(position, signal);
@@ -387,6 +397,7 @@ export default function App() {
         const started = `${routeTitle(route)}로 안내를 시작합니다.`;
         if (canAskByVoice()) {
             // 켜짐 여부는 저장하지 않고 안내마다 묻는다. 끄려는 사람에게 권한 창·실패 안내가
+        logRoute('안내 시작', route);
             // 뜨지 않도록 대답을 듣기 전에는 카메라를 켜지 않는다.
             vision.setEnabled(false);
             void askVision(started);
@@ -536,6 +547,7 @@ export default function App() {
                     'route',
                 );
             }
+                logRoute('다시 찾은 경로로 안내', next);
         },
         [guided, destination, routes, announce],
     );

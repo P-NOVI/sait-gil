@@ -101,6 +101,24 @@ export function mergedKindsNote(route: PlannedRoute): string | null {
     return `${title}${subjectParticle(title)} ${words.join(' ')}.`;
 }
 
+// 로그에 남길 점수 소수 자리
+const LOG_SCORE_DIGITS = 3;
+
+/**
+ * 실기기 로그에 남길 경로 한 줄. 시연 때 경로별 혼잡 점수를 비교하려고 쓴다.
+ * 위치가 드러나지 않게 좌표·장소 이름은 넣지 않는다.
+ */
+export function routeLogText(route: PlannedRoute): string {
+    return [
+        route.kinds.join('+'),
+        `거리 ${Math.round(route.distance_m)}m`,
+        `시간 ${Math.round(route.time_s)}s`,
+        `혼잡 ${route.congestion_score.toFixed(LOG_SCORE_DIGITS)}`,
+        `붐비는 구간 ${crowdedSpots(route)}`,
+        `경사 ${route.slope.score.toFixed(LOG_SCORE_DIGITS)}`,
+    ].join(' ');
+}
+
 /** 경로 위 붐비는 구간 수 */
 export function crowdedSpots(route: PlannedRoute): number {
     return route.events.filter((event) => event.kind === 'crowd').length;
