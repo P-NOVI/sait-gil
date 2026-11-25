@@ -18,6 +18,9 @@ from app.services.sdot_client import KST
 SERVICE_NAME = "citydata_ppltn"
 PAYLOAD_KEY = f"SeoulRtd.{SERVICE_NAME}"
 OK_CODE = "INFO-000"
+# HTTP 200 본문으로 오는 서버 쪽 오류(ERROR-500 서버, ERROR-600 DB 연결).
+# 다시 시도해 볼 만하다.
+TRANSIENT_CODES = frozenset({"ERROR-500", "ERROR-600"})
 TIME_FORMAT = "%Y-%m-%d %H:%M"
 # 혼잡 단계 글자 → 1~4. 띄어쓰기는 빼고 비교한다.
 CONGESTION_LEVELS = {"여유": 1, "보통": 2, "약간붐빔": 3, "붐빔": 4}
@@ -25,6 +28,10 @@ CONGESTION_LEVELS = {"여유": 1, "보통": 2, "약간붐빔": 3, "붐빔": 4}
 
 class CitydataError(Exception):
     """도시데이터 호출이나 응답 해석이 실패했을 때. 메시지에 키가 들어가지 않는다."""
+
+
+class CitydataTransientError(CitydataError):
+    """연결 끊김·시간 초과·5xx 처럼 다시 시도하면 될 수 있는 실패."""
 
 
 def citydata_http(
@@ -47,8 +54,19 @@ async def fetch_area(http: httpx.AsyncClient, area_code: str) -> dict[str, Any]:
         result = body["RESULT"]
         code = result.get("RESULT.CODE", result.get("CODE"))
         items = body.get(PAYLOAD_KEY, [])
+    except httpx.HTTPStatusError as error:
+        status = error.response.status_code
+        message = f"도시데이터 응답 실패: HTTP {status}"
+        if status >= 500:
+            raise CitydataTransientError(message) from None
+        raise CitydataError(message) from None
+    except httpx.TransportError as error:
+        reason = type(error).__name__
+        raise CitydataTransientError(f"도시데이터 응답 실패: {reason}") from None
     except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
         raise CitydataError(f"도시데이터 응답 실패: {type(error).__name__}") from None
+    if code in TRANSIENT_CODES:
+        raise CitydataTransientError(f"도시데이터 오류 코드 {code}")
     if code != OK_CODE:
         raise CitydataError(f"도시데이터 오류 코드 {code}")
     if not items:

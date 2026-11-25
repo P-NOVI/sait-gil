@@ -66,7 +66,8 @@ def collect_citydata(engine: Engine, settings: Settings, now: datetime) -> bool:
             return False
     print(f"도시데이터: {len(area_codes) - len(failed)}/{len(area_codes)}곳 받음")
     if failed:
-        print(f"받지 못한 장소: {', '.join(failed)}")
+        for code, reason in failed.items():
+            print(f"받지 못한 장소: {code} ({reason})")
         return False
     return True
 

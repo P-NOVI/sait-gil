@@ -50,9 +50,106 @@ async def test_fetch_population_rows_keeps_going_after_failure() -> None:
         httpx.MockTransport(handler),
     )
 
-    assert failed == ["POI002"]
+    assert failed == {"POI002": "도시데이터 응답 실패: HTTP 503"}
     assert {row["area_code"] for row in rows} == {"POI001", "POI003"}
     assert len(rows) == 6
+
+
+@pytest.mark.anyio
+async def test_fetch_population_rows_retries_transient_failure() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        code = request.url.path.rsplit("/", 1)[-1]
+        calls.append(code)
+        if calls.count(code) == 1:
+            return httpx.Response(503)
+        return httpx.Response(200, json=ok_body(area_item(code=code)))
+
+    rows, failed = await fetch_population_rows(
+        settings(), ["POI001"], COLLECTED, httpx.MockTransport(handler)
+    )
+
+    assert failed == {}
+    assert len(rows) == 3
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("code", "retried"),
+    [
+        ("ERROR-500", True),
+        ("ERROR-600", True),
+        ("INFO-100", False),
+        ("INFO-200", False),
+    ],
+)
+async def test_fetch_population_rows_retries_only_server_result_codes(
+    code: str, retried: bool
+) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json={"RESULT": {"RESULT.CODE": code}})
+
+    _, failed = await fetch_population_rows(
+        settings(), ["POI001"], COLLECTED, httpx.MockTransport(handler)
+    )
+
+    assert failed == {"POI001": f"도시데이터 오류 코드 {code}"}
+    assert len(calls) == (settings().citydata_retries + 1 if retried else 1)
+
+
+@pytest.mark.anyio
+async def test_fetch_population_rows_recovers_from_server_result_code() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if len(calls) == 1:
+            return httpx.Response(200, json={"RESULT": {"RESULT.CODE": "ERROR-500"}})
+        return httpx.Response(200, json=ok_body(area_item(code="POI001")))
+
+    rows, failed = await fetch_population_rows(
+        settings(), ["POI001"], COLLECTED, httpx.MockTransport(handler)
+    )
+
+    assert failed == {}
+    assert len(rows) == 3
+
+
+@pytest.mark.anyio
+async def test_fetch_population_rows_gives_up_after_retries() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(503)
+
+    rows, failed = await fetch_population_rows(
+        settings(), ["POI001"], COLLECTED, httpx.MockTransport(handler)
+    )
+
+    assert rows == []
+    assert list(failed) == ["POI001"]
+    assert len(calls) == settings().citydata_retries + 1
+
+
+@pytest.mark.anyio
+async def test_fetch_population_rows_does_not_retry_client_error() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(401)
+
+    _, failed = await fetch_population_rows(
+        settings(), ["POI001"], COLLECTED, httpx.MockTransport(handler)
+    )
+
+    assert failed == {"POI001": "도시데이터 응답 실패: HTTP 401"}
+    assert len(calls) == 1
 
 
 def test_store_population_skips_same_snapshot(session: Session) -> None:

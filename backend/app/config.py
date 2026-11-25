@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     citydata_timeout_s: float = 10.0
     # 수집기가 동시에 보내는 요청 수
     citydata_concurrency: int = 5
+    # 한 장소 요청이 실패했을 때 다시 시도하는 횟수(첫 시도 제외)
+    citydata_retries: int = 2
     # 기상청 API허브 단기예보(날씨 수집). 키가 요청 주소의 쿼리에 들어가므로
     # 주소를 로그에 남기지 않는다.
     kma_api_key: str = ""
