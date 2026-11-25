@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import BottomSheet from './components/BottomSheet';
-import MapView from './components/MapView';
-import MenuBar, { type Tab } from './components/MenuBar';
-import MyLocationControl from './components/MyLocationControl';
+import HomeScreen from './components/HomeScreen';
 import NavigationPanel from './components/NavigationPanel';
+import OnboardingScreen from './components/OnboardingScreen';
 import RoutePanel from './components/RoutePanel';
+import Screen, { type ScreenName } from './components/Screen';
 import SettingsPanel from './components/SettingsPanel';
 import TopSearch from './components/TopSearch';
 import VisionPanel from './components/VisionPanel';
@@ -15,11 +14,12 @@ import { useGuidance } from './hooks/useGuidance';
 import { useDoubleTap } from './hooks/useDoubleTap';
 import { useHeading } from './hooks/useHeading';
 import { useRequest } from './hooks/useRequest';
+import { useSavedPlaces } from './hooks/useSavedPlaces';
 import { useVision } from './hooks/useVision';
 import { CROWD_ALERT_FROM } from './lib/accessibility';
 import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
-import { REROUTE_FAILED_KEY, shownFix } from './lib/guidance';
+import { REROUTE_FAILED_KEY } from './lib/guidance';
 import {
     findAddress,
     type Place,
@@ -39,6 +39,15 @@ import {
     facingCrossing,
     nearCrosswalk,
 } from './lib/routeEvents';
+import { samePlace } from './lib/savedPlaces';
+import {
+    DESTINATION_PROMPT,
+    ONBOARDED_KEY,
+    type OnboardingLine,
+    PERMISSION_STEPS,
+    runOnboarding,
+    WELCOME_TEXT,
+} from './lib/onboarding';
 import { nearForSearch } from './lib/searchNear';
 import {
     cameraAnswer,
@@ -67,20 +76,36 @@ import {
     canOpenAppSettings,
     getCurrentPosition,
     isLocationDenied,
+    isNativeApp,
     listenOnce,
     type LocationFix,
+    micPermitted,
     openAppSettings,
+    readStored,
+    requestAppPermission,
     requestCompassPermission,
     visionAvailable,
     watchCameraHeading,
+    writeStored,
 } from './platform';
 
-const SHEET_TITLES: Record<Exclude<Tab, 'search'>, string> = {
-    route: '길찾기',
-    settings: '접근성 설정',
+const SCREEN_TITLES: Record<ScreenName, string> = {
+    home: '사잇길',
+    search: '목적지 찾기',
+    route: '경로 선택',
+    settings: '설정',
+    'set-home': '집 등록',
 };
 
+/** 지금 화면과 뒤로 버튼이 돌아갈 화면들. 처음 화면으로 가면 비운다. */
+type Navigation = { screen: ScreenName; history: ScreenName[] };
+
 const TRY_TEXT = '음성과 진동으로 이렇게 알려 드립니다.';
+const HOME_SAVED_TEXT =
+    '집으로 저장했습니다. 첫 화면의 집 버튼을 누르면 바로 안내합니다.';
+const HOME_CLEARED_TEXT = '집을 지웠습니다.';
+const DOUBLE_TAP_HINT = '화면을 두 번 누르면 말하기';
+const SETTINGS_NOTE = '설정은 이 기기에만 저장합니다.';
 const NO_ADDRESS_TEXT = '이곳의 주소를 찾지 못했습니다.';
 const NO_LOCATION_TEXT = '내 위치를 아직 찾지 못했습니다.';
 
@@ -102,6 +127,10 @@ const requestAddress = async (signal: AbortSignal, position: LngLat) => {
     return address ? spokenAddress(address) : NO_ADDRESS_TEXT;
 };
 
+/** 앱에서 처음 열었으면 시작 안내를 한다. 웹은 권한을 브라우저가 그때그때 묻는다. */
+const needsOnboarding = () =>
+    isNativeApp() && readStored(ONBOARDED_KEY) !== true;
+
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
@@ -111,9 +140,27 @@ export default function App() {
     const { announce, ask, buzz, silence, listening, busyFor, whenIdle } =
         useAnnouncer(settings);
 
-    const [tab, setTab] = useState<Tab>('search');
-    const [sheetOpen, setSheetOpen] = useState(true);
+    const [{ screen }, setNavigation] = useState<Navigation>({
+        screen: 'home',
+        history: [],
+    });
     const searchInput = useRef<HTMLInputElement>(null);
+    const saved = useSavedPlaces();
+    // 묻고 듣는 사이 사용자가 다른 화면으로 갔는지 본다.
+    const screenNow = useRef(screen);
+    useEffect(() => {
+        screenNow.current = screen;
+    });
+
+    // 앱을 처음 열 때 시작 안내 화면에 보이는 문장. 안내를 마치면 null
+    const [onboardingLine, setOnboardingLine] = useState<OnboardingLine | null>(
+        () => (needsOnboarding() ? { text: WELCOME_TEXT, step: null } : null),
+    );
+    // 앱을 열 때 첫 화면에서 들은 목적지. 목적지 찾기 화면이 한 번 찾고 지운다.
+    const [spokenDestination, setSpokenDestination] = useState<string | null>(
+        null,
+    );
+    const spokenUsed = useCallback(() => setSpokenDestination(null), []);
 
     // 출발은 항상 내 위치. 앱을 열면 바로 찾는다.
     const [myLocation, setMyLocation] = useState<LocationFix | null>(null);
@@ -121,8 +168,6 @@ export default function App() {
     const [locationError, setLocationError] = useState<string | null>(null);
 
     const [destination, setDestination] = useState<Place | null>(null);
-    // 말로 찾은 결과 중 확인하고 있는 곳. 지도에 핀을 꽂고 그리로 옮긴다.
-    const [preview, setPreview] = useState<Place | null>(null);
     const [chosen, setChosen] = useState(0);
     // 말로 대답이 왔을 때 쓸 지금 고른 경로와 묻고 있는 경로 목록.
     // 목록이 바뀌었거나 안내를 시작했으면 늦게 온 대답은 버린다.
@@ -134,6 +179,14 @@ export default function App() {
     // 안내 중인 경로. 경로를 다시 찾으면 바뀐다.
     const [guided, setGuided] = useState<PlannedRoute | null>(null);
     const navigating = guided !== null;
+
+    // 안내를 시작하면 목적지를 최근 간 곳에 남긴다.
+    const { addRecent } = saved;
+    useEffect(() => {
+        if (navigating && destination) {
+            addRecent(destination);
+        }
+    }, [navigating, destination, addRecent]);
 
     // 안내 중 알림을 알림 중재로 보낸다. useGuidance 가 아래에서 만들어져 ref 로 잇는다.
     const reportAlert = useRef<(alert: Alert) => void>(() => undefined);
@@ -251,13 +304,6 @@ export default function App() {
         tellLocationErrorNow.current = tellLocationError;
     });
 
-    useEffect(() => {
-        // 음성 안내를 껐으면 announce 는 읽지 않고, 화면낭독기가 화면의 오류를 읽는다.
-        void settle(getCurrentPosition(), (error) =>
-            tellLocationErrorNow.current(error),
-        );
-    }, [settle]);
-
     const locate = () => {
         // iOS 는 버튼을 누른 순간에만 나침반 권한을 물을 수 있다.
         void requestCompassPermission();
@@ -297,6 +343,7 @@ export default function App() {
         offered.current = null;
         guidanceRun.current += 1;
         setGuided(route);
+        whereAmI.reset();
         const started = `${routeTitle(route)}로 안내를 시작합니다.`;
         if (canAskByVoice()) {
             // 켜짐 여부는 저장하지 않고 안내마다 묻는다. 끄려는 사람에게 권한 창·실패 안내가
@@ -403,11 +450,12 @@ export default function App() {
         }
     };
 
-    const findRoutes = async (goal: Place) => {
+    /** 내 위치에서 goal 까지 경로를 찾는다. 내 위치를 못 찾았거나 실패하면 null */
+    const routesTo = async (goal: Place) => {
         offered.current = null;
         const start = myLocation?.position ?? (await locate())?.position;
         if (!start) {
-            return;
+            return null;
         }
         const result = await routes.run({
             start,
@@ -416,6 +464,14 @@ export default function App() {
         });
         if (result) {
             setChosen(0);
+        }
+        return result;
+    };
+
+    /** 경로를 찾아 읽고 고르게 한다. */
+    const findRoutes = async (goal: Place) => {
+        const result = await routesTo(goal);
+        if (result) {
             void offerRoutes(result);
         }
     };
@@ -562,36 +618,70 @@ export default function App() {
         }
     }, [cameraBlocked, settings.voice]);
     const rerouting = routes.state.status === 'loading';
-    // 안내 중 지도에 그릴 내 위치. 이탈이 확정되기 전에는 경로 선 위에 붙인다.
-    // 새 객체를 매번 만들면 지도가 마커를 다시 그리므로 위치가 바뀔 때만 만든다.
-    const guidedFix = useMemo(
-        () => guidance.fix && shownFix(guidance.fix, guidance.step, rerouting),
-        [guidance.fix, guidance.step, rerouting],
-    );
-    const shownLocation = guidedFix ?? myLocation;
-    const heading = useHeading(shownLocation?.course ?? null);
     // 안내 중 화면 아무 곳이나 두 번 탭하면 말하기 버튼처럼 한 번 듣는다.
     useDoubleTap(navigating && canAskByVoice(), () => void listenCommand());
 
-    const pickPlace = (place: Place) => {
-        setPreview(null);
-        setDestination(place);
-        setTab('route');
-        setSheetOpen(true);
-        void findRoutes(place);
-    };
-
-    const selectTab = (next: Tab) => {
-        // 검색 탭을 한 번 더 누르면 검색창으로 간다.
-        if (next === 'search' && tab === 'search') {
-            searchInput.current?.focus();
-        }
-        // 길찾기 탭을 떠나면 경로를 묻던 것은 그만 듣는다.
+    const goTo = (next: ScreenName) => {
+        // 경로 선택 화면을 떠나면 경로를 묻던 것은 그만 듣는다.
         if (next !== 'route') {
             offered.current = null;
         }
-        setTab(next);
-        setSheetOpen(true);
+        // 집 등록과 목적지 찾기는 검색 결과를 함께 쓰지 않는다.
+        if (next === 'set-home' || screen === 'set-home') {
+            places.reset();
+        }
+        setNavigation((now) =>
+            now.screen === next
+                ? now
+                : {
+                      screen: next,
+                      history:
+                          next === 'home' ? [] : [...now.history, now.screen],
+                  },
+        );
+    };
+
+    const goBack = () => {
+        offered.current = null;
+        if (screen === 'set-home') {
+            places.reset();
+        }
+        setNavigation((now) => ({
+            screen: now.history.at(-1) ?? 'home',
+            history: now.history.slice(0, -1),
+        }));
+    };
+
+    const pickPlace = (place: Place) => {
+        setDestination(place);
+        goTo('route');
+        void findRoutes(place);
+    };
+
+    /** 집 버튼: 집까지 경로를 찾아 고르지 않고 추천 경로로 바로 안내한다. */
+    const goHome = async (home: Place) => {
+        setDestination(home);
+        goTo('route');
+        const result = await routesTo(home);
+        if (!result) {
+            return;
+        }
+        if (result.length === 0) {
+            announce(routesAnnouncement(result));
+            return;
+        }
+        startGuidance(result[0]);
+    };
+
+    const saveHome = (place: Place) => {
+        saved.setHome(place);
+        announce(HOME_SAVED_TEXT);
+        goBack();
+    };
+
+    const clearHome = () => {
+        saved.setHome(null);
+        announce(HOME_CLEARED_TEXT);
     };
 
     const stopGuidance = () => {
@@ -613,130 +703,238 @@ export default function App() {
         }
     };
 
-    const paths = useMemo(
-        () => (guided ? [guided.coordinates] : found.map((r) => r.coordinates)),
-        [guided, found],
-    );
+    /** 내 위치를 새로 찾고 그곳의 주소를 읽는다. */
+    const tellHere = async () => {
+        const fix = await locate();
+        if (!fix) {
+            return;
+        }
+        const text = await whereAmI.run(fix.position);
+        if (text) {
+            announce(text);
+        }
+    };
 
-    const sheet =
-        tab === 'route' ? (
-            <RoutePanel
-                myLocation={myLocation}
-                locating={locating}
-                locationError={locationError}
-                destination={destination}
-                routes={routes.state}
-                chosen={chosen}
-                onLocate={() => void locate()}
-                onFindRoutes={() => destination && void findRoutes(destination)}
-                onChoose={setChosen}
-                onSearchDestination={() => selectTab('search')}
-                onStart={() => {
-                    const route = found[chosen];
-                    if (route) {
-                        startGuidance(route);
+    /**
+     * 앱을 열 때. 처음 열면 시작 안내를 읽으며 위치·마이크·카메라·신체 활동 권한을 차례로 묻는다.
+     * 그다음 내 위치를 찾고, 음성 안내를 켰고 마이크를 쓸 수 있으면 첫 화면에서 어디로 갈지 묻는다.
+     * 알아들으면 목적지 찾기 화면에서 그 말로 찾는다.
+     */
+    const startUp = async () => {
+        let locationDenied = false;
+        if (needsOnboarding()) {
+            const say = async (line: OnboardingLine) => {
+                setOnboardingLine(line);
+                announce(line.text);
+                await whenIdle();
+            };
+            const denied = await runOnboarding(say, requestAppPermission);
+            setOnboardingLine(null);
+            writeStored(ONBOARDED_KEY, true);
+            locationDenied = denied.includes('location');
+        }
+        if (locationDenied) {
+            // 방금 거절한 위치 권한을 바로 다시 묻지 않는다. 내 위치 듣기로 다시 켤 수 있다.
+            setLocating(false);
+            setLocationError(LOCATION_PERMISSION_LATER_TEXT);
+        } else {
+            // 음성 안내를 껐으면 announce 는 읽지 않고, 화면낭독기가 화면의 오류를 읽는다.
+            void settle(getCurrentPosition(), (error) =>
+                tellLocationErrorNow.current(error),
+            );
+        }
+        if (!isNativeApp() || !settings.voice || !(await micPermitted())) {
+            return;
+        }
+        const heard = await ask(DESTINATION_PROMPT);
+        // 묻는 사이 다른 화면으로 갔으면 대답을 버린다.
+        if (heard.status === 'heard' && screenNow.current === 'home') {
+            setSpokenDestination(heard.text);
+            goTo('search');
+        }
+    };
+    const startUpNow = useRef(startUp);
+    useEffect(() => {
+        startUpNow.current = startUp;
+    });
+    // 개발 모드에서 효과가 두 번 불려도 한 번만 시작한다.
+    const startedUp = useRef(false);
+    useEffect(() => {
+        if (!startedUp.current) {
+            startedUp.current = true;
+            void startUpNow.current();
+        }
+    }, []);
+
+    const myLocationText = locating
+        ? '내 위치 찾는 중'
+        : myLocation
+          ? `내 위치 · 오차 ${Math.round(myLocation.accuracy)}m`
+          : '내 위치를 찾지 못함';
+
+    /** 화면 맨 아래 상태 한 줄 */
+    const screenStatus = (): string => {
+        switch (screen) {
+            case 'home':
+                return myLocationText;
+            case 'search':
+            case 'set-home':
+                if (places.state.status === 'loading') {
+                    return '검색 중';
+                }
+                if (places.state.status === 'success') {
+                    return `검색 결과 ${places.state.data.length}곳`;
+                }
+                return screen === 'set-home'
+                    ? '고른 곳을 집으로 저장합니다'
+                    : '말하거나 입력해서 찾으세요';
+            case 'route':
+                return `출발: ${myLocationText}`;
+            case 'settings':
+                return SETTINGS_NOTE;
+        }
+    };
+
+    const chooseScreen = () => {
+        if (screen === 'home') {
+            const home = saved.home;
+            return (
+                <Screen title={SCREEN_TITLES.home} status={screenStatus()}>
+                    <HomeScreen
+                        home={home}
+                        recent={saved.recent.filter(
+                            (place) => !home || !samePlace(place, home),
+                        )}
+                        locating={locating}
+                        locationError={locationError}
+                        whereAmI={whereAmI.state}
+                        onSearch={() => goTo('search')}
+                        onPick={pickPlace}
+                        onGoHome={(home) => void goHome(home)}
+                        onSetHome={() => goTo('set-home')}
+                        onWhereAmI={() => void tellHere()}
+                        onSettings={() => goTo('settings')}
+                        voice={settings.voice}
+                    />
+                </Screen>
+            );
+        }
+        const body =
+            screen === 'search' || screen === 'set-home' ? (
+                <TopSearch
+                    // 목적지 찾기와 집 등록이 검색어·확인 중인 결과를 함께 쓰지 않게 따로 그린다.
+                    key={screen}
+                    inputRef={searchInput}
+                    results={places.state}
+                    onFindNear={findNear}
+                    onSearch={(query, near) => places.run(query, near)}
+                    onListen={listenOnce}
+                    onPick={screen === 'set-home' ? saveHome : pickPlace}
+                    onAnnounce={(text) => announce(text)}
+                    onAsk={ask}
+                    voice={settings.voice}
+                    purpose={screen === 'set-home' ? 'home' : 'go'}
+                    spoken={screen === 'search' ? spokenDestination : null}
+                    onSpokenUsed={spokenUsed}
+                />
+            ) : screen === 'route' ? (
+                <RoutePanel
+                    locating={locating}
+                    locationError={locationError}
+                    destination={destination}
+                    routes={routes.state}
+                    chosen={chosen}
+                    onLocate={() => void locate()}
+                    onFindRoutes={() =>
+                        destination && void findRoutes(destination)
                     }
-                }}
-            />
-        ) : (
-            <SettingsPanel
-                settings={settings}
-                onChange={updateSettings}
-                onTry={() => announce(TRY_TEXT, 'route')}
-            />
+                    onChoose={setChosen}
+                    onSearchDestination={() => goTo('search')}
+                    onStart={() => {
+                        const route = found[chosen];
+                        if (route) {
+                            startGuidance(route);
+                        }
+                    }}
+                />
+            ) : (
+                <SettingsPanel
+                    settings={settings}
+                    onChange={updateSettings}
+                    onTry={() => announce(TRY_TEXT, 'route')}
+                    home={saved.home}
+                    onSetHome={() => goTo('set-home')}
+                    onClearHome={clearHome}
+                />
+            );
+        return (
+            <Screen
+                title={SCREEN_TITLES[screen]}
+                onBack={goBack}
+                onHome={() => goTo('home')}
+                status={screenStatus()}
+            >
+                {body}
+            </Screen>
         );
+    };
 
     return (
-        <div
-            className="app"
-            data-tab={tab}
-            data-sheet={
-                navigating || tab === 'search'
-                    ? 'none'
-                    : sheetOpen
-                      ? 'open'
-                      : 'collapsed'
-            }
-            data-navigating={navigating || undefined}
-        >
-            <h1 className="visually-hidden">사잇길</h1>
+        <div className="app">
             {/* 화면낭독기가 읽으면 마이크에 들어가므로 화면에만 보인다. */}
             {listening && (
                 <p className="voice-listening" aria-hidden="true">
                     듣고 있어요. 말씀하세요.
                 </p>
             )}
-            <MapView
-                paths={paths}
-                chosen={guided ? 0 : chosen}
-                goal={preview?.position ?? destination?.position ?? null}
-                preview={preview?.position ?? null}
-                myLocation={shownLocation}
-                heading={heading}
-                follow={guidedFix?.position ?? null}
-                onPathClick={guided ? undefined : setChosen}
-            />
-            {guided ? (
-                <NavigationPanel
-                    route={guided}
-                    guidance={guidance}
-                    rerouting={rerouting}
-                    routeError={
-                        routes.state.status === 'error'
-                            ? keptRouteText(routes.state.message)
-                            : null
-                    }
-                    whereAmI={whereAmI.state}
-                    onRepeat={(text) => announce(text)}
-                    onWhereAmI={() => void tellWhereIAm()}
-                    onStop={stopGuidance}
-                    onSpeak={
-                        canAskByVoice() ? () => void listenCommand() : null
-                    }
+            {onboardingLine ? (
+                <OnboardingScreen
+                    line={onboardingLine}
+                    total={PERMISSION_STEPS.length}
                     voice={settings.voice}
-                    vision={
-                        <VisionPanel
-                            available={visionAvailable()}
-                            frame={vision.frame}
-                            enabled={vision.enabled}
-                            failure={vision.failure}
-                            onToggle={() => switchVision(!vision.enabled)}
-                        />
-                    }
                 />
-            ) : (
-                <>
-                    {tab === 'search' && (
-                        <TopSearch
-                            inputRef={searchInput}
-                            results={places.state}
-                            onFindNear={findNear}
-                            onSearch={(query, near) => places.run(query, near)}
-                            onListen={listenOnce}
-                            onPick={pickPlace}
-                            onPreview={setPreview}
-                            onAnnounce={(text) => announce(text)}
-                            onAsk={ask}
-                            voice={settings.voice}
-                        />
-                    )}
-                    <MyLocationControl
-                        locating={locating}
-                        error={tab === 'route' ? null : locationError}
-                        onLocate={() => void locate()}
+            ) : guided ? (
+                <Screen
+                    title="길안내"
+                    status={
+                        canAskByVoice()
+                            ? DOUBLE_TAP_HINT
+                            : `${routeTitle(guided)} 안내 중`
+                    }
+                >
+                    <NavigationPanel
+                        route={guided}
+                        destinationName={
+                            destination?.name ?? routeTitle(guided)
+                        }
+                        guidance={guidance}
+                        rerouting={rerouting}
+                        routeError={
+                            routes.state.status === 'error'
+                                ? keptRouteText(routes.state.message)
+                                : null
+                        }
+                        whereAmI={whereAmI.state}
+                        onRepeat={(text) => announce(text)}
+                        onWhereAmI={() => void tellWhereIAm()}
+                        onStop={stopGuidance}
+                        onSpeak={
+                            canAskByVoice() ? () => void listenCommand() : null
+                        }
                         voice={settings.voice}
+                        vision={
+                            <VisionPanel
+                                available={visionAvailable()}
+                                frame={vision.frame}
+                                enabled={vision.enabled}
+                                failure={vision.failure}
+                                onToggle={() => switchVision(!vision.enabled)}
+                            />
+                        }
                     />
-                    {tab !== 'search' && (
-                        <BottomSheet
-                            title={SHEET_TITLES[tab]}
-                            open={sheetOpen}
-                            onOpenChange={setSheetOpen}
-                        >
-                            {sheet}
-                        </BottomSheet>
-                    )}
-                    <MenuBar tab={tab} onSelect={selectTab} />
-                </>
+                </Screen>
+            ) : (
+                chooseScreen()
             )}
         </div>
     );

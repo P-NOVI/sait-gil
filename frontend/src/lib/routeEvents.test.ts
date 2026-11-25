@@ -11,6 +11,7 @@ import {
     nearCrosswalk,
     nearestCrosswalk,
     type RouteEvent,
+    upcomingEvents,
 } from './routeEvents';
 
 function event(
@@ -190,5 +191,21 @@ describe('facingCrossing', () => {
     it('카메라 방향이나 건너는 방향을 모르면 막지 않는다', () => {
         expect(facingCrossing(null, 90, settings)).toBe(true);
         expect(facingCrossing(0, null, settings)).toBe(true);
+    });
+});
+
+describe('upcomingEvents', () => {
+    const events = [
+        event('crosswalk', 110),
+        event('turn', 100, 'right'),
+        event('stairs', 300),
+    ];
+
+    it('지나지 않은 이벤트를 가까운 차례로 count 개까지', () => {
+        expect(upcomingEvents(events, 0, 2)).toEqual([events[1], events[0]]);
+    });
+
+    it('이미 지난 이벤트는 뺀다', () => {
+        expect(upcomingEvents(events, 105, 3)).toEqual([events[0], events[2]]);
     });
 });

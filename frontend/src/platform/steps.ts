@@ -10,6 +10,8 @@ import { isNativeApp } from './runtime';
 type SaitgilStepsPlugin = {
     /** 걸음 센서를 켠다. 권한이 없으면 묻고, 쓸 수 없으면 available 이 false 다. */
     start(): Promise<{ available: boolean }>;
+    /** 센서를 켜지 않고 권한만 묻는다. 권한이 필요 없는 기기(Android 9 이하)면 granted 가 true 다. */
+    prepare(): Promise<{ granted: boolean }>;
     stop(): Promise<void>;
     addListener(
         eventName: 'steps',
@@ -22,6 +24,21 @@ let plugin: SaitgilStepsPlugin | null = null;
 // 웹에서는 부르지 않으므로 처음 쓸 때 등록한다.
 const stepsPlugin = () =>
     (plugin ??= registerPlugin<SaitgilStepsPlugin>('SaitgilSteps'));
+
+/** 걸음 센서 권한(신체 활동)을 묻는다. 허용하면 true. 웹에서는 쓰지 않으므로 false. */
+export async function requestStepsPermission(): Promise<boolean> {
+    if (!isNativeApp()) {
+        return false;
+    }
+    try {
+        const { granted } = await inPermissionOrder(() =>
+            stepsPlugin().prepare(),
+        );
+        return granted;
+    } catch {
+        return false;
+    }
+}
 
 /**
  * 걸음 수가 바뀔 때마다 onSteps 로 알린다. 값은 구독을 시작한 뒤 걸은 누적 걸음 수다.

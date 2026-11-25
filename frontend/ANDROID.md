@@ -5,7 +5,7 @@
 `frontend/`에서 `.env.android.example`을 `.env.android`로 복사한다.
 `VITE_API_BASE_URL`에 배포된 HTTPS API 주소를 넣는다. 현재 주소는
 `https://sait-gil-api.onrender.com`이며 끝에 `/api`를 붙이지 않는다.
-지도도 쓸 경우 `VITE_TMAP_APP_KEY`를 넣는다. 이 파일은 커밋하지 않는다.
+이 파일은 커밋하지 않는다.
 
 ```bash
 npm ci

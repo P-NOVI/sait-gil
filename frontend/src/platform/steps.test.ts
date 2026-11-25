@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const native = vi.hoisted(() => ({ value: false }));
 const plugin = vi.hoisted(() => ({
     start: vi.fn(),
+    prepare: vi.fn(),
     stop: vi.fn(),
     addListener: vi.fn(),
 }));
@@ -13,7 +14,7 @@ vi.mock('@capacitor/core', () => ({
 }));
 
 import { inPermissionOrder } from './permissionQueue';
-import { watchSteps } from './steps';
+import { requestStepsPermission, watchSteps } from './steps';
 
 const remove = vi.fn();
 const listeners = new Map<string, (event: { steps: number }) => void>();
@@ -150,5 +151,29 @@ describe('inPermissionOrder', () => {
 
         await expect(failed).rejects.toThrow('no');
         await expect(next).resolves.toBe('ok');
+    });
+});
+
+describe('requestStepsPermission', () => {
+    it('센서를 켜지 않고 권한 결과만 돌려준다', async () => {
+        plugin.prepare.mockResolvedValue({ granted: true });
+
+        expect(await requestStepsPermission()).toBe(true);
+        expect(plugin.start).not.toHaveBeenCalled();
+    });
+
+    it('거절하거나 플러그인이 실패하면 false', async () => {
+        plugin.prepare.mockResolvedValueOnce({ granted: false });
+        expect(await requestStepsPermission()).toBe(false);
+
+        plugin.prepare.mockRejectedValueOnce(new Error('no plugin'));
+        expect(await requestStepsPermission()).toBe(false);
+    });
+
+    it('웹에서는 묻지 않는다', async () => {
+        native.value = false;
+
+        expect(await requestStepsPermission()).toBe(false);
+        expect(plugin.prepare).not.toHaveBeenCalled();
     });
 });

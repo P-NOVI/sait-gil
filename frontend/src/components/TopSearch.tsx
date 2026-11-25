@@ -19,6 +19,8 @@ import {
     placeAnswer,
 } from '../lib/voiceCommand';
 import {
+    GO_QUESTION,
+    HOME_QUESTION,
     LISTEN_FAILED_TEXT,
     NO_MORE_PLACES_TEXT,
     NO_PLACES_TEXT,
@@ -26,6 +28,7 @@ import {
     searchSpoken,
     spokenQueries,
 } from '../lib/voiceSearch';
+import Icon from './Icon';
 
 type TopSearchProps = {
     inputRef: RefObject<HTMLInputElement | null>;
@@ -37,21 +40,24 @@ type TopSearchProps = {
     /** 말로 목적지를 넣는다. 알아들은 말을 돌려주고, 못 알아들으면 null */
     onListen: () => Promise<string | null>;
     onPick: (place: Place) => void;
-    /** 말로 찾은 결과 중 확인하고 있는 곳. 확인 화면이 닫히면 null */
-    onPreview: (place: Place | null) => void;
     /** 말로 찾다가 생긴 안내를 음성으로 읽는다. */
     onAnnounce: (text: string) => void;
     /** 말로 찾은 곳을 읽고 대답을 듣는다. */
     onAsk: (text: string) => Promise<Answer>;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
+    /** 고른 곳으로 갈지(go), 집으로 저장할지(home). 묻는 말과 대답 버튼이 달라진다. */
+    purpose?: 'go' | 'home';
+    /** 앱을 열 때 첫 화면에서 들은 목적지. 주면 말로 찾은 것처럼 한 번 찾고 onSpokenUsed 를 부른다. */
+    spoken?: string | null;
+    onSpokenUsed?: () => void;
 };
 
 /** 말로 찾은 결과 중 지금 묻고 있는 것 */
 type Confirming = { places: Place[]; index: number };
 
 /**
- * 지도 위 검색창. 입력하거나 말한 목적지를 검색하고 결과에서 고른다.
+ * 목적지 검색 화면. 입력하거나 말한 목적지를 검색하고 결과에서 고른다.
  * 결과 수는 화면낭독기가 읽도록 status 로 알린다.
  * 말로 찾으면 첫 결과부터 하나씩 읽고 이곳으로 갈지 묻는다. 말로도 버튼으로도 대답한다.
  */
@@ -62,10 +68,12 @@ export default function TopSearch({
     onSearch,
     onListen,
     onPick,
-    onPreview,
     onAnnounce,
     onAsk,
     voice,
+    purpose = 'go',
+    spoken = null,
+    onSpokenUsed,
 }: TopSearchProps) {
     const [query, setQuery] = useState('');
     const [listening, setListening] = useState(false);
@@ -78,6 +86,7 @@ export default function TopSearch({
     // 확인 화면을 닫을 때 포커스를 결과 목록(없으면 검색창)으로 옮긴다.
     const restoreFocus = useRef(false);
     const questionId = useId();
+    const question = purpose === 'home' ? HOME_QUESTION : GO_QUESTION;
     // 말로 한 대답이 도착했을 때 아직 그 질문을 보고 있는지 확인한다. 버튼으로 먼저 답했으면 버린다.
     const asked = useRef<Confirming | null>(null);
 
@@ -130,7 +139,7 @@ export default function TopSearch({
         const about = { places, index };
         setConfirming(about);
         let heard = await onAsk(
-            placeQuestion(places[index], index, places.length),
+            placeQuestion(places[index], index, places.length, question),
         );
         let reply = heard.status === 'heard' ? placeAnswer(heard.text) : null;
         if (
@@ -183,6 +192,11 @@ export default function TopSearch({
             onAnnounce(LISTEN_FAILED_TEXT);
             return;
         }
+        await searchHeard(heard);
+    };
+
+    /** 말로 들은 목적지로 찾고, 찾으면 첫 결과부터 하나씩 묻는다. */
+    const searchHeard = async (heard: string) => {
         const queries = spokenQueries(heard);
         setQuery(queries[0]);
         // 검색어 후보가 여럿이어도 기준 위치는 한 번만 묻는다.
@@ -209,14 +223,19 @@ export default function TopSearch({
         void ask(found.places, 0);
     };
 
-    const current = confirming ? confirming.places[confirming.index] : null;
-
+    // 첫 화면에서 들은 목적지는 한 번만 찾는다. 다시 그려져도 또 찾지 않게 부모에게 알린다.
+    const searchHeardNow = useRef(searchHeard);
     useEffect(() => {
-        onPreview(current);
-    }, [current, onPreview]);
+        searchHeardNow.current = searchHeard;
+    });
+    useEffect(() => {
+        if (spoken) {
+            onSpokenUsed?.();
+            void searchHeardNow.current(spoken);
+        }
+    }, [spoken, onSpokenUsed]);
 
-    // 검색창이 닫히면(다른 탭) 지도에서 확인하던 곳도 지운다.
-    useEffect(() => () => onPreview(null), [onPreview]);
+    const current = confirming ? confirming.places[confirming.index] : null;
 
     const places =
         results.status === 'success'
@@ -226,38 +245,34 @@ export default function TopSearch({
               : [];
 
     return (
-        <div className="top-search">
-            <form className="top-search__field" role="search" onSubmit={submit}>
-                <svg
-                    className="top-search__icon"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                >
-                    <path d="M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM15.2 15.2 20 20" />
-                </svg>
+        <div className="search">
+            <button
+                type="button"
+                className="button button--primary search__voice"
+                disabled={listening}
+                onClick={() => void listen()}
+            >
+                <Icon name="mic" />
+                {listening ? '듣는 중' : '말로 찾기'}
+            </button>
+            <form className="search__field" role="search" onSubmit={submit}>
+                <Icon name="search" />
                 <label className="visually-hidden" htmlFor="destination">
-                    목적지 검색
+                    {purpose === 'home' ? '집 검색' : '목적지 검색'}
                 </label>
                 <input
                     ref={inputRef}
                     id="destination"
                     type="search"
                     enterKeyHint="search"
-                    placeholder="어디로 갈까요?"
+                    placeholder={
+                        purpose === 'home'
+                            ? '집 주소나 건물 이름'
+                            : '어디로 갈까요?'
+                    }
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                 />
-                <button
-                    type="button"
-                    className="top-search__voice"
-                    aria-label={listening ? '듣는 중' : '말로 목적지 찾기'}
-                    disabled={listening}
-                    onClick={() => void listen()}
-                >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
-                    </svg>
-                </button>
             </form>
             <p className="visually-hidden" role="status">
                 {listening
@@ -269,78 +284,84 @@ export default function TopSearch({
                         : ''}
             </p>
             {listenFailed && (
-                <p className="top-search__message" role="alert">
+                <p className="message message--error" role="alert">
                     {LISTEN_FAILED_TEXT}
                 </p>
             )}
             {results.status === 'error' && (
-                <p className="top-search__message" role="alert">
+                <p className="message message--error" role="alert">
                     {results.message}
                 </p>
             )}
             {results.status === 'success' && places.length === 0 && (
-                <p className="top-search__message">
+                <p className="message">
                     검색 결과가 없습니다. 다른 이름으로 찾아보세요.
                 </p>
             )}
             <div aria-live={voice ? 'off' : 'polite'}>
-                {notice && <p className="top-search__message">{notice}</p>}
+                {notice && <p className="message">{notice}</p>}
             </div>
             {confirming && current && (
-                <section
-                    className="top-search__confirm"
-                    aria-label="말로 찾은 목적지 확인"
-                >
-                    <p id={questionId} className="top-search__question">
+                <section className="confirm" aria-label="말로 찾은 목적지 확인">
+                    <p id={questionId} className="confirm__question">
                         {placeQuestion(
                             current,
                             confirming.index,
                             confirming.places.length,
+                            question,
                         )}
                     </p>
-                    <div className="top-search__answers">
+                    <div className="confirm__answers">
                         <button
                             ref={confirmButton}
                             type="button"
-                            className="top-search__yes"
+                            className="button button--primary"
                             aria-describedby={voice ? undefined : questionId}
                             onClick={() => pick(current)}
                         >
-                            여기로 갈게요
+                            {purpose === 'home'
+                                ? '집으로 할게요'
+                                : '여기로 갈게요'}
                         </button>
                         <button
                             type="button"
+                            className="button"
                             onClick={() => showNext(confirming)}
                         >
                             다음 결과
                         </button>
-                        <button type="button" onClick={closeConfirm}>
+                        <button
+                            type="button"
+                            className="button"
+                            onClick={closeConfirm}
+                        >
                             목록 보기
                         </button>
                     </div>
                 </section>
             )}
             {!confirming && places.length > 0 && (
-                <ul
-                    ref={resultList}
-                    className="top-search__list"
-                    aria-label="검색 결과"
-                >
+                <ul ref={resultList} className="list" aria-label="검색 결과">
                     {places.map((place) => (
                         <li key={`${place.name}-${place.position.join(',')}`}>
                             <button
                                 type="button"
-                                className="top-search__result"
+                                className="row"
                                 onClick={() => onPick(place)}
                             >
-                                <span className="top-search__name">
-                                    {place.name}
+                                <span className="row__main">
+                                    <span className="row__name">
+                                        {place.name}
+                                    </span>
+                                    <span className="row__detail">
+                                        {place.address}
+                                    </span>
                                 </span>
-                                <span className="top-search__detail">
-                                    {place.distance_m !== null &&
-                                        `${distanceLabel(place.distance_m)} · `}
-                                    {place.address}
-                                </span>
+                                {place.distance_m !== null && (
+                                    <span className="row__side">
+                                        {distanceLabel(place.distance_m)}
+                                    </span>
+                                )}
                             </button>
                         </li>
                     ))}

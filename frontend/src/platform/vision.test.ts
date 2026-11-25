@@ -4,6 +4,7 @@ const native = vi.hoisted(() => ({ value: false }));
 const plugin = vi.hoisted(() => ({
     start: vi.fn(),
     stop: vi.fn(),
+    requestPermissions: vi.fn(),
     setWalkSpeed: vi.fn(),
     setNearCrosswalk: vi.fn(),
     addListener: vi.fn(),
@@ -19,6 +20,7 @@ import { connectVision } from '../hooks/useVision';
 import { freeDirectionText, visionReader } from '../lib/visionAlerts';
 
 import {
+    requestCameraPermission,
     setVisionNearCrosswalk,
     setVisionWalkSpeed,
     startVision,
@@ -620,5 +622,26 @@ describe('setVisionNearCrosswalk', () => {
         plugin.setNearCrosswalk.mockRejectedValue(new Error('실패'));
         expect(() => setVisionNearCrosswalk(true)).not.toThrow();
         await flush();
+    });
+});
+
+describe('requestCameraPermission', () => {
+    it('카메라를 켜지 않고 권한 결과만 돌려준다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValueOnce({ camera: 'granted' });
+
+        expect(await requestCameraPermission()).toBe(true);
+        expect(plugin.start).not.toHaveBeenCalled();
+    });
+
+    it('거절하면 false, 웹에서는 묻지 않는다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValueOnce({ camera: 'denied' });
+        expect(await requestCameraPermission()).toBe(false);
+
+        native.value = false;
+        plugin.requestPermissions.mockClear();
+        expect(await requestCameraPermission()).toBe(false);
+        expect(plugin.requestPermissions).not.toHaveBeenCalled();
     });
 });

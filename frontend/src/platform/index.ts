@@ -9,7 +9,7 @@ export {
 } from './compass';
 export { vibrate } from './haptics';
 export { allowScreenOff, keepScreenOn } from './keepAwake';
-export { canListen, listenOnce, stopListening } from './listen';
+export { canListen, listenOnce, micPermitted, stopListening } from './listen';
 export {
     APPROXIMATE_TEXT,
     getCurrentPosition,
@@ -18,6 +18,7 @@ export {
     type LocationFix,
     watchLocation,
 } from './location';
+export { type AppPermission, requestAppPermission } from './permissions';
 export { isNativeApp, SPEECH_LANG } from './runtime';
 export { speak, stopSpeaking } from './speech';
 export { watchSteps } from './steps';
