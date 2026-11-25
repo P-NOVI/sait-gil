@@ -16,6 +16,10 @@ export type RouteAnswer =
 /** 집을 등록하지 않았을 때 "집으로 갈게"에 대한 안내 */
 export const HOME_REGISTER_PROMPT =
     '집 주소를 말하거나, 지금 위치라고 말하세요.';
+/** 집으로 할지 묻는 질문을 못 알아들었을 때 한 번 더 묻는 말 */
+export const HOME_ANSWER_HINT = '네 또는 아니요로 말하세요.';
+/** 아무 말도 듣지 못했을 때 한 번 더 묻는 말 */
+export const LISTEN_AGAIN_PROMPT = '다시 말씀하세요.';
 export const HOME_CLEAR_QUESTION = '등록한 집을 지울까요?';
 export const HOME_NONE_TEXT = '등록한 집이 없습니다.';
 export const HOME_KEPT_TEXT = '집을 그대로 두었습니다.';

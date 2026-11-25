@@ -13,6 +13,7 @@ import type { LngLat } from '../lib/geo';
 import type { Place } from '../lib/placeApi';
 import { distanceLabel } from '../lib/routeApi';
 import {
+    HOME_ANSWER_HINT,
     HOME_CLEAR_QUESTION,
     HOME_KEPT_TEXT,
     HOME_MISSING_TEXT,
@@ -23,6 +24,7 @@ import {
     homeCommand,
     type HomeSetupCommand,
     homeSetupCommand,
+    LISTEN_AGAIN_PROMPT,
     NOT_HEARD_TEXT,
     PLACE_ANSWER_HINT,
     type PlaceAnswer,
@@ -200,12 +202,11 @@ export default function TopSearch({
         );
         let heard = await onAsk(note ? `${note} ${asking}` : asking);
         let reply = heard.status === 'heard' ? placeAnswer(heard.text) : null;
-        if (
-            heard.status === 'heard' &&
-            reply === null &&
-            asked.current === about
-        ) {
-            heard = await onAsk(PLACE_ANSWER_HINT);
+        // 못 알아들었거나 아무 말도 없으면 바로 버튼을 누르라고 하지 않고 한 번 더 묻는다.
+        if (listened(heard) && reply === null && asked.current === about) {
+            heard = await onAsk(
+                purpose === 'home' ? HOME_ANSWER_HINT : PLACE_ANSWER_HINT,
+            );
             reply = heard.status === 'heard' ? placeAnswer(heard.text) : null;
         }
         if (asked.current !== about) {
@@ -297,11 +298,15 @@ export default function TopSearch({
 
     /** 집으로 등록할 곳을 말로 묻고 찾는다. */
     const registerHome = async () => {
-        const heard = await onAsk(
+        let heard = await onAsk(
             home
                 ? `지금 집은 ${home.name}입니다. ${HOME_REGISTER_PROMPT}`
                 : HOME_REGISTER_PROMPT,
         );
+        // 아무 말도 듣지 못했으면 바로 포기하지 않고 한 번 더 묻는다.
+        if (heard.status === 'silent') {
+            heard = await onAsk(LISTEN_AGAIN_PROMPT);
+        }
         if (heard.status === 'heard') {
             await searchHeard(heard.text);
         } else if (listened(heard)) {
