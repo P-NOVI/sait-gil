@@ -6,7 +6,10 @@ import OnboardingScreen from './components/OnboardingScreen';
 import RoutePanel from './components/RoutePanel';
 import Screen, { type ScreenName } from './components/Screen';
 import SettingsPanel from './components/SettingsPanel';
-import TopSearch from './components/TopSearch';
+import TopSearch, {
+    type HereFix,
+    type HomeSetup,
+} from './components/TopSearch';
 import VisionPanel from './components/VisionPanel';
 import { useAccessibility } from './hooks/useAccessibility';
 import { listened, useAnnouncer } from './hooks/useAnnouncer';
@@ -21,6 +24,7 @@ import type { Alert } from './lib/alertArbiter';
 import type { LngLat } from './lib/geo';
 import { REROUTE_FAILED_KEY } from './lib/guidance';
 import {
+    type Address,
     findAddress,
     type Place,
     searchPlaces,
@@ -71,6 +75,7 @@ import {
 } from './lib/voiceCommand';
 import { VISION_OFF_TEXT, VISION_ON_TEXT } from './lib/visionAlerts';
 import { isStandingStill } from './lib/walkSpeed';
+import { HOME_MAX_ACCURACY_M } from './settings';
 import {
     canListen,
     canOpenAppSettings,
@@ -104,6 +109,11 @@ const TRY_TEXT = '음성과 진동으로 이렇게 알려 드립니다.';
 const HOME_SAVED_TEXT =
     '집으로 저장했습니다. 첫 화면의 집 버튼을 누르면 바로 안내합니다.';
 const HOME_CLEARED_TEXT = '집을 지웠습니다.';
+/** 주소를 알 수 없을 때 지금 위치로 저장한 집의 이름 */
+const HERE_NAME = '현재 위치';
+const HERE_CHECKING_TEXT = '지금 위치의 주소를 확인합니다.';
+const homeAccuracyText = (accuracyM: number) =>
+    `위치 오차가 ${Math.round(accuracyM)}미터로 큽니다.`;
 const DOUBLE_TAP_HINT = '화면을 두 번 누르면 말하기';
 const SETTINGS_NOTE = '설정은 이 기기에만 저장합니다.';
 const NO_ADDRESS_TEXT = '이곳의 주소를 찾지 못했습니다.';
@@ -140,7 +150,7 @@ export default function App() {
     const { announce, ask, buzz, silence, listening, busyFor, whenIdle } =
         useAnnouncer(settings);
 
-    const [{ screen }, setNavigation] = useState<Navigation>({
+    const [{ screen, history }, setNavigation] = useState<Navigation>({
         screen: 'home',
         history: [],
     });
@@ -161,6 +171,11 @@ export default function App() {
         null,
     );
     const spokenUsed = useCallback(() => setSpokenDestination(null), []);
+    // 말로 집 등록 화면에 왔으면 열자마자 할 일(지금 위치로 / 등록할 곳 묻기)
+    const [homeOpenAction, setHomeOpenAction] = useState<HomeSetup | null>(
+        null,
+    );
+    const homeOpenActionUsed = useCallback(() => setHomeOpenAction(null), []);
 
     // 출발은 항상 내 위치. 앱을 열면 바로 찾는다.
     const [myLocation, setMyLocation] = useState<LocationFix | null>(null);
@@ -249,10 +264,11 @@ export default function App() {
     /**
      * 위치 권한이 꺼져 있다고 읽고 켤지 묻는다. "켜 줘"·"응"이라고 하면 권한 창을 다시 띄우고,
      * Android 가 더 묻지 않으면 앱 설정 화면을 연 뒤 돌아오면 다시 찾는다.
+     * 권한을 켜서 위치를 찾았으면 그 위치를 돌려준다. 아니면 null.
      */
-    const askLocationPermission = async () => {
+    const askLocationPermission = async (): Promise<LocationFix | null> => {
         if (askingPermission.current) {
-            return;
+            return null;
         }
         askingPermission.current = true;
         try {
@@ -263,7 +279,7 @@ export default function App() {
                 if (listened(heard)) {
                     announce(LOCATION_PERMISSION_LATER_TEXT);
                 }
-                return;
+                return null;
             }
             let failure: unknown = null;
             const remember = (error: unknown) => {
@@ -277,6 +293,7 @@ export default function App() {
                 fix = await findMe(remember);
             }
             announce(fix ? LOCATION_FOUND_TEXT : errorMessage(failure));
+            return fix;
         } finally {
             askingPermission.current = false;
         }
@@ -308,6 +325,31 @@ export default function App() {
         // iOS 는 버튼을 누른 순간에만 나침반 권한을 물을 수 있다.
         void requestCompassPermission();
         return findMe(tellLocationError);
+    };
+
+    /**
+     * 집 등록용으로 지금 위치를 찾는다. locate 와 같지만 위치 권한이 꺼져 있어 켜도록 안내했다면
+     * 켠 뒤 찾은 위치를 이어서 돌려줘, 집으로 할지 다시 말하지 않아도 되게 한다.
+     */
+    const locateForHome = async (): Promise<LocationFix | null> => {
+        void requestCompassPermission();
+        let failure: unknown = null;
+        const fix = await findMe((error) => {
+            failure = error;
+        });
+        if (fix) {
+            return fix;
+        }
+        if (
+            isLocationDenied(failure) &&
+            canOpenAppSettings() &&
+            settings.voice &&
+            canListen()
+        ) {
+            return askLocationPermission();
+        }
+        announce(errorMessage(failure));
+        return null;
     };
 
     /** 목적지 검색 기준 위치. 앱을 막 열어 내 위치를 찾는 중이면 알리고 기다린다. */
@@ -621,7 +663,25 @@ export default function App() {
     // 안내 중 화면 아무 곳이나 두 번 탭하면 말하기 버튼처럼 한 번 듣는다.
     useDoubleTap(navigating && canAskByVoice(), () => void listenCommand());
 
+    /**
+     * 집 등록 화면을 드나들 때 이전 화면에서 하던 말을 멈춘다. 집 등록 안내가 길어서
+     * 다른 버튼을 누르거나 화면을 옮겨도 이어서 나오는 것을 막는다.
+     * 설정을 오갈 때는 멈추지 않아 안내 중 설정을 보고 와도 길안내 음성이 끊기지 않는다.
+     */
+    const stopSpeechOnMove = (from: ScreenName, to: ScreenName) => {
+        const homeSetup = from === 'set-home' || to === 'set-home';
+        if (
+            homeSetup &&
+            from !== to &&
+            from !== 'settings' &&
+            to !== 'settings'
+        ) {
+            silence();
+        }
+    };
+
     const goTo = (next: ScreenName) => {
+        stopSpeechOnMove(screen, next);
         // 경로 선택 화면을 떠나면 경로를 묻던 것은 그만 듣는다.
         if (next !== 'route') {
             offered.current = null;
@@ -641,7 +701,16 @@ export default function App() {
         );
     };
 
+    /** 지금 화면을 기록에 남기지 않고 다른 화면으로 바꾼다. 뒤로 가면 지금 화면 전 화면으로 간다. */
+    const replaceWith = (next: ScreenName) => {
+        stopSpeechOnMove(screen, next);
+        offered.current = null;
+        places.reset();
+        setNavigation((now) => ({ screen: next, history: now.history }));
+    };
+
     const goBack = () => {
+        stopSpeechOnMove(screen, history.at(-1) ?? 'home');
         offered.current = null;
         if (screen === 'set-home') {
             places.reset();
@@ -675,8 +744,39 @@ export default function App() {
 
     const saveHome = (place: Place) => {
         saved.setHome(place);
-        announce(HOME_SAVED_TEXT);
+        // 화면을 옮기며 이전 말을 멈추므로, 저장 안내는 옮긴 뒤에 읽는다.
         goBack();
+        announce(HOME_SAVED_TEXT);
+    };
+
+    /** 집 등록 화면: 지금 위치와 주소를 알아낸다. 위치를 못 찾으면 locate 가 이유를 알리고 null. */
+    const findHere = async (): Promise<HereFix | null> => {
+        announce(
+            saved.home
+                ? `지금 집은 ${saved.home.name}입니다. 새 위치를 확인합니다.`
+                : HERE_CHECKING_TEXT,
+        );
+        const fix = await locateForHome();
+        if (!fix) {
+            return null;
+        }
+        let address: Address | null = null;
+        try {
+            address = await findAddress(fix.position);
+        } catch {
+            // 주소를 못 찾아도 좌표로 집을 저장한다.
+        }
+        // 도로명 주소(신주소) 하나만 쓴다. 이름과 주소를 같게 두면 읽고 보여 줄 때 한 번만 나온다.
+        const shown = address?.road_address || address?.full_address || '';
+        const place = {
+            name: shown || HERE_NAME,
+            address: shown,
+            position: fix.position,
+            distance_m: null,
+        };
+        return fix.accuracy > HOME_MAX_ACCURACY_M
+            ? { place, note: homeAccuracyText(fix.accuracy) }
+            : { place };
     };
 
     const clearHome = () => {
@@ -837,9 +937,30 @@ export default function App() {
                     onListen={listenOnce}
                     onPick={screen === 'set-home' ? saveHome : pickPlace}
                     onAnnounce={(text) => announce(text)}
+                    onSilence={silence}
                     onAsk={ask}
                     voice={settings.voice}
                     purpose={screen === 'set-home' ? 'home' : 'go'}
+                    home={saved.home}
+                    onGoHome={
+                        screen === 'search'
+                            ? (home) => void goHome(home)
+                            : undefined
+                    }
+                    onUseHere={findHere}
+                    onClearHome={clearHome}
+                    onRegisterHome={
+                        screen === 'search'
+                            ? (action) => {
+                                  setHomeOpenAction(action);
+                                  // 저장하고 돌아올 때 검색 화면이 아니라 첫 화면으로 가게 검색 화면을 대신한다.
+                                  replaceWith('set-home');
+                              }
+                            : undefined
+                    }
+                    openAction={screen === 'set-home' ? homeOpenAction : null}
+                    onOpenActionUsed={homeOpenActionUsed}
+                    locating={locating}
                     spoken={screen === 'search' ? spokenDestination : null}
                     onSpokenUsed={spokenUsed}
                 />
