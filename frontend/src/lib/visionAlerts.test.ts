@@ -270,6 +270,24 @@ describe('visionReader', () => {
         });
     });
 
+    it('판단 불가가 이어지는 동안은 같은 알림이고, 인식이 돌아온 뒤 다시 판단 불가면 새 알림이다', () => {
+        const read = visionReader();
+        const unknown = times(VISION.confirmFrames, frame('unknown'));
+        const clear = times(VISION.confirmFrames, frame('clear'));
+        const keyOf = (cue: VisionCue | null) =>
+            cue?.kind === 'alert' ? cue.alert.key : null;
+
+        const first = keyOf(feed(unknown, 'danger', read));
+        const still = keyOf(feed(unknown, 'danger', read));
+        feed(clear, 'danger', read);
+        const again = keyOf(feed(unknown, 'danger', read));
+
+        expect(first).not.toBeNull();
+        expect(still).toBe(first);
+        expect(again).not.toBeNull();
+        expect(again).not.toBe(first);
+    });
+
     it('여유는 알리지 않는다', () => {
         expect(feed(times(VISION.confirmFrames, frame('clear')))).toBeNull();
     });
