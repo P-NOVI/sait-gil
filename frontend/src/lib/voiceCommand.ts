@@ -10,6 +10,10 @@ export type PlaceAnswer = 'yes' | 'next' | 'list';
 export type RouteAnswer =
     { action: 'start'; index: number | null } | { action: 'repeat' };
 
+/** 집을 등록하지 않았을 때 "집으로 갈게"에 대한 안내 */
+export const HOME_MISSING_TEXT =
+    '집이 등록되어 있지 않아요. 목적지를 검색해 집으로 등록해 주세요.';
+
 export const PLACE_ANSWER_HINT =
     '여기로 갈게, 다음, 목록 중에 하나를 말하세요.';
 /** 경로를 읽은 뒤 묻는 말. "1번", "2번 경로로 가 줘", "완만한 길" 처럼 대답한다. */
@@ -87,6 +91,9 @@ const REPEAT_WORDS = /다시|한번더|뭐라고/;
 const CAMERA_OFF_WORDS = /꺼|끄|끌|끈|그만|지마|안켜|안킬|필요없/;
 const CAMERA_ON_WORDS = /켜|켤|킬|키자|틀어/;
 const CAMERA_WORDS = /카메라|인식/;
+// "집으로 갈게", "집으로 가자", "집까지 안내". 집이 들어간 다른 말("집 앞 편의점")과 헷갈리지 않게 집으로 가는 말만 받는다.
+const HOME_WORDS =
+    /^(?:우리)?집(?:으로|까지|에)(?:갈게|가자|갈래|가요|가줘|갈래요|안내|데려다)/;
 const ALLOW_WORDS = /허용/;
 const DONT_ALLOW_WORDS = /안해|안할|안함|허용안/;
 // "2번", "두 번째", "둘째"
@@ -127,6 +134,12 @@ export function placeAnswer(heard: string): PlaceAnswer | null {
         return 'yes';
     }
     return null;
+}
+
+/** "집으로 갈게" 처럼 즐겨찾기 집으로 안내를 시작하라는 말인지. 거절하는 말이 섞이면 아니다. */
+export function homeCommand(heard: string): boolean {
+    const said = compact(heard);
+    return !REFUSE_WORDS.test(said) && HOME_WORDS.test(said);
 }
 
 /** "카메라 인식을 켤까요?"에 대한 대답. "네", "켜 줘" 는 켬, "아니요", "꺼 줘" 는 끔 */

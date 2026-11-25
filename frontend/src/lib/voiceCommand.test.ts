@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PlannedRoute, RouteKind } from './routeApi';
 import {
     cameraAnswer,
+    homeCommand,
     navigationCommand,
     permissionAnswer,
     placeAnswer,
@@ -194,5 +195,28 @@ describe('navigationCommand', () => {
         expect(navigationCommand('네')).toBeNull();
         expect(navigationCommand('꺼')).toBeNull();
         expect(navigationCommand('카메라')).toBeNull();
+    });
+});
+
+describe('homeCommand', () => {
+    it.each([
+        '집으로 갈게',
+        '집으로 갈게요.',
+        '집으로가자',
+        '우리집으로 갈래',
+        '집까지 안내해 줘',
+        '집에 가자',
+    ])('"%s" 는 집으로 가는 말', (heard) => {
+        expect(homeCommand(heard)).toBe(true);
+    });
+
+    it.each([
+        '집 앞 편의점',
+        '집으로 안 갈게',
+        '집으로 말고 회사로 갈게',
+        '여기로 갈게',
+        '',
+    ])('"%s" 는 집으로 가는 말이 아님', (heard) => {
+        expect(homeCommand(heard)).toBe(false);
     });
 });
