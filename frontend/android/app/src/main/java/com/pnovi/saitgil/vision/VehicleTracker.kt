@@ -121,7 +121,11 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
     // 서 있는 차는 장애물과 함께 ObjectAnalyzer 가 종류·방향마다 stillRepeatMs 로 막는다.
     private val lastWarnMs = mutableMapOf<DetectedClass, Long>()
 
-    fun analyze(frame: DetectionFrame): VehicleAnalysis {
+    /**
+     * waitingToCross 가 true 면 횡단보도 앞에서 신호를 기다리는 중이라, 앞 차도를 옆으로 지나가는 차(CROSSING)는 알리지 않는다.
+     * 내 쪽으로 다가오는 차(APPROACHING)는 그대로 알린다.
+     */
+    fun analyze(frame: DetectionFrame, waitingToCross: Boolean = false): VehicleAnalysis {
         val focalPx = focalLengthPx(frame, config)
         val boxes = frame.objects.filter { it.kind in VEHICLE_CLASSES }
         val seen = updateTracks(tracks, boxes, frame.timeMs, config) { VehicleTrack(nextId++, it.kind, it) }
@@ -132,7 +136,7 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
             // 거리가 null 이면 박스 아래가 잘릴 만큼 가깝다.
             val distance = state.distanceM
             val inPath = distance?.let { inCorridor(track.box, it, frame, config, focalPx) } ?: overlapsAhead(track.box)
-            if (shouldWarn(track, state, inPath, frame.timeMs)) {
+            if (shouldWarn(track, state, inPath, waitingToCross, frame.timeMs)) {
                 track.warned = true
                 alerts += VehicleAlert(track.kind, directionOf(track.box), distance)
             } else {
@@ -202,15 +206,23 @@ class VehicleTracker(private val config: VisionConfig = VisionConfig()) {
      * - vehicleMotionSpanMs 만큼 지켜보기 전이라도 길 위 vehicleImmediateM 안에서 movingMps(vehicleMovingMps, 걸음 속도를 모르면 vehicleMovingUnknownWalkMps) 넘게 다가오면 알린다.
      *   한 프레임만 보고는 알리지 않는다.
      * - 멀어지는 차(LEAVING)는 알리지 않는다.
+     * - 신호를 기다리는 중(waitingToCross)이면 옆으로 지나가는 차(CROSSING)는 알리지 않는다. 같은 클래스의 다음 알림을 막지 않도록
+     *   알린 시각도 남기지 않는다.
      */
-    private fun shouldWarn(track: VehicleTrack, state: VehicleState, inPath: Boolean, nowMs: Long): Boolean {
+    private fun shouldWarn(
+        track: VehicleTrack,
+        state: VehicleState,
+        inPath: Boolean,
+        waitingToCross: Boolean,
+        nowMs: Long,
+    ): Boolean {
         if (track.warned) return false
         val distance = state.distanceM
         val near = distance == null || distance <= vehicleNearM(track.kind, config)
         val veryNear = distance == null || distance <= config.vehicleImmediateM
         val warn = when (state.motion) {
             VehicleMotion.APPROACHING -> near && inPath
-            VehicleMotion.CROSSING -> near && inPath
+            VehicleMotion.CROSSING -> near && inPath && !waitingToCross
             VehicleMotion.UNKNOWN -> veryNear && inPath && (state.approachMps ?: 0.0) >= track.movingMps
             else -> false
         }

@@ -240,7 +240,7 @@ class SaitgilVisionPlugin : Plugin() {
     @Synchronized
     private fun onDetections(detected: DetectionFrame) {
         if (!running) return
-        val frame = detected.copy(walkSpeedMps = currentWalkSpeedMps())
+        val frame = detected.copy(walkSpeedMps = currentWalkSpeedMps(), nearCrosswalk = nearCrosswalk)
         val crowd = analyzer.analyze(frame)
         val objects = objectAnalyzer.analyze(frame)
         emitCrowdState(crowd.frame.copy(signal = objects.signal, signalId = objects.signalId, obstacles = objects.seen))

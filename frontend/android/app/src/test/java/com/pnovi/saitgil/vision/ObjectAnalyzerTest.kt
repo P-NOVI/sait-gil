@@ -384,6 +384,39 @@ class ObjectAnalyzerTest {
     }
 
     @Test
+    fun approachingCarIsWarnedWhileWaitingAtCrosswalk() {
+        // 횡단보도 앞에서 신호를 기다려도 내 쪽으로 다가오는 차는 알린다.
+        val analyzer = ObjectAnalyzer(config)
+        val start = standStill(analyzer)
+
+        val results = listOf(9.0, 6.5).mapIndexed { index, distance ->
+            val car = boxAt(DetectedClass.CAR, config.carHeightM, distance)
+            val frame = walkFrame(index, car).copy(timeMs = start + index * 700L, walkSpeedMps = 0.0, nearCrosswalk = true)
+            analyzer.analyze(frame)
+        }
+
+        assertEquals(true, results[1].alerts.single().moving)
+    }
+
+    @Test
+    fun crossingCarIsNotWarnedOnlyWhenWaitingAtCrosswalk() {
+        // 서 있을 때 10m 앞을 왼쪽에서 가운데로 지나가는 차. 횡단보도 근처면 신호 대기로 보고 알리지 않는다.
+        fun alerts(nearCrosswalk: Boolean): Int {
+            val analyzer = ObjectAnalyzer(config)
+            val start = standStill(analyzer)
+            return (0..2).sumOf { sector ->
+                val car = boxAt(DetectedClass.CAR, config.carHeightM, 10.0, sector = sector)
+                val frame = walkFrame(sector, car)
+                    .copy(timeMs = start + sector * 700L, walkSpeedMps = 0.0, nearCrosswalk = nearCrosswalk)
+                analyzer.analyze(frame).alerts.count { it.moving == true }
+            }
+        }
+
+        assertEquals(1, alerts(nearCrosswalk = false))
+        assertEquals(0, alerts(nearCrosswalk = true))
+    }
+
+    @Test
     fun veryNearApproachingVehicleAlertsOnSecondFrame() {
         // 걷는 길 위 vehicleImmediateM 안에서 두 프레임 사이 약 3.6m/s 로 다가오는 차는 세 프레임을 기다리지 않는다.
         val analyzer = ObjectAnalyzer(config)
