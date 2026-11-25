@@ -10,6 +10,7 @@ import {
 import type { LngLat } from '../lib/geo';
 import type { Course } from '../lib/heading';
 import { LOCATION_WATCH_INTERVAL_MS } from '../settings';
+import { inPermissionOrder } from './permissionQueue';
 import { isNativeApp } from './runtime';
 
 // 정확한 위치(GPS)를 먼저 기다리고, 실패하면 Wi-Fi·기지국 기반 위치로 다시 묻는다.
@@ -137,6 +138,19 @@ async function ensureNativePermission(): Promise<boolean> {
         throw new LocationError(DENIED, true);
     }
     return location === 'granted';
+}
+
+/** 앱에서 위치 권한을 묻는다. 대략적인 위치만 허용해도 true. 웹은 처음 위치를 찾을 때 브라우저가 묻는다. */
+export async function requestLocationPermission(): Promise<boolean> {
+    if (!isNativeApp()) {
+        return false;
+    }
+    try {
+        await inPermissionOrder(ensureNativePermission);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 async function currentNative(): Promise<LocationFix> {

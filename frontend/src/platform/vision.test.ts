@@ -4,6 +4,7 @@ const native = vi.hoisted(() => ({ value: false }));
 const plugin = vi.hoisted(() => ({
     start: vi.fn(),
     stop: vi.fn(),
+    requestPermissions: vi.fn(),
     setWalkSpeed: vi.fn(),
     setNearCrosswalk: vi.fn(),
     addListener: vi.fn(),
@@ -19,9 +20,11 @@ import { connectVision } from '../hooks/useVision';
 import { freeDirectionText, visionReader } from '../lib/visionAlerts';
 
 import {
+    requestCameraPermission,
     setVisionNearCrosswalk,
     setVisionWalkSpeed,
     startVision,
+    toSideEntry,
     VISION_NOT_READY,
     type VisionFrame,
     visionAvailable,
@@ -483,6 +486,30 @@ describe('startVision', () => {
     });
 });
 
+describe('toSideEntry', () => {
+    it('10·11시는 왼쪽, 1·2시는 오른쪽으로 바꾼다', () => {
+        expect(toSideEntry({ kind: 'side_entry', direction: 10 })).toEqual({
+            side: 'left',
+        });
+        expect(toSideEntry({ kind: 'side_entry', direction: 11 })).toEqual({
+            side: 'left',
+        });
+        expect(toSideEntry({ kind: 'side_entry', direction: 1 })).toEqual({
+            side: 'right',
+        });
+        expect(toSideEntry({ kind: 'side_entry', direction: 2 })).toEqual({
+            side: 'right',
+        });
+    });
+
+    it('옆 진입이 아니거나 방향이 12시·잘못된 값이면 null 이다', () => {
+        expect(toSideEntry({ kind: 'danger', direction: 10 })).toBeNull();
+        expect(toSideEntry({ kind: 'side_entry', direction: 12 })).toBeNull();
+        expect(toSideEntry({ kind: 'side_entry', direction: 7 })).toBeNull();
+        expect(toSideEntry({ kind: 'side_entry' })).toBeNull();
+    });
+});
+
 describe('visionFailure', () => {
     it('권한 거부 코드는 denied, 더 묻지 않는 거부는 blocked, 그 밖의 오류는 failed 로 본다', () => {
         expect(
@@ -595,5 +622,26 @@ describe('setVisionNearCrosswalk', () => {
         plugin.setNearCrosswalk.mockRejectedValue(new Error('실패'));
         expect(() => setVisionNearCrosswalk(true)).not.toThrow();
         await flush();
+    });
+});
+
+describe('requestCameraPermission', () => {
+    it('카메라를 켜지 않고 권한 결과만 돌려준다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValueOnce({ camera: 'granted' });
+
+        expect(await requestCameraPermission()).toBe(true);
+        expect(plugin.start).not.toHaveBeenCalled();
+    });
+
+    it('거절하면 false, 웹에서는 묻지 않는다', async () => {
+        native.value = true;
+        plugin.requestPermissions.mockResolvedValueOnce({ camera: 'denied' });
+        expect(await requestCameraPermission()).toBe(false);
+
+        native.value = false;
+        plugin.requestPermissions.mockClear();
+        expect(await requestCameraPermission()).toBe(false);
+        expect(plugin.requestPermissions).not.toHaveBeenCalled();
     });
 });

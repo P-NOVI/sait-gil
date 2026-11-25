@@ -51,7 +51,7 @@ class VisionModelsTest {
 
     @Test
     fun alertAndSignalWireValuesMatchWebType() {
-        assertEquals(listOf("danger", "obstacle", "signal", "gate"), AlertKind.entries.map { it.wire })
+        assertEquals(listOf("danger", "side_entry", "obstacle", "signal", "gate"), AlertKind.entries.map { it.wire })
         assertEquals(listOf("red", "other"), SignalState.entries.map { it.wire })
     }
 }

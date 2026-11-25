@@ -1,6 +1,11 @@
 // 플러그인 없이 인파·장애물·신호등 알림을 확인하는 웹 mock. 단계를 정해진 순서대로 되풀이해 흘린다.
 
-import type { VisionApproach, VisionFrame, VisionObstacle } from './vision';
+import type {
+    VisionApproach,
+    VisionFrame,
+    VisionObstacle,
+    VisionSideEntry,
+} from './vision';
 
 // 한 프레임 간격(ms). 플러그인도 1초에 몇 번씩 결과를 낸다.
 const FRAME_INTERVAL_MS = 500;
@@ -16,6 +21,7 @@ type MockStep = {
     frame: Omit<VisionFrame, 'obstacles' | 'signalId'>;
     approach?: VisionApproach;
     obstacle?: VisionObstacle;
+    sideEntry?: VisionSideEntry;
 };
 
 const SCRIPT: readonly MockStep[] = [
@@ -44,6 +50,16 @@ const SCRIPT: readonly MockStep[] = [
             signal: null,
         },
         approach: { distanceM: 2.5, freeDirections: [1, 2] },
+    },
+    // 왼쪽에서 가까운 사람이 들어온다.
+    {
+        frame: {
+            level: 'caution',
+            nearestPersonM: 1.2,
+            freeDirections: [12, 1, 2],
+            signal: null,
+        },
+        sideEntry: { side: 'left' },
     },
     {
         frame: {
@@ -109,6 +125,7 @@ export function startMockVision(
     onFrame: (frame: VisionFrame) => void,
     onApproach: (approach: VisionApproach) => void = () => undefined,
     onObstacle: (obstacle: VisionObstacle) => void = () => undefined,
+    onSideEntry: (entry: VisionSideEntry) => void = () => undefined,
 ): () => void {
     let count = 0;
     const timer = setInterval(() => {
@@ -127,6 +144,9 @@ export function startMockVision(
         }
         if (entering && step.obstacle) {
             onObstacle(step.obstacle);
+        }
+        if (entering && step.sideEntry) {
+            onSideEntry(step.sideEntry);
         }
     }, FRAME_INTERVAL_MS);
     return () => clearInterval(timer);

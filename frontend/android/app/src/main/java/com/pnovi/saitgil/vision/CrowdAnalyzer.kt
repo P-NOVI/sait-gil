@@ -1,10 +1,8 @@
 package com.pnovi.saitgil.vision
 
 import kotlin.math.abs
-import kotlin.math.atan
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 import kotlin.math.tan
 
 // 사람 박스로 거리·막힌 방향·빈 방향·정면 접근을 판단한다.
@@ -43,34 +41,20 @@ data class DetectionFrame(
     val objects: List<ObjectBox> = emptyList(),
     /** 사용자가 걷는 속도(m/s). GPS 로 받는다. 멈춰 있으면 0, 모르면 null 이다. 차의 움직임을 잴 때 내 걸음을 뺀다 */
     val walkSpeedMps: Double? = null,
+    /** 길안내 경로의 횡단보도 근처인지. 화면이 알려 준다. 신호를 기다리는지 볼 때 쓴다 */
+    val nearCrosswalk: Boolean = false,
 )
 
 /** 프레임 하나를 판단한 결과. alert 는 정면 접근이 있을 때만 있다. */
 data class CrowdAnalysis(val frame: CrowdFrame, val alert: VisionAlert?)
 
 /**
- * 영상 가로를 왼쪽부터 다섯 칸으로 나눈 칸의 기본 이름.
- * 실제로 부르는 이름은 clockLabels 가 칸의 각도로 정한다. 이 값은 각도를 따지지 않을 때 쓴다.
+ * 영상 가로를 왼쪽부터 다섯 칸으로 나눈 칸의 이름(시계 방향). 칸은 영상 가로를 같은 폭으로 나눈다.
+ * 이름은 칸 순서로 고정한다. 칸의 실제 각도로 이름을 붙이면 1배 기본 렌즈(세로, 좌우 약 ±26°)에서
+ * 가운데 세 칸이 모두 12시가 되어 방향이 12시로 쏠린다.
  */
 val CLOCK_SECTORS: List<Int> = listOf(10, 11, 12, 1, 2)
 private val FRONT_SECTOR = CLOCK_SECTORS.indexOf(12)
-
-// 시계 한 시간이 가리키는 각도(도)
-private const val DEGREES_PER_HOUR = 30.0
-
-/**
- * 칸마다 실제 시계 방향 이름. 칸 가운데의 각도를 재어 가장 가까운 시각으로 부른다.
- * 세로로 건 1배 기본 렌즈는 좌우 약 ±26°만 보여, 양 끝 칸은 11시·1시, 가운데 세 칸은 모두 12시가 된다.
- */
-fun clockLabels(frame: DetectionFrame, config: VisionConfig): List<Int> {
-    val focalPx = focalLengthPx(frame, config)
-    return CLOCK_SECTORS.indices.map { sector ->
-        val centerX = (sector + 0.5) / CLOCK_SECTORS.size
-        val degrees = Math.toDegrees(atan((centerX - 0.5) * frame.imageWidthPx / focalPx))
-        val hours = (degrees / DEGREES_PER_HOUR).roundToInt().coerceIn(-2, 2)
-        if (hours <= 0) 12 + hours else hours
-    }
-}
 
 /** 박스 가로 위치(0~1)가 속한 칸 번호(0~4) */
 fun sectorOf(x: Double): Int =
@@ -110,6 +94,7 @@ fun isClippedVertically(box: PersonBox, config: VisionConfig): Boolean =
  * 그래서 위나 아래가 잘린 박스는 키 대신 사람 폭으로 잰다.
  */
 fun estimateDistanceM(box: PersonBox, frame: DetectionFrame, config: VisionConfig): Double? {
+    config.distanceK?.let { return estimateDistanceByK(box, it, config) }
     val focalPx = focalLengthPx(frame, config)
     val (sizePx, sizeM) = if (isClippedVertically(box, config)) {
         box.width * frame.imageWidthPx to config.personWidthM
@@ -118,6 +103,20 @@ fun estimateDistanceM(box: PersonBox, frame: DetectionFrame, config: VisionConfi
     }
     if (sizePx <= 0.0) return null
     return focalPx * sizeM / sizePx
+}
+
+/**
+ * 실측 보정값(K)으로 거리를 잰다. 박스 가운데 위치의 높이 K(칸 사이는 보간)를 쓰고, 위나 아래가 잘렸으면 폭 K 를 쓴다.
+ * 높이·폭이 0 이면 null 이다.
+ */
+private fun estimateDistanceByK(box: PersonBox, k: DistanceK, config: VisionConfig): Double? {
+    val (ratio, kValue) = if (isClippedVertically(box, config)) {
+        box.width to k.widthK
+    } else {
+        box.height to k.heightKAt(box.centerX)
+    }
+    if (ratio <= 0.0) return null
+    return kValue / ratio
 }
 
 /** 두 박스가 겹치는 정도(IoU, 0~1) */
@@ -133,9 +132,9 @@ fun iou(a: PersonBox, b: PersonBox): Double {
  * 비어 있는 방향을 갈 만한 순서로 돌려준다.
  * 이어진 빈 칸이 넓은 구간을 먼저, 같으면 12시에 가까운 구간을 먼저 둔다.
  * 구간 안에서는 가운데 칸을 먼저 둬 사람과 덜 스치는 쪽을 앞에 놓는다.
- * 여러 칸이 같은 이름(labels)이면 그 칸이 모두 비어 있어야 그 방향이 비었다고 말한다.
+ * 화면은 맨 앞 방향 하나만 읽는다.
  */
-fun freeDirections(blocked: Set<Int>, labels: List<Int> = CLOCK_SECTORS): List<Int> {
+fun freeDirections(blocked: Set<Int>): List<Int> {
     val runs = mutableListOf<List<Int>>()
     var run = mutableListOf<Int>()
     for (sector in CLOCK_SECTORS.indices) {
@@ -155,13 +154,13 @@ fun freeDirections(blocked: Set<Int>, labels: List<Int> = CLOCK_SECTORS): List<I
             val center = (sectors.first() + sectors.last()) / 2.0
             sectors.sortedWith(compareBy<Int> { abs(it - center) }.thenBy(::frontGap))
         }
-        .map { labels[it] }
-        .filter { label -> labels.indices.none { it in blocked && labels[it] == label } }
-        .distinct()
+        .map { CLOCK_SECTORS[it] }
 }
 
 /** 추적 중인 사람 하나. samples 는 (시각, 거리) 기록이다. */
 private class Track(val id: Int, var box: PersonBox, var lastSeenMs: Long) {
+    /** 처음 잡힌 시각. 이번 프레임 시각과 같으면 방금 나타난 사람이다 */
+    val firstSeenMs: Long = lastSeenMs
     val samples = ArrayDeque<Pair<Long, Double>>()
     var alertedAtMs: Long? = null
 
@@ -177,7 +176,16 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
     // 최근 freeConfirmMs 동안 프레임들의 (시각, 빈 방향). 접근 경고에는 이어서 비어 있던 방향만 넣는다.
     private val recentFree = ArrayDeque<Pair<Long, List<Int>>>()
 
+    // 옆 진입을 마지막으로 알린 시각(왼쪽 true, 오른쪽 false)
+    private val sideAlertedAtMs = mutableMapOf<Boolean, Long>()
+    private var lastFrameMs: Long? = null
+
     fun analyze(frame: DetectionFrame): CrowdAnalysis {
+        // 안내를 시작한 첫 프레임이나 프레임이 trackLostMs 넘게 끊긴 뒤 첫 프레임(그동안 추적이 모두 지워진다)에 보이는 사람은
+        // 방금 들어온 것이 아니므로 옆 진입으로 보지 않는다.
+        val previousMs = lastFrameMs
+        val tracksRestarted = previousMs == null || frame.timeMs - previousMs > config.trackLostMs
+        lastFrameMs = frame.timeMs
         val seen = match(frame)
         val distances = seen.associateWith { track ->
             estimateDistanceM(track.box, frame, config)
@@ -207,7 +215,7 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
         val frontClipped = front.keys.any { track ->
             track.box.top <= config.clippedEdge && track.box.bottom >= 1 - config.clippedEdge
         }
-        val free = freeDirections(blocked, clockLabels(frame, config))
+        val free = freeDirections(blocked)
         recentFree.addLast(frame.timeMs to free)
         while (recentFree.first().first < frame.timeMs - config.freeConfirmMs) recentFree.removeFirst()
         // 넓은 순서는 지금 프레임을 따르고, 최근 프레임 내내 비어 있던 방향만 남긴다.
@@ -221,7 +229,7 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
             blocked.size >= config.cautionBlockedSectors -> CrowdLevel.CAUTION
             else -> CrowdLevel.CLEAR
         }
-        val alert = front.keys
+        val frontAlert = front.keys
             .filter { approaching(it, frame.timeMs) }
             .minByOrNull { distances[it] ?: Double.MAX_VALUE }
             ?.let { track ->
@@ -233,7 +241,36 @@ class CrowdAnalyzer(private val config: VisionConfig = VisionConfig()) {
                     freeDirections = steadyFree,
                 )
             }
+        // 혼잡 이상에서는 옆 칸에 늘 사람이 있고 서로 가려 같은 사람이 새 사람으로 잡히므로 옆 진입을 알리지 않는다. 혼잡 알림이 대신한다.
+        val sideAllowed = !tracksRestarted && level != CrowdLevel.CROWDED && level != CrowdLevel.DANGER
+        val alert = frontAlert ?: if (sideAllowed) sideEntryAlert(distances, frame.timeMs) else null
         return CrowdAnalysis(CrowdFrame(level, nearest, free), alert)
+    }
+
+    /**
+     * 옆 칸(12시가 아닌 칸)에 방금 나타난 사람이 sideEntryDistanceM 안이면 옆 진입을 알린다.
+     * 한 프레임으로는 가로질러 오는지 추월하는지 알 수 없어 움직임은 따지지 않고, 같은 쪽은 sideEntryRepeatMs 에 한 번만 알린다.
+     */
+    private fun sideEntryAlert(distances: Map<Track, Double?>, nowMs: Long): VisionAlert? {
+        val (track, distance) = distances.entries
+            .mapNotNull { (track, distance) -> distance?.let { track to it } }
+            .filter { (track, distance) ->
+                val sector = sectorOf(track.box.centerX)
+                val lastMs = sideAlertedAtMs[sector < FRONT_SECTOR]
+                track.firstSeenMs == nowMs &&
+                    sector != FRONT_SECTOR &&
+                    distance <= config.sideEntryDistanceM &&
+                    (lastMs == null || nowMs - lastMs >= config.sideEntryRepeatMs)
+            }
+            .minByOrNull { it.second } ?: return null
+        val sector = sectorOf(track.box.centerX)
+        sideAlertedAtMs[sector < FRONT_SECTOR] = nowMs
+        return VisionAlert(
+            kind = AlertKind.SIDE_ENTRY,
+            message = "옆 진입",
+            distanceM = distance,
+            direction = CLOCK_SECTORS[sector],
+        )
     }
 
     /** 새 박스를 앞 프레임 사람과 겹치는 순서대로 짝짓고, 짝 없는 박스는 새 사람으로 본다. */

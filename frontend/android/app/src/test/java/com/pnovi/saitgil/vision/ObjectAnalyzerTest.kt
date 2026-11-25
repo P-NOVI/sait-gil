@@ -145,22 +145,20 @@ class ObjectAnalyzerTest {
     fun alertsObstacleReachingIntoFrontSectorWithItsOwnDirection() {
         // 왼쪽 끝 칸에서 다음 칸까지 걸친 이륜차
         val wide = ObjectBox(DetectedClass.TWO_WHEELER, 0.1, 0.6, 0.2, 0.3, score = 0.9)
-        val labels = clockLabels(frame(0), config)
 
         val results = run(ObjectAnalyzer(config), repeat(listOf(wide), 3))
 
-        assertEquals(labels[sectorOf(wide.centerX)], results[0].seen.single().direction)
+        assertEquals(CLOCK_SECTORS[sectorOf(wide.centerX)], results[0].seen.single().direction)
     }
 
     @Test
-    fun obstacleCenteredInSideSectorIsReadInTheFrontSectorItReaches() {
-        // 가운데는 왼쪽 끝 칸(11시)이지만 앞쪽 칸(12시)까지 걸친 차
+    fun obstacleCenteredInSideSectorIsReadInTheAheadSectorItReaches() {
+        // 가운데는 왼쪽 끝 칸(10시)이지만 앞쪽 칸(11시)까지 걸친 차는 11시로 읽는다.
         val car = ObjectBox(DetectedClass.CAR, 0.0, 0.6, 0.3, 0.3, score = 0.9)
-        assertEquals(listOf(11, 12, 12, 12, 1), clockLabels(frame(0), config))
 
         val result = ObjectAnalyzer(config).analyze(frame(0, car))
 
-        assertEquals(12, result.seen.single().direction)
+        assertEquals(11, result.seen.single().direction)
     }
 
     @Test
@@ -298,13 +296,13 @@ class ObjectAnalyzerTest {
 
     @Test
     fun sameKindInAnotherDirectionIsAlertedToo() {
-        // 2.5m 앞 왼쪽 끝 칸(11시)과 가운데(12시)의 기둥은 종류가 같아도 방향이 달라 각각 알린다.
+        // 2.5m 앞 왼쪽 끝 칸(10시)과 가운데(12시)의 기둥은 종류가 같아도 방향이 달라 각각 알린다.
         val poles = listOf(box(DetectedClass.POLE, sector = 0), box(DetectedClass.POLE, sector = 2))
 
         val results = run(ObjectAnalyzer(config), repeat(poles, confirmAt + gapFrames + 1))
 
         val directions = results.flatMap { result -> result.alerts.map { it.direction } }
-        assertEquals(setOf(11, 12), directions.toSet())
+        assertEquals(setOf(10, 12), directions.toSet())
         assertEquals(2, directions.size)
     }
 
@@ -386,6 +384,39 @@ class ObjectAnalyzerTest {
     }
 
     @Test
+    fun approachingCarIsWarnedWhileWaitingAtCrosswalk() {
+        // 횡단보도 앞에서 신호를 기다려도 내 쪽으로 다가오는 차는 알린다.
+        val analyzer = ObjectAnalyzer(config)
+        val start = standStill(analyzer)
+
+        val results = listOf(9.0, 6.5).mapIndexed { index, distance ->
+            val car = boxAt(DetectedClass.CAR, config.carHeightM, distance)
+            val frame = walkFrame(index, car).copy(timeMs = start + index * 700L, walkSpeedMps = 0.0, nearCrosswalk = true)
+            analyzer.analyze(frame)
+        }
+
+        assertEquals(true, results[1].alerts.single().moving)
+    }
+
+    @Test
+    fun crossingCarIsNotWarnedOnlyWhenWaitingAtCrosswalk() {
+        // 서 있을 때 10m 앞을 왼쪽에서 가운데로 지나가는 차. 횡단보도 근처면 신호 대기로 보고 알리지 않는다.
+        fun alerts(nearCrosswalk: Boolean): Int {
+            val analyzer = ObjectAnalyzer(config)
+            val start = standStill(analyzer)
+            return (0..2).sumOf { sector ->
+                val car = boxAt(DetectedClass.CAR, config.carHeightM, 10.0, sector = sector)
+                val frame = walkFrame(sector, car)
+                    .copy(timeMs = start + sector * 700L, walkSpeedMps = 0.0, nearCrosswalk = nearCrosswalk)
+                analyzer.analyze(frame).alerts.count { it.moving == true }
+            }
+        }
+
+        assertEquals(1, alerts(nearCrosswalk = false))
+        assertEquals(0, alerts(nearCrosswalk = true))
+    }
+
+    @Test
     fun veryNearApproachingVehicleAlertsOnSecondFrame() {
         // 걷는 길 위 vehicleImmediateM 안에서 두 프레임 사이 약 3.6m/s 로 다가오는 차는 세 프레임을 기다리지 않는다.
         val analyzer = ObjectAnalyzer(config)
@@ -447,17 +478,19 @@ class ObjectAnalyzerTest {
     fun seenListsNearObstaclesAheadEveryFrameWithoutConfirming() {
         val pole = box(DetectedClass.POLE, sector = 1)
         val car = box(DetectedClass.CAR, sector = 3)
-        val labels = clockLabels(frame(0), config)
 
         val results = run(ObjectAnalyzer(config), listOf(listOf(pole, car), emptyList(), listOf(pole)))
 
         assertEquals(
-            listOf(ObstacleSighting(DetectedClass.CAR, labels[3]), ObstacleSighting(DetectedClass.POLE, labels[1])),
+            listOf(
+                ObstacleSighting(DetectedClass.CAR, CLOCK_SECTORS[3]),
+                ObstacleSighting(DetectedClass.POLE, CLOCK_SECTORS[1]),
+            ),
             results[0].seen,
         )
         assertTrue(results[0].alerts.none { it.objectClass == DetectedClass.POLE })
         assertTrue(results[1].seen.isEmpty())
-        assertEquals(listOf(ObstacleSighting(DetectedClass.POLE, labels[1])), results[2].seen)
+        assertEquals(listOf(ObstacleSighting(DetectedClass.POLE, CLOCK_SECTORS[1])), results[2].seen)
     }
 
     @Test
@@ -538,8 +571,7 @@ class ObjectAnalyzerTest {
         }
 
         // 남은 차는 옆 칸(sector 1)에 서 있는 차다.
-        val labels = clockLabels(walkFrame(0), config)
-        assertEquals(listOf(ObstacleSighting(DetectedClass.CAR, labels[1])), results.last().seen)
+        assertEquals(listOf(ObstacleSighting(DetectedClass.CAR, CLOCK_SECTORS[1])), results.last().seen)
     }
 
     @Test

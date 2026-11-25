@@ -1,5 +1,11 @@
 import { SpeechRecognition as NativeRecognition } from '@capacitor-community/speech-recognition';
+import {
+    LISTEN_INSTANT_FAILURE_MS,
+    LISTEN_RETRY_COUNT,
+    LISTEN_RETRY_DELAY_MS,
+} from '../settings';
 import { startBluetoothMic, stopBluetoothMic } from './bluetoothMic';
+import { inPermissionOrder } from './permissionQueue';
 import { isNativeApp, SPEECH_LANG } from './runtime';
 
 interface WebRecognitionResult {
@@ -38,6 +44,37 @@ export function canListen(): boolean {
     return isNativeApp() || webRecognition() !== undefined;
 }
 
+/** 앱에서 마이크(음성 인식) 권한을 묻는다. 허용하면 true. 웹은 처음 들을 때 브라우저가 묻는다. */
+export async function requestMicPermission(): Promise<boolean> {
+    if (!isNativeApp()) {
+        return false;
+    }
+    try {
+        const { available } = await NativeRecognition.available();
+        if (!available) return false;
+        const { speechRecognition } = await inPermissionOrder(() =>
+            NativeRecognition.requestPermissions(),
+        );
+        return speechRecognition === 'granted';
+    } catch {
+        return false;
+    }
+}
+
+/** 앱에서 마이크 권한을 이미 허용했는지. 묻지 않는다. 웹은 모르므로 false. */
+export async function micPermitted(): Promise<boolean> {
+    if (!isNativeApp()) {
+        return false;
+    }
+    try {
+        const { speechRecognition } =
+            await NativeRecognition.checkPermissions();
+        return speechRecognition === 'granted';
+    } catch {
+        return false;
+    }
+}
+
 /** 듣고 있으면 멈춘다. 멈춘 listenOnce 는 null 을 돌려준다. */
 export function stopListening(): void {
     const stop = stopCurrent;
@@ -63,21 +100,37 @@ async function listenNative(): Promise<string | null> {
         const connected = await startBluetoothMic();
         if (stopped) return null;
         // 실기기 실험용 로그. 원인을 확인하면 지운다. (#140)
-        const startedAt = Date.now();
         console.info(`[listen] 인식 시작 (블루투스 마이크 ${connected})`);
-        const { matches } = await NativeRecognition.start({
-            language: SPEECH_LANG,
-            maxResults: 1,
-            partialResults: false,
-            popup: false,
-        });
-        console.info(
-            `[listen] 인식 끝 ${Date.now() - startedAt}ms, 결과 ${matches?.length ?? 0}개, 중지됨 ${stopped}`,
-        );
-        return stopped ? null : (matches?.[0] ?? null);
-    } catch (error) {
-        console.info(`[listen] 인식 오류 ${String(error)}`);
-        throw error;
+        for (let attempt = 1; ; attempt += 1) {
+            const startedAt = Date.now();
+            try {
+                const { matches } = await NativeRecognition.start({
+                    language: SPEECH_LANG,
+                    maxResults: 1,
+                    partialResults: false,
+                    popup: false,
+                });
+                console.info(
+                    `[listen] 인식 끝 ${Date.now() - startedAt}ms, 결과 ${matches?.length ?? 0}개, 중지됨 ${stopped}`,
+                );
+                return stopped ? null : (matches?.[0] ?? null);
+            } catch (error) {
+                const elapsed = Date.now() - startedAt;
+                console.info(
+                    `[listen] 인식 오류 ${elapsed}ms ${String(error)}`,
+                );
+                // 플러그인이 이전 인식기를 없애며 인식 서비스 연결이 끊기면 새 인식기가 바로 실패한다. (#149)
+                // 듣기도 전에 끝난 오류는 한 번 다시 시도한다.
+                const instant = elapsed < LISTEN_INSTANT_FAILURE_MS;
+                if (stopped || !instant || attempt > LISTEN_RETRY_COUNT) {
+                    throw error;
+                }
+                await new Promise((resolve) =>
+                    setTimeout(resolve, LISTEN_RETRY_DELAY_MS),
+                );
+                if (stopped) return null;
+            }
+        }
     } finally {
         if (stopCurrent === stop) stopCurrent = null;
         // 들은 말에 답하는 음성은 미디어 소리라, 통화용 연결을 끈 뒤에 읽어야 음질이 떨어지지 않는다.

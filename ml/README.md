@@ -43,3 +43,18 @@ uv run pytest
 - 이력·날씨·달력·모델 파일은 Neon Object storage 버킷(`config.yaml`의 `storage`)에 둔다. 접속 정보는 `ml/.env`(`.env.example` 참고)와 저장소 Secrets에 넣는다.
 - 매일 배치는 `.github/workflows/forecast-daily.yml`이 S-DoT 수집 뒤에 돌린다.
 - 달력(`interim/calendar/daily.parquet`)은 2026년 12월까지 있다. 그 뒤를 예측하려면 배리어프리 12단계로 달력을 늘려 다시 올린다.
+
+## 사람 거리 보정 (`distance_calibration/`)
+
+실측 사진으로 앱의 사람 거리 보정값(K)을 구한다. 앱 모델(`sidewalk_yolo26n_int8.tflite`, 앱 기본 모델)로 사진에서 사람 박스를 뽑아, 방향(칸)별로 `거리 = K ÷ 박스 비율`의 K와 거리별 오차를 표로 낸다. 구한 값은 사람이 `VisionConfig.kt`의 `MEASURED_DISTANCE_K`에 옮긴다.
+
+```bash
+cd ml
+uv run --group calibration python -m distance_calibration.fit
+```
+
+- 사진은 `{DATA_DIR}/calibration/{거리}m/{방향}.jpg`에 둔다. 예: `3m/12.jpg`, 방향은 `10·11·12·1·2`(왼쪽 칸부터). 같은 조건이 여러 장이면 `12_1.jpg`처럼 번호를 붙인다. 사진은 커밋하지 않는다.
+- 1배 렌즈, 세로 4:3, 한 명이 선 사진이어야 한다. 얼굴이 찍히므로 팀 공유 폴더(Drive)에서만 주고받는다.
+- 위아래가 잘린 가까운 사진은 박스 폭으로, 온전한 사진은 높이로 K를 구한다(앱이 거리를 재는 방식과 같다).
+- 설정(모델 경로, 점수 컷, 칸 이름 등)은 `config.yaml`의 `distance_calibration`에 있다. 앱의 `DetectorConfig`·`YoloDecoder.kt`와 같게 유지한다.
+- 추론 라이브러리(`ai-edge-litert`, `pillow`)는 `calibration` 그룹이라 일일 배치에는 설치되지 않는다.

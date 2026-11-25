@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Place } from './placeApi';
 import {
     koreanNumber,
+    HOME_QUESTION,
     placeQuestion,
     searchSpoken,
     spokenNumbers,
@@ -185,6 +186,17 @@ describe('placeQuestion', () => {
         expect(placeQuestion(address, 0, 1)).toBe(
             '서울 중구 세종대로 110. 이곳으로 갈까요?',
         );
+    });
+
+    it('집으로 저장할 때는 집으로 할지 묻는다', () => {
+        expect(
+            placeQuestion(
+                { ...station, distance_m: null },
+                0,
+                1,
+                HOME_QUESTION,
+            ),
+        ).toBe('서울역. 서울 용산구 한강대로 405. 이곳을 집으로 할까요?');
     });
 
     it('이름의 대괄호는 빼고 읽는다', () => {

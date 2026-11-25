@@ -53,6 +53,16 @@ fun decodeDetections(output: FloatArray, candidates: Int, config: DetectorConfig
     return nonMaxSuppression(found, config.nmsIou).take(config.maxDetections)
 }
 
+/**
+ * 클래스마다 후보 전체에서 가장 높은 점수. minScore 로 거르기 전이고, 후보의 가장 높은 클래스가 아니어도 센다.
+ * 신호등을 못 찾을 때 점수가 컷 바로 아래인지, 아예 낮은지 볼 때 쓴다.
+ */
+fun bestClassScores(output: FloatArray, candidates: Int, kinds: Collection<DetectedClass>): Map<DetectedClass, Float> =
+    kinds.associateWith { kind ->
+        val offset = (BOX_CHANNELS + kind.ordinal) * candidates
+        (0 until candidates).maxOfOrNull { output[offset + it] } ?: 0f
+    }
+
 /** 점수 높은 순으로 보며, 이미 남긴 같은 클래스 박스와 iouThreshold 이상 겹치면 버린다 */
 fun nonMaxSuppression(detections: List<RawDetection>, iouThreshold: Float): List<RawDetection> {
     val kept = mutableListOf<RawDetection>()

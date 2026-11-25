@@ -1,6 +1,5 @@
 import {
     type ClockDirection,
-    type CrowdLevel,
     VISION_NOT_READY,
     type VisionFailure,
     type VisionFrame,
@@ -22,16 +21,12 @@ const LEVEL_LABELS: Record<VisionLevel, string> = {
     unknown: '판단 불가',
 };
 
-const LEVELS: CrowdLevel[] = ['clear', 'caution', 'crowded', 'danger'];
-
-/** 미터에서 켜 둘 칸 수. 판단 불가는 모두 끈다. */
-function meterSteps(level: VisionLevel | null): number {
-    return level === null || level === 'unknown'
-        ? 0
-        : LEVELS.indexOf(level) + 1;
+function clockLabel(direction: ClockDirection): string {
+    return `${direction}시`;
 }
 
-function statusText(frame: VisionFrame): string {
+/** 가까운 사람, 빈 방향, 이 프레임에 보인 장애물. 음성 알림과 달리 여러 프레임 확인 없이 바로 보여 준다. */
+function frameDetail(frame: VisionFrame): string {
     if (frame.level === 'unknown') {
         return UNKNOWN_TEXT;
     }
@@ -43,25 +38,16 @@ function statusText(frame: VisionFrame): string {
         frame.freeDirections.length > 0
             ? `${frame.freeDirections.map(clockLabel).join(', ')} 방향이 비어 있습니다.`
             : '비어 있는 방향이 없습니다.';
-    return `${nearest}${free}`;
-}
-
-/** 이 프레임에 보인 장애물. 음성 알림과 달리 여러 프레임 확인 없이 바로 보여 준다. */
-function obstaclesText(frame: VisionFrame): string {
-    if (frame.obstacles.length === 0) {
-        return '';
-    }
-    const seen = frame.obstacles
-        .map(
-            ({ kind, direction }) =>
-                `${clockLabel(direction)} ${obstacleName(kind)}`,
-        )
-        .join(', ');
-    return ` 앞 장애물: ${seen}.`;
-}
-
-function clockLabel(direction: ClockDirection): string {
-    return `${direction}시`;
+    const obstacles =
+        frame.obstacles.length > 0
+            ? ` 앞 장애물: ${frame.obstacles
+                  .map(
+                      ({ kind, direction }) =>
+                          `${clockLabel(direction)} ${obstacleName(kind)}`,
+                  )
+                  .join(', ')}.`
+            : '';
+    return `${nearest}${free}${obstacles}`;
 }
 
 type VisionPanelProps = {
@@ -74,31 +60,30 @@ type VisionPanelProps = {
     onToggle: () => void;
 };
 
-/** 결과 자리에 보일 문장 */
-function panelStatus(
+/** 첫 줄(상태)과 둘째 줄(자세한 결과). 둘째 줄이 없으면 null */
+function panelText(
     available: boolean,
     enabled: boolean,
     failure: VisionFailure | null,
     frame: VisionFrame | null,
-): string {
+): [string, string | null] {
     if (!available) {
-        return VISION_NOT_READY;
+        return [VISION_NOT_READY, null];
     }
     if (!enabled) {
-        return VISION_OFF_STATUS;
+        return [VISION_OFF_STATUS, null];
     }
     if (failure) {
-        return visionFailureText(failure);
+        return [visionFailureText(failure), null];
     }
     return frame
-        ? `${LEVEL_LABELS[frame.level]}. ${statusText(frame)}${obstaclesText(frame)}`
-        : VISION_NOT_READY;
+        ? [`카메라 켜짐 · ${LEVEL_LABELS[frame.level]}`, frameDetail(frame)]
+        : ['카메라 켜짐', VISION_NOT_READY];
 }
 
 /**
- * 카메라 인파 인식 결과 자리. 모델(YOLO26n)과 Kotlin 플러그인이 붙기 전에는 준비 중으로 보인다.
- * 결과 문장은 화면에만 두고, 음성 알림은 알림 중재를 거쳐 따로 읽는다.
- * 인식을 쓸 수 있으면 카메라 인식을 끄고 켜는 버튼을 둔다.
+ * 길안내 화면의 카메라 인식 한 줄. 결과 문장은 화면에만 두고,
+ * 음성 알림은 알림 중재를 거쳐 따로 읽는다. 인식을 쓸 수 있으면 끄고 켜는 버튼을 둔다.
  */
 export default function VisionPanel({
     available,
@@ -107,39 +92,22 @@ export default function VisionPanel({
     failure,
     onToggle,
 }: VisionPanelProps) {
-    const level = enabled ? (frame?.level ?? null) : null;
-    const lit = meterSteps(level);
+    const [state, detail] = panelText(available, enabled, failure, frame);
+    const level = enabled && !failure ? frame?.level : undefined;
     return (
-        <section
-            className="vision-panel"
-            aria-labelledby="vision-title"
-            data-level={level ?? undefined}
-        >
-            <h3 id="vision-title" className="vision-panel__title">
-                앞쪽 인파
-            </h3>
-            <ol className="vision-panel__meter" aria-hidden="true">
-                {LEVELS.map((step) => (
-                    <li
-                        key={step}
-                        data-on={LEVELS.indexOf(step) < lit ? true : undefined}
-                    >
-                        {LEVEL_LABELS[step]}
-                    </li>
-                ))}
-            </ol>
-            <p className="vision-panel__status">
-                {panelStatus(available, enabled, failure, frame)}
+        <section className="vision" aria-label="카메라 인식" data-level={level}>
+            <p className="vision__text">
+                <span className="vision__state">{state}</span>
+                {detail && <span className="vision__detail">{detail}</span>}
             </p>
             {available && (
                 <button
                     type="button"
-                    className="vision-panel__toggle"
-                    aria-pressed={enabled}
+                    className="button vision__toggle"
                     onClick={onToggle}
                 >
-                    {/* 상태는 aria-pressed 와 위 문장이 알려 글자는 고정한다. 화면낭독기가 두 번 읽지 않게 한다. */}
-                    카메라 인식
+                    <span className="visually-hidden">카메라 인식 </span>
+                    {enabled ? '끄기' : '켜기'}
                 </button>
             )}
         </section>

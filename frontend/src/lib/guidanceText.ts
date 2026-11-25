@@ -11,6 +11,7 @@ import {
     type EventKind,
     isBlockEnd,
     type RouteEvent,
+    upcomingEvents,
 } from './routeEvents';
 
 export const ARRIVED_TEXT = '목적지에 도착했습니다.';
@@ -64,25 +65,38 @@ export function blockText({ kind, direction }: RouteEvent): string {
     return `이번 블럭 끝에 ${place}${particle} 있습니다.`;
 }
 
+/** 화면 목록에 보일 이벤트 이름. 예: "오른쪽 횡단보도", "왼쪽", "붐비는 구간" */
+export function eventLabel({ kind, direction }: RouteEvent): string {
+    const where = direction ? DIRECTION_LABELS[direction] : null;
+    if (kind === 'turn') {
+        return where ?? '방향 전환';
+    }
+    if (kind === 'crowd') {
+        return '붐비는 구간';
+    }
+    const [name] = PLACE_NAMES[kind];
+    return where ? `${where} ${name}` : name;
+}
+
 /** 남은 거리가 remainingM 인 이벤트의 안내 문장. 회전·횡단보도는 거리 없이 "곧"으로 읽는다. */
 export function eventText(
-    { kind, direction }: RouteEvent,
+    event: RouteEvent,
     remainingM: number,
     nearM: number = NEAR_M,
 ): string {
+    const { kind } = event;
     const near = remainingM < nearM;
     const ahead = spokenDistance(remainingM);
     if (kind === 'turn') {
-        const label = direction ? DIRECTION_LABELS[direction] : '방향 전환';
-        return `곧 ${label}입니다.`;
+        return `곧 ${eventLabel(event)}입니다.`;
     }
     if (kind === 'crowd') {
         return near
             ? '지금부터 붐비는 구간입니다.'
             : `${ahead} 앞부터 붐비는 구간입니다.`;
     }
-    const [name, particle] = PLACE_NAMES[kind];
-    const place = direction ? `${DIRECTION_LABELS[direction]} ${name}` : name;
+    const [, particle] = PLACE_NAMES[kind];
+    const place = eventLabel(event);
     return near || kind === 'crosswalk'
         ? `곧 ${place}입니다.`
         : `${ahead} 앞에 ${place}${particle} 있습니다.`;
@@ -95,15 +109,7 @@ export function upcomingText(
     blockSettings: BlockSettings = BLOCK,
     alertDistanceM: Readonly<Record<EventKind, number>> = ALERT_DISTANCE_M,
 ): string | null {
-    const next = events
-        .filter((event) => event.distance_m >= travelledM)
-        .reduce<RouteEvent | null>(
-            (nearest, event) =>
-                !nearest || event.distance_m < nearest.distance_m
-                    ? event
-                    : nearest,
-            null,
-        );
+    const [next] = upcomingEvents(events, travelledM, 1);
     if (!next) {
         return null;
     }

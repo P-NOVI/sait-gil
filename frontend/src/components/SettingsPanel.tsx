@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import {
     type AccessibilitySettings,
     CROWD_SENSITIVITY_LABELS,
@@ -5,11 +7,15 @@ import {
     SPEECH_SPEED_LABELS,
     VIBRATION_LABELS,
 } from '../lib/accessibility';
+import type { Place } from '../lib/placeApi';
 
 type SettingsPanelProps = {
     settings: AccessibilitySettings;
     onChange: (change: Partial<AccessibilitySettings>) => void;
     onTry: () => void;
+    home: Place | null;
+    onSetHome: () => void;
+    onClearHome: () => void;
 };
 
 type ChoiceProps<T extends string> = {
@@ -29,11 +35,11 @@ function Choice<T extends string>({
     onChange,
 }: ChoiceProps<T>) {
     return (
-        <fieldset className="settings-panel__group">
+        <fieldset className="settings__group">
             <legend>{legend}</legend>
-            <div className="settings-panel__choices">
+            <div className="settings__choices">
                 {(Object.keys(labels) as T[]).map((option) => (
-                    <label key={option} className="settings-panel__choice">
+                    <label key={option} className="settings__choice">
                         <input
                             type="radio"
                             name={name}
@@ -49,14 +55,44 @@ function Choice<T extends string>({
     );
 }
 
-/** 접근성 설정: 글자 크기, 음성, 진동, 인파 알림, 고대비. 이 기기에만 저장한다. */
+/** 설정: 집, 글자 크기, 음성, 진동, 인파 알림, 고대비. 이 기기에만 저장한다. */
 export default function SettingsPanel({
     settings,
     onChange,
     onTry,
+    home,
+    onSetHome,
+    onClearHome,
 }: SettingsPanelProps) {
+    const homeId = useId();
     return (
-        <div className="settings-panel">
+        <div className="settings">
+            <section className="settings__group" aria-labelledby={homeId}>
+                <h2 id={homeId} className="settings__heading">
+                    집
+                </h2>
+                <p className="settings__home">
+                    {home ? home.name : '등록한 집이 없습니다.'}
+                </p>
+                <div className="pair">
+                    <button
+                        type="button"
+                        className="button"
+                        onClick={onSetHome}
+                    >
+                        {home ? '집 바꾸기' : '집 등록하기'}
+                    </button>
+                    {home && (
+                        <button
+                            type="button"
+                            className="button button--stop"
+                            onClick={onClearHome}
+                        >
+                            집 지우기
+                        </button>
+                    )}
+                </div>
+            </section>
             <Choice
                 name="font-scale"
                 legend="글자 크기"
@@ -64,7 +100,7 @@ export default function SettingsPanel({
                 value={settings.fontScale}
                 onChange={(fontScale) => onChange({ fontScale })}
             />
-            <label className="settings-panel__switch">
+            <label className="settings__switch">
                 <span>음성 안내</span>
                 <input
                     type="checkbox"
@@ -91,7 +127,7 @@ export default function SettingsPanel({
             />
             <button
                 type="button"
-                className="settings-panel__try"
+                className="button settings__try"
                 onClick={onTry}
             >
                 음성·진동 들어보기
@@ -103,7 +139,7 @@ export default function SettingsPanel({
                 value={settings.crowdSensitivity}
                 onChange={(crowdSensitivity) => onChange({ crowdSensitivity })}
             />
-            <label className="settings-panel__switch">
+            <label className="settings__switch">
                 <span>고대비 화면</span>
                 <input
                     type="checkbox"
@@ -114,10 +150,6 @@ export default function SettingsPanel({
                     }
                 />
             </label>
-            <p className="settings-panel__note">
-                설정은 이 기기에만 저장합니다. 경로는 바뀌지 않고 안내 방식만
-                바뀝니다.
-            </p>
         </div>
     );
 }

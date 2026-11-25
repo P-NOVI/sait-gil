@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.cache import KeyedTtlCache
 from app.collector.citydata import fetch_population_rows, store_population
 from app.collector.kma import ItemCache, WeatherError, kma_http
-from app.collector.sdot import collect_sdot, sdot_sync_http
+from app.collector.sdot import collect_sdot, is_stale, sdot_sync_http
 from app.collector.store import STALE_SCHEMA, collector_engine
 from app.collector.weather import (
     collect_weather_daily,
@@ -66,16 +66,24 @@ def collect_citydata(engine: Engine, settings: Settings, now: datetime) -> bool:
             return False
     print(f"도시데이터: {len(area_codes) - len(failed)}/{len(area_codes)}곳 받음")
     if failed:
-        print(f"받지 못한 장소: {', '.join(failed)}")
+        for code, reason in failed.items():
+            print(f"받지 못한 장소: {code} ({reason})")
         return False
     return True
 
 
 def collect_sdot_history(engine: Engine, settings: Settings, now: datetime) -> bool:
     with Session(engine) as session, sdot_sync_http(settings) as client:
-        return run(
+        ok = run(
             "유동인구", session, lambda: collect_sdot(session, client, settings, now)
         )
+        # 0행이어도 정상 종료하므로, API 가 멈춘 것을 알아채도록
+        # 최신 측정이 낡으면 실패로 끝낸다.
+        hours = settings.collector_sdot_stale_hours
+        if is_stale(session, now, timedelta(hours=hours)):
+            print(f"유동인구: 경고 - 최신 측정이 {hours}시간 넘게 갱신되지 않았습니다")
+            return False
+        return ok
 
 
 def collect_weather(engine: Engine, settings: Settings, now: datetime) -> bool:

@@ -142,13 +142,17 @@ export const SPEECH_BUSY_MAX_MS = 15_000;
 // 넘으면 폰 마이크로 듣는다. 그동안은 듣기 시작이 늦어진다. 실기기에서 맞출 초안 값.
 export const BLUETOOTH_MIC_CONNECT_MS = 3_000;
 
-// 안내를 다 읽은 뒤 음성 인식을 시작하기 전에 기다리는 시간(ms).
-// 읽는 소리가 가라앉기 전에 인식기가 켜지면 말하기도 전에 끝나 버린다. 실기기에서 맞출 초안 값.
-export const LISTEN_START_DELAY_MS = 250;
-
 // 읽기를 마치고 마이크가 열리기 직전에 주는 짧은 진동(ms). 화면을 보지 않는 사용자에게 말할 차례임을 알린다.
-// 기다리는 시간(LISTEN_START_DELAY_MS)보다 짧아야 진동 소리가 인식에 섞이지 않는다. 진동 세기 설정을 따른다.
+// 기다리지 않고 바로 인식을 시작하므로 길면 진동 소리가 인식에 섞일 수 있다. 진동 세기 설정을 따른다.
 export const LISTEN_READY_VIBRATION: readonly number[] = [100];
+
+// 음성 인식이 시작하자마자 오류로 끝났다고 보는 시간(ms). 이보다 빨리 끝난 오류는 말을 못 알아들은 게 아니다.
+// 성공한 인식 직후 다음 인식이 8~56ms 만에 실패하는 것을 실기기에서 확인했다. (#149) 실기기에서 맞출 초안 값.
+export const LISTEN_INSTANT_FAILURE_MS = 500;
+
+// 시작하자마자 실패한 인식을 다시 시도하는 횟수와, 다시 시도하기 전에 기다리는 시간(ms). 실기기에서 맞출 초안 값.
+export const LISTEN_RETRY_COUNT = 1;
+export const LISTEN_RETRY_DELAY_MS = 300;
 
 // 카메라 인파 인식 알림
 export const VISION = {
@@ -218,3 +222,9 @@ export const DOUBLE_TAP = {
 } as const;
 
 export type DoubleTapSettings = typeof DOUBLE_TAP;
+
+// 첫 화면에 보일 최근 간 곳 수
+export const RECENT_PLACES_MAX = 3;
+
+// 길안내 화면에 보일 다음 안내 수
+export const UPCOMING_EVENTS_SHOWN = 3;

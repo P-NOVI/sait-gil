@@ -119,6 +119,16 @@ export function minutes(seconds: number): number {
     return Math.max(1, Math.round(seconds / 60));
 }
 
+/** 남은 거리를 걷는 시간(분). 경로 전체 시간을 남은 거리 비율만큼 쓴다. */
+export function remainingMinutes(
+    route: PlannedRoute,
+    remainingM: number,
+): number {
+    const share =
+        route.distance_m > 0 ? Math.min(1, remainingM / route.distance_m) : 0;
+    return minutes(route.time_s * share);
+}
+
 /** 보이고 읽을 가파른 구간 길이(m). 반올림해 0 이면 알리지 않는다. */
 function hardSlopeM(route: PlannedRoute): number {
     return Math.round(route.slope.hard_m);

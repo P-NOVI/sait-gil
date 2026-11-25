@@ -17,7 +17,6 @@ import {
 } from '../platform';
 import {
     LISTEN_READY_VIBRATION,
-    LISTEN_START_DELAY_MS,
     SPEECH_BUSY_MAX_MS,
     VIBRATION_PATTERNS,
 } from '../settings';
@@ -116,15 +115,7 @@ export function useAnnouncer(settings: AccessibilitySettings) {
             if (!canListen()) {
                 return { status: 'unavailable' };
             }
-            // 실기기 실험용 로그. 원인을 확인하면 지운다. (#140)
-            console.info(`[ask] 안내 끝, ${LISTEN_START_DELAY_MS}ms 대기`);
             buzz(LISTEN_READY_VIBRATION);
-            await new Promise((resolve) =>
-                setTimeout(resolve, LISTEN_START_DELAY_MS),
-            );
-            if (turn.current !== mine) {
-                return { status: 'interrupted' };
-            }
             setListening(true);
             const heard = await listenOnce().catch(() => null);
             if (turn.current !== mine) {
