@@ -55,6 +55,25 @@ async def test_fetch_population_rows_keeps_going_after_failure() -> None:
     assert len(rows) == 6
 
 
+@pytest.mark.anyio
+async def test_fetch_population_rows_retries_transient_failure() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        code = request.url.path.rsplit("/", 1)[-1]
+        calls.append(code)
+        if calls.count(code) == 1:
+            return httpx.Response(503)
+        return httpx.Response(200, json=ok_body(area_item(code=code)))
+
+    rows, failed = await fetch_population_rows(
+        settings(), ["POI001"], COLLECTED, httpx.MockTransport(handler)
+    )
+
+    assert failed == []
+    assert len(rows) == 3
+
+
 def test_store_population_skips_same_snapshot(session: Session) -> None:
     rows = population_rows(area_item(), COLLECTED)
 

@@ -30,10 +30,13 @@ async def fetch_population_rows(
 
     async def one(http: httpx.AsyncClient, code: str) -> list[dict[str, Any]] | None:
         async with limit:
-            try:
-                return population_rows(await fetch_area(http, code), collected_at)
-            except CitydataError:
-                return None
+            # 일시적인 응답 실패는 몇 번 더 시도해 본다.
+            for _ in range(settings.citydata_retries + 1):
+                try:
+                    return population_rows(await fetch_area(http, code), collected_at)
+                except CitydataError:
+                    continue
+            return None
 
     async with citydata_http(settings, transport) as http:
         results = await asyncio.gather(*(one(http, code) for code in area_codes))
