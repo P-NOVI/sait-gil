@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PlannedRoute, RouteKind } from './routeApi';
 import {
     cameraAnswer,
+    hereOnlyAnswer,
     homeClearCommand,
     homeCommand,
     homeSetupCommand,
@@ -227,6 +228,28 @@ describe('homeCommand', () => {
     ])('"%s" 는 집으로 가는 말이 아님', (heard) => {
         expect(homeCommand(heard)).toBe(false);
     });
+});
+
+describe('hereOnlyAnswer', () => {
+    it.each([
+        '지금 위치',
+        '현재 위치',
+        '지금 위치요',
+        '지금 있는 곳',
+        '여기',
+        '이곳',
+        '내 위치',
+        '지금 위치로',
+    ])('"%s" 는 지금 있는 곳', (heard) => {
+        expect(hereOnlyAnswer(heard)).toBe(true);
+    });
+
+    it.each(['서울역', '여기서 먼 곳', '지금 위치 말고', '집 등록할게', ''])(
+        '"%s" 는 지금 있는 곳이 아님',
+        (heard) => {
+            expect(hereOnlyAnswer(heard)).toBe(false);
+        },
+    );
 });
 
 describe('homeClearCommand', () => {

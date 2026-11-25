@@ -18,6 +18,7 @@ import {
     HOME_MISSING_TEXT,
     HOME_NONE_TEXT,
     HOME_REGISTER_PROMPT,
+    hereOnlyAnswer,
     homeClearCommand,
     homeCommand,
     type HomeSetupCommand,
@@ -322,7 +323,8 @@ export default function TopSearch({
             onRegisterHome(setup);
             return;
         }
-        if (setup === 'here' && purpose === 'home') {
+        // 집 등록 화면에서 질문에 "지금 위치"라고만 답해도 지금 위치로 본다.
+        if ((setup === 'here' || hereOnlyAnswer(heard)) && purpose === 'home') {
             await checkHere();
             return;
         }

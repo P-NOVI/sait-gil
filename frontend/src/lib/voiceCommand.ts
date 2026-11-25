@@ -113,6 +113,9 @@ const HERE_WORDS = /지금|현재|여기|이곳|내위치/;
 const CLEAR_HOME_WORDS =
     /집.*(?:지워|지우|지울|삭제|해제|없애)|(?:지워|삭제|해제).*집/;
 const NOT_CLEAR_HOME_WORDS = /지마|말고|취소|아니|안지|안해/;
+// 집 등록 화면에서 "지금 위치", "현재 위치", "여기" 처럼 지금 있는 곳만 말한 것
+const HERE_ONLY_WORDS =
+    /^(?:(?:지금|현재)(?:내)?(?:있는)?(?:위치|곳|장소|여기)|내위치|여기|이곳|이장소)(?:요|로|야|예요|이에요|입니다)?$/;
 const ALLOW_WORDS = /허용/;
 const DONT_ALLOW_WORDS = /안해|안할|안함|허용안/;
 // "2번", "두 번째", "둘째"
@@ -177,6 +180,12 @@ export function homeSetupCommand(heard: string): HomeSetupCommand | null {
 export function homeClearCommand(heard: string): boolean {
     const said = compact(heard);
     return CLEAR_HOME_WORDS.test(said) && !NOT_CLEAR_HOME_WORDS.test(said);
+}
+
+/** 집 등록 화면에서 "지금 위치" 처럼 지금 있는 곳을 집으로 하겠다는 짧은 말인지 */
+export function hereOnlyAnswer(heard: string): boolean {
+    const said = compact(heard);
+    return !REFUSE_WORDS.test(said) && HERE_ONLY_WORDS.test(said);
 }
 
 /** "카메라 인식을 켤까요?"에 대한 대답. "네", "켜 줘" 는 켬, "아니요", "꺼 줘" 는 끔 */
