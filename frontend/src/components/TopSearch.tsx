@@ -48,6 +48,9 @@ type TopSearchProps = {
     voice: boolean;
     /** 고른 곳으로 갈지(go), 집으로 저장할지(home). 묻는 말과 대답 버튼이 달라진다. */
     purpose?: 'go' | 'home';
+    /** 앱을 열 때 첫 화면에서 들은 목적지. 주면 말로 찾은 것처럼 한 번 찾고 onSpokenUsed 를 부른다. */
+    spoken?: string | null;
+    onSpokenUsed?: () => void;
 };
 
 /** 말로 찾은 결과 중 지금 묻고 있는 것 */
@@ -69,6 +72,8 @@ export default function TopSearch({
     onAsk,
     voice,
     purpose = 'go',
+    spoken = null,
+    onSpokenUsed,
 }: TopSearchProps) {
     const [query, setQuery] = useState('');
     const [listening, setListening] = useState(false);
@@ -187,6 +192,11 @@ export default function TopSearch({
             onAnnounce(LISTEN_FAILED_TEXT);
             return;
         }
+        await searchHeard(heard);
+    };
+
+    /** 말로 들은 목적지로 찾고, 찾으면 첫 결과부터 하나씩 묻는다. */
+    const searchHeard = async (heard: string) => {
         const queries = spokenQueries(heard);
         setQuery(queries[0]);
         // 검색어 후보가 여럿이어도 기준 위치는 한 번만 묻는다.
@@ -212,6 +222,18 @@ export default function TopSearch({
         }
         void ask(found.places, 0);
     };
+
+    // 첫 화면에서 들은 목적지는 한 번만 찾는다. 다시 그려져도 또 찾지 않게 부모에게 알린다.
+    const searchHeardNow = useRef(searchHeard);
+    useEffect(() => {
+        searchHeardNow.current = searchHeard;
+    });
+    useEffect(() => {
+        if (spoken) {
+            onSpokenUsed?.();
+            void searchHeardNow.current(spoken);
+        }
+    }, [spoken, onSpokenUsed]);
 
     const current = confirming ? confirming.places[confirming.index] : null;
 

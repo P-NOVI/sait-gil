@@ -319,6 +319,32 @@ button.row .icon {
     }
 }
 
+/* ---------- 시작 안내 ---------- */
+
+.onboarding {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+}
+
+.onboarding__text {
+    margin: 0;
+    padding: 18px;
+    border: var(--outline-width) solid var(--color-accent);
+    border-radius: var(--radius);
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.5;
+}
+
+.onboarding__hint {
+    margin: 0;
+    text-align: center;
+    color: var(--color-muted);
+}
+
 /* ---------- 첫 화면 ---------- */
 
 .home {
