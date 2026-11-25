@@ -27,7 +27,7 @@ type NavigationPanelProps = {
     onSpeak: (() => void) | null;
     /** 음성 안내를 켰으면 화면낭독기가 같은 문장을 또 읽지 않게 한다. */
     voice: boolean;
-    /** 카메라 인식 줄 */
+    /** 카메라 인식 끄기·켜기 버튼 */
     vision: ReactNode;
 };
 
