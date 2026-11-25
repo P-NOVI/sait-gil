@@ -222,6 +222,9 @@ describe('homeCommand', () => {
         '집 갈게',
         '네 집으로 가자',
         '저장된 집으로 가자',
+        '등록한 집까지 안내해 줘',
+        '저희 집으로 가 줘',
+        '이제 집에 갈래',
     ])('"%s" 는 집으로 가는 말', (heard) => {
         expect(homeCommand(heard)).toBe(true);
     });
@@ -231,6 +234,11 @@ describe('homeCommand', () => {
         '집으로 안 갈게',
         '집으로 말고 회사로 갈게',
         '여기로 갈게',
+        '중국집 갈래',
+        '맛집 가자',
+        '근처 맛집 안내해 줘',
+        '빵집으로 가 줘',
+        '한식집 가줘',
         '',
     ])('"%s" 는 집으로 가는 말이 아님', (heard) => {
         expect(homeCommand(heard)).toBe(false);
