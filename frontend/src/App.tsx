@@ -264,10 +264,11 @@ export default function App() {
     /**
      * 위치 권한이 꺼져 있다고 읽고 켤지 묻는다. "켜 줘"·"응"이라고 하면 권한 창을 다시 띄우고,
      * Android 가 더 묻지 않으면 앱 설정 화면을 연 뒤 돌아오면 다시 찾는다.
+     * 권한을 켜서 위치를 찾았으면 그 위치를 돌려준다. 아니면 null.
      */
-    const askLocationPermission = async () => {
+    const askLocationPermission = async (): Promise<LocationFix | null> => {
         if (askingPermission.current) {
-            return;
+            return null;
         }
         askingPermission.current = true;
         try {
@@ -278,7 +279,7 @@ export default function App() {
                 if (listened(heard)) {
                     announce(LOCATION_PERMISSION_LATER_TEXT);
                 }
-                return;
+                return null;
             }
             let failure: unknown = null;
             const remember = (error: unknown) => {
@@ -292,6 +293,7 @@ export default function App() {
                 fix = await findMe(remember);
             }
             announce(fix ? LOCATION_FOUND_TEXT : errorMessage(failure));
+            return fix;
         } finally {
             askingPermission.current = false;
         }
@@ -323,6 +325,31 @@ export default function App() {
         // iOS 는 버튼을 누른 순간에만 나침반 권한을 물을 수 있다.
         void requestCompassPermission();
         return findMe(tellLocationError);
+    };
+
+    /**
+     * 집 등록용으로 지금 위치를 찾는다. locate 와 같지만 위치 권한이 꺼져 있어 켜도록 안내했다면
+     * 켠 뒤 찾은 위치를 이어서 돌려줘, 집으로 할지 다시 말하지 않아도 되게 한다.
+     */
+    const locateForHome = async (): Promise<LocationFix | null> => {
+        void requestCompassPermission();
+        let failure: unknown = null;
+        const fix = await findMe((error) => {
+            failure = error;
+        });
+        if (fix) {
+            return fix;
+        }
+        if (
+            isLocationDenied(failure) &&
+            canOpenAppSettings() &&
+            settings.voice &&
+            canListen()
+        ) {
+            return askLocationPermission();
+        }
+        announce(errorMessage(failure));
+        return null;
     };
 
     /** 목적지 검색 기준 위치. 앱을 막 열어 내 위치를 찾는 중이면 알리고 기다린다. */
@@ -729,7 +756,7 @@ export default function App() {
                 ? `지금 집은 ${saved.home.name}입니다. 새 위치를 확인합니다.`
                 : HERE_CHECKING_TEXT,
         );
-        const fix = await locate();
+        const fix = await locateForHome();
         if (!fix) {
             return null;
         }

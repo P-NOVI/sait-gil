@@ -202,6 +202,10 @@ describe('navigationCommand', () => {
 });
 
 describe('placeAnswer 짧은 대답', () => {
+    it('"으" 한 글자는 머뭇거리는 소리라 예로 받지 않는다', () => {
+        expect(placeAnswer('으')).toBeNull();
+    });
+
     it.each(['어', '엉', '으응', '어엉', '응', '네'])('"%s" 는 예', (heard) => {
         expect(placeAnswer(heard)).toBe('yes');
     });
@@ -215,6 +219,9 @@ describe('homeCommand', () => {
         '우리집으로 갈래',
         '집까지 안내해 줘',
         '집에 가자',
+        '집 갈게',
+        '네 집으로 가자',
+        '저장된 집으로 가자',
     ])('"%s" 는 집으로 가는 말', (heard) => {
         expect(homeCommand(heard)).toBe(true);
     });
@@ -306,6 +313,10 @@ describe('homeSetupCommand', () => {
         '집 등록 취소',
         '집 지워 줘',
         '집으로 안 해줘',
+        '이 집 해물탕',
+        '우리집 삼겹살',
+        '저장된 집으로 가자',
+        '집 갈게',
         '여기로 갈게',
         '',
     ])('"%s" 는 집 등록이 아님', (heard) => {
