@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import HomeScreen from './components/HomeScreen';
 import NavigationPanel from './components/NavigationPanel';
+import OnboardingScreen from './components/OnboardingScreen';
 import RoutePanel from './components/RoutePanel';
 import Screen, { type ScreenName } from './components/Screen';
 import SettingsPanel from './components/SettingsPanel';
@@ -39,6 +40,14 @@ import {
     nearCrosswalk,
 } from './lib/routeEvents';
 import { samePlace } from './lib/savedPlaces';
+import {
+    DESTINATION_PROMPT,
+    ONBOARDED_KEY,
+    type OnboardingLine,
+    PERMISSION_STEPS,
+    runOnboarding,
+    WELCOME_TEXT,
+} from './lib/onboarding';
 import { nearForSearch } from './lib/searchNear';
 import {
     cameraAnswer,
@@ -67,12 +76,17 @@ import {
     canOpenAppSettings,
     getCurrentPosition,
     isLocationDenied,
+    isNativeApp,
     listenOnce,
     type LocationFix,
+    micPermitted,
     openAppSettings,
+    readStored,
+    requestAppPermission,
     requestCompassPermission,
     visionAvailable,
     watchCameraHeading,
+    writeStored,
 } from './platform';
 
 const SCREEN_TITLES: Record<ScreenName, string> = {
@@ -113,6 +127,10 @@ const requestAddress = async (signal: AbortSignal, position: LngLat) => {
     return address ? spokenAddress(address) : NO_ADDRESS_TEXT;
 };
 
+/** 앱에서 처음 열었으면 시작 안내를 한다. 웹은 권한을 브라우저가 그때그때 묻는다. */
+const needsOnboarding = () =>
+    isNativeApp() && readStored(ONBOARDED_KEY) !== true;
+
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
@@ -128,6 +146,21 @@ export default function App() {
     });
     const searchInput = useRef<HTMLInputElement>(null);
     const saved = useSavedPlaces();
+    // 묻고 듣는 사이 사용자가 다른 화면으로 갔는지 본다.
+    const screenNow = useRef(screen);
+    useEffect(() => {
+        screenNow.current = screen;
+    });
+
+    // 앱을 처음 열 때 시작 안내 화면에 보이는 문장. 안내를 마치면 null
+    const [onboardingLine, setOnboardingLine] = useState<OnboardingLine | null>(
+        () => (needsOnboarding() ? { text: WELCOME_TEXT, step: null } : null),
+    );
+    // 앱을 열 때 첫 화면에서 들은 목적지. 목적지 찾기 화면이 한 번 찾고 지운다.
+    const [spokenDestination, setSpokenDestination] = useState<string | null>(
+        null,
+    );
+    const spokenUsed = useCallback(() => setSpokenDestination(null), []);
 
     // 출발은 항상 내 위치. 앱을 열면 바로 찾는다.
     const [myLocation, setMyLocation] = useState<LocationFix | null>(null);
@@ -270,13 +303,6 @@ export default function App() {
     useEffect(() => {
         tellLocationErrorNow.current = tellLocationError;
     });
-
-    useEffect(() => {
-        // 음성 안내를 껐으면 announce 는 읽지 않고, 화면낭독기가 화면의 오류를 읽는다.
-        void settle(getCurrentPosition(), (error) =>
-            tellLocationErrorNow.current(error),
-        );
-    }, [settle]);
 
     const locate = () => {
         // iOS 는 버튼을 누른 순간에만 나침반 권한을 물을 수 있다.
@@ -689,6 +715,57 @@ export default function App() {
         }
     };
 
+    /**
+     * 앱을 열 때. 처음 열면 시작 안내를 읽으며 위치·마이크·카메라·신체 활동 권한을 차례로 묻는다.
+     * 그다음 내 위치를 찾고, 음성 안내를 켰고 마이크를 쓸 수 있으면 첫 화면에서 어디로 갈지 묻는다.
+     * 알아들으면 목적지 찾기 화면에서 그 말로 찾는다.
+     */
+    const startUp = async () => {
+        let locationDenied = false;
+        if (needsOnboarding()) {
+            const say = async (line: OnboardingLine) => {
+                setOnboardingLine(line);
+                announce(line.text);
+                await whenIdle();
+            };
+            const denied = await runOnboarding(say, requestAppPermission);
+            setOnboardingLine(null);
+            writeStored(ONBOARDED_KEY, true);
+            locationDenied = denied.includes('location');
+        }
+        if (locationDenied) {
+            // 방금 거절한 위치 권한을 바로 다시 묻지 않는다. 내 위치 듣기로 다시 켤 수 있다.
+            setLocating(false);
+            setLocationError(LOCATION_PERMISSION_LATER_TEXT);
+        } else {
+            // 음성 안내를 껐으면 announce 는 읽지 않고, 화면낭독기가 화면의 오류를 읽는다.
+            void settle(getCurrentPosition(), (error) =>
+                tellLocationErrorNow.current(error),
+            );
+        }
+        if (!isNativeApp() || !settings.voice || !(await micPermitted())) {
+            return;
+        }
+        const heard = await ask(DESTINATION_PROMPT);
+        // 묻는 사이 다른 화면으로 갔으면 대답을 버린다.
+        if (heard.status === 'heard' && screenNow.current === 'home') {
+            setSpokenDestination(heard.text);
+            goTo('search');
+        }
+    };
+    const startUpNow = useRef(startUp);
+    useEffect(() => {
+        startUpNow.current = startUp;
+    });
+    // 개발 모드에서 효과가 두 번 불려도 한 번만 시작한다.
+    const startedUp = useRef(false);
+    useEffect(() => {
+        if (!startedUp.current) {
+            startedUp.current = true;
+            void startUpNow.current();
+        }
+    }, []);
+
     const myLocationText = locating
         ? '내 위치 찾는 중'
         : myLocation
@@ -757,6 +834,8 @@ export default function App() {
                     onAsk={ask}
                     voice={settings.voice}
                     purpose={screen === 'set-home' ? 'home' : 'go'}
+                    spoken={screen === 'search' ? spokenDestination : null}
+                    onSpokenUsed={spokenUsed}
                 />
             ) : screen === 'route' ? (
                 <RoutePanel
@@ -808,7 +887,13 @@ export default function App() {
                     듣고 있어요. 말씀하세요.
                 </p>
             )}
-            {guided ? (
+            {onboardingLine ? (
+                <OnboardingScreen
+                    line={onboardingLine}
+                    total={PERMISSION_STEPS.length}
+                    voice={settings.voice}
+                />
+            ) : guided ? (
                 <Screen
                     title="길안내"
                     status={

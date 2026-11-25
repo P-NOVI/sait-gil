@@ -94,6 +94,8 @@ export function visionFailure(error: unknown): VisionFailure {
 type SaitgilVisionPlugin = {
     start(): Promise<void>;
     stop(): Promise<void>;
+    /** Capacitor 기본 메서드. 카메라를 켜지 않고 권한만 묻는다. */
+    requestPermissions(): Promise<{ camera: string }>;
     setWalkSpeed(options: { speedMps: number | null }): Promise<void>;
     setNearCrosswalk(options: { near: boolean }): Promise<void>;
     addListener(
@@ -118,6 +120,21 @@ function inOrder(operation: () => Promise<void>): Promise<void> {
 function visionPlugin(): SaitgilVisionPlugin {
     plugin ??= registerPlugin<SaitgilVisionPlugin>('SaitgilVision');
     return plugin;
+}
+
+/** 카메라를 켜지 않고 카메라 권한만 묻는다. 허용하면 true. 웹에서는 쓰지 않으므로 false. */
+export async function requestCameraPermission(): Promise<boolean> {
+    if (!isNativeApp()) {
+        return false;
+    }
+    try {
+        const { camera } = await inPermissionOrder(() =>
+            visionPlugin().requestPermissions(),
+        );
+        return camera === 'granted';
+    } catch {
+        return false;
+    }
 }
 
 /**
