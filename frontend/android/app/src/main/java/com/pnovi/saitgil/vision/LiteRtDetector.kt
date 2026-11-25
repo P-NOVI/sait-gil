@@ -157,10 +157,10 @@ class LiteRtDetector private constructor(
     private fun captureCrop(rawScores: Map<DetectedClass, Float>) {
         val writer = capture ?: return
         val now = SystemClock.elapsedRealtime()
-        if (!writer.due(now)) return
+        if (!writer.claim(now)) return
         val luma = meanLuma(pixels, config.signalCaptureLumaStep)
         val name = signalCaptureName(System.currentTimeMillis(), luma, rawScores)
-        writer.save(square, name, now)
+        writer.save(square, name)
         Log.d(TAG, "신호등 칸 저장 $name 밝기 ${"%.0f".format(luma)} 점수 컷 전 최고 ${rawText(rawScores)}")
     }
 

@@ -134,6 +134,9 @@ class SaitgilVisionPlugin : Plugin() {
                 LazyModelAnalyzer({ modelAsset }) { asset ->
                     // 디버그 빌드는 횡단보도 근처 신호등 칸 사진을 앱 폴더(Android/data/.../files/signal_captures)에 남긴다.
                     val captureDir = if (BuildConfig.VISION_PREVIEW) context.getExternalFilesDir(SIGNAL_CAPTURE_DIR) else null
+                    if (BuildConfig.VISION_PREVIEW && captureDir == null) {
+                        Log.w(TAG, "앱 외부 저장소를 쓸 수 없어 신호등 칸 사진을 저장하지 않습니다")
+                    }
                     LiteRtDetector.load(context, detectorConfig, asset, captureDir) { nearCrosswalk }
                 },
                 ::onDetections,

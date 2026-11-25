@@ -1,11 +1,18 @@
 package com.pnovi.saitgil.vision
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import java.util.TimeZone
 
 // 신호등 칸 사진의 밝기·이름과 점수 컷 전 최고 점수를 확인한다. Android 클래스는 쓰지 않는다.
 class SignalCaptureTest {
+    @get:Rule
+    val folder = TemporaryFolder()
+
     private fun argb(red: Int, green: Int, blue: Int) = (0xFF shl 24) or (red shl 16) or (green shl 8) or blue
 
     @Test
@@ -52,5 +59,37 @@ class SignalCaptureTest {
 
         assertEquals(0.2f, best.getValue(DetectedClass.PED_SIGNAL_RED), 1e-6f)
         assertEquals(0.07f, best.getValue(DetectedClass.PED_SIGNAL_OTHER), 1e-6f)
+    }
+
+    @Test
+    fun claimAllowsOneCapturePerInterval() {
+        val writer = SignalCaptureWriter(folder.root, DetectorConfig(signalCaptureEveryMs = 2_000))
+
+        assertTrue(writer.claim(10_000))
+        assertFalse(writer.claim(11_999))
+        assertTrue(writer.claim(12_000))
+        // 차례가 아니었던 시도는 간격을 늦추지 않는다
+        assertFalse(writer.claim(13_000))
+        assertTrue(writer.claim(14_000))
+        writer.close()
+    }
+
+    @Test
+    fun pruneKeepsNewestCapturesOnly() {
+        val writer = SignalCaptureWriter(folder.root, DetectorConfig(signalCaptureMaxFiles = 2))
+        val names = listOf(
+            "20261125_193012_345_l042_red18_other05.jpg",
+            "20261125_193010_000_l040_red10_other05.jpg",
+            "20261125_193014_000_l041_red20_other05.jpg",
+        )
+        names.forEach { folder.newFile(it) }
+        // jpg 가 아닌 파일은 세지도 지우지도 않는다
+        folder.newFile("note.txt")
+
+        writer.prune()
+
+        val left = folder.root.list()!!.sorted()
+        assertEquals(listOf(names[0], names[2], "note.txt"), left)
+        writer.close()
     }
 }

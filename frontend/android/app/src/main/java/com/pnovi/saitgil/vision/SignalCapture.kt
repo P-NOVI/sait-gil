@@ -63,12 +63,16 @@ class SignalCaptureWriter(private val dir: File, private val config: DetectorCon
     private val executor = Executors.newSingleThreadExecutor()
     private var lastSavedMs: Long? = null
 
-    /** nowMs(단조 시각)에 저장할 차례인지 */
-    fun due(nowMs: Long): Boolean = lastSavedMs?.let { nowMs - it >= config.signalCaptureEveryMs } ?: true
-
-    /** bitmap 을 복사해 name 으로 저장한다. 원본은 다음 프레임에 다시 쓰므로 복사본만 넘긴다 */
-    fun save(bitmap: Bitmap, name: String, nowMs: Long) {
+    /** nowMs(단조 시각)에 저장할 차례면 그 시각을 저장 시각으로 잡고 true. 차례가 아니면 false */
+    fun claim(nowMs: Long): Boolean {
+        val last = lastSavedMs
+        if (last != null && nowMs - last < config.signalCaptureEveryMs) return false
         lastSavedMs = nowMs
+        return true
+    }
+
+    /** bitmap 을 복사해 name 으로 저장한다. 원본은 다음 프레임에 다시 쓰므로 복사본만 넘긴다. claim 이 true 일 때만 부른다 */
+    fun save(bitmap: Bitmap, name: String) {
         val copy = bitmap.copy(Bitmap.Config.ARGB_8888, false)
         executor.execute {
             try {
@@ -76,6 +80,9 @@ class SignalCaptureWriter(private val dir: File, private val config: DetectorCon
                 File(dir, name).outputStream().use { copy.compress(Bitmap.CompressFormat.JPEG, config.signalCaptureJpegQuality, it) }
                 prune()
             } catch (error: IOException) {
+                Log.w(TAG, "신호등 칸 사진을 저장하지 못했습니다: $name", error)
+            } catch (error: RuntimeException) {
+                // 디버그용 저장이 실패해도 앱(실행기 스레드)이 죽지 않게 로그만 남긴다.
                 Log.w(TAG, "신호등 칸 사진을 저장하지 못했습니다: $name", error)
             } finally {
                 copy.recycle()
@@ -86,7 +93,7 @@ class SignalCaptureWriter(private val dir: File, private val config: DetectorCon
     fun close() = executor.shutdown()
 
     /** 이름이 시각으로 시작하므로 이름 순으로 오래된 것을 지운다 */
-    private fun prune() {
+    internal fun prune() {
         val files = dir.listFiles { file -> file.name.endsWith(".jpg") }?.sortedBy { it.name } ?: return
         files.take((files.size - config.signalCaptureMaxFiles).coerceAtLeast(0)).forEach { it.delete() }
     }
